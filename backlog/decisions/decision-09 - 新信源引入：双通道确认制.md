@@ -1,5 +1,5 @@
 ---
-id: decision-11
+id: decision-09
 title: 新信源引入：双通道确认制
 date: '2026-09-07 10:44'
 status: 已采纳
