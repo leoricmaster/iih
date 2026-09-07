@@ -16,7 +16,7 @@
 
 ## 工作方式
 
-- 单人开发 + AI 辅助，中长期。设计决策经讨论后由用户裁决，落进 `docs/adr/`。涉及已决事项时先读对应 ADR，不重复讨论。
+- 单人开发 + AI 辅助，中长期。设计决策经讨论后由用户裁决，以 `backlog decision` 落账（标题不含序号，ID 由工具分配，见 decision-07）。涉及已决事项时先 `backlog decision list` 查读，不重复讨论。
 - 文档风格：简洁精练，能删则删。
 - 语言：文档用中文；代码标识符用英文（对应术语表 English 列）。
 
@@ -25,4 +25,4 @@
 - 用 Backlog.md 管理需求与任务（`backlog/` 目录，任务 ID 前缀 `IIH-`）。
 - 每次会话开始先运行 `backlog instructions overview` 获取工作流；创建任务前先 `backlog search` 查重。
 - 任务描述、验收标准一律用术语表内术语；涉及架构决策的任务须在描述中关联对应 ADR。
-- 不手编 `backlog/` 下的 markdown，一律走 `backlog` CLI，保证元数据一致。
+- 不手建/手改 `backlog/` 下的文件结构与元数据（ID、状态、日期），一律走 `backlog` CLI；正文内容在 CLI 创建的文件内编辑。

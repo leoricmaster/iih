@@ -130,4 +130,4 @@ flowchart LR
 
 ## 8. 架构与决策
 
-架构分层见 [ADR-01](adr/01-架构分层.md)：判断归智能体，记账归确定性系统；智能体写入一律为提案，经校验落账。其余决策见 `docs/adr/`。
+架构分层见 decision-01（backlog decision）：判断归智能体，记账归确定性系统；智能体写入一律为提案，经校验落账。其余决策见 `backlog/decisions/`。

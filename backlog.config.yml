@@ -2,6 +2,7 @@ project_name: "IIH"
 default_status: "To Do"
 statuses: ["To Do", "In Progress", "Done"]
 labels: []
+definition_of_done: ["术语使用与 docs/glossary.md 一致，无同义词混用", "涉及架构决策时已更新 backlog decision", "影响概念/术语时已同步 docs/domain-model.md", "智能体产出附依据，无溯源不落账"]
 date_format: yyyy-mm-dd
 max_column_width: 20
 auto_open_browser: true
@@ -9,13 +10,9 @@ default_port: 6420
 remote_operations: true
 auto_commit: true
 filesystem_only: false
+zero_padded_ids: 2
 bypass_git_hooks: false
 check_active_branches: true
 active_branch_days: 30
 task_prefix: "IIH"
 backlog_directory: "backlog"
-definition_of_done:
-  - 术语使用与 docs/glossary.md 一致，无同义词混用
-  - 涉及架构决策时已更新 docs/adr/
-  - 影响概念/术语时已同步 docs/domain-model.md
-  - 智能体产出附依据，无溯源不落账
