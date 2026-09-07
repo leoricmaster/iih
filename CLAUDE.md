@@ -16,7 +16,7 @@
 
 ## 工作方式
 
-- 单人开发 + AI 辅助，中长期。设计决策经讨论后由用户裁决，以 `backlog decision` 落账（标题不含序号，ID 由工具分配，见 decision-07）。涉及已决事项时先 `backlog decision list` 查读，不重复讨论。
+- 单人开发 + AI 辅助，中长期。设计决策经讨论后由用户裁决，以 `backlog decision` 落账（标题不含序号，ID 由工具分配）。涉及已决事项时先 `backlog decision list` 查读，不重复讨论。
 - 文档风格：简洁精练，能删则删。
 - 语言：文档用中文；代码标识符用英文（对应术语表 English 列）。
 
