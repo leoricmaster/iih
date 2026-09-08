@@ -4,7 +4,7 @@
 
 ## 术语纪律（最重要）
 
-- `backlog/docs/doc-03 - 术语表-Glossary.md` 是全项目术语的单一事实来源；一切输出（文档、代码标识符、提交信息）必须使用表内术语，English 列即代码命名标准。
+- `backlog/docs/doc-03 - 术语表-Glossary.md` 是全项目**领域术语**的单一事实来源；一切输出（文档、代码标识符、提交信息）必须使用表内术语，English 列即代码命名标准。架构与系统术语以 `backlog/docs/doc-05 - 技术架构-Technical-Architecture.md` 为准（English 命名同规则）。
 - 修改/新增术语：更新术语表并同步 `backlog/docs/doc-02 - 领域模型-Domain-Model.md`；有歧义需裁决时由用户裁决。
 - 表内术语禁止同义词混用。
 
