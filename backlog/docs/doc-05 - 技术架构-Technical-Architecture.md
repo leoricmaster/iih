@@ -1,12 +1,11 @@
 ---
 id: doc-05
-title: 架构-Architecture
+title: 技术架构-Technical-Architecture
 type: specification
 created_date: '2026-09-07 09:35'
-updated_date: '2026-09-08 01:26'
+updated_date: '2026-09-08 02:32'
 ---
-
-# IIH 架构
+# IIH 技术架构
 
 > decision-01 三层原则的完整落地：C4 由外到内（上下文 → 容器 → 模块），加提案契约与关键交互流。领域概念见领域模型（doc-02），数据结构见数据设计（doc-04），智能体判定依据与边界见智能体规约（doc-06）；术语以术语表为准。
 > 技术选型（Python/FastAPI、PostgreSQL、Docker Compose 单机）经裁决采纳（2026-09-08），暂不落 decision；开放问题见 §8。
