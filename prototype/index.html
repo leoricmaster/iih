@@ -1,0 +1,1223 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>IIH 原型 · 可点击线框</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.65 system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:#222;background:#fafafa;display:flex;min-height:100vh}
+a{color:#2b5bd7;text-decoration:none}
+a:hover{text-decoration:underline}
+.muted{color:#888;font-size:12.5px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+#sidebar{width:198px;flex:none;background:#fff;border-right:1px solid #d9d9d9;padding:14px 12px;position:sticky;top:0;height:100vh;overflow-y:auto}
+#sidebar .brand{font-weight:700;letter-spacing:.5px;white-space:nowrap;padding:0 4px}
+.tag{font-weight:400;color:#888;border:1px solid #ddd;padding:1px 8px;border-radius:10px;font-size:11.5px;margin-left:6px}
+.side-submit{display:block;text-align:center;margin:14px 0 4px}
+#nav{display:flex;flex-direction:column;gap:2px;margin-top:10px}
+#nav a{padding:6px 10px;border-radius:6px;color:#444;border:1px solid transparent}
+#nav a.active{border-color:#2b5bd7;color:#2b5bd7;font-weight:600;background:#f0f3fb}
+#nav a:hover{text-decoration:none;background:#f0f3fb}
+.cnt{background:#2b5bd7;color:#fff;border-radius:9px;font-size:11px;padding:0 6px;margin-left:4px}
+.side-note{font-size:11px;color:#aaa;margin-top:12px;padding:0 4px}
+#right{flex:1;min-width:0;display:flex;flex-direction:column}
+#topbar{display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:8px 18px;background:#fff;border-bottom:1px solid #d9d9d9;position:sticky;top:0;z-index:20}
+.nav-actions{display:flex;gap:8px;align-items:center}
+.account{position:relative}
+.account summary{cursor:pointer;list-style:none;font-size:13px;color:#444;border:1px solid #ccc;border-radius:6px;padding:4px 10px;background:#fff;user-select:none}
+.account summary::-webkit-details-marker{display:none}
+.account .menu{position:absolute;right:0;top:calc(100% + 6px);width:290px;background:#fff;border:1px solid #ddd;border-radius:8px;padding:10px 14px;box-shadow:0 4px 14px rgba(0,0,0,.12);z-index:30}
+.menu-title{font-size:12px;color:#888;margin:9px 0 2px;font-weight:600}
+.menu-title:first-child{margin-top:0}
+@media(max-width:860px){body{flex-direction:column}#sidebar{width:auto;height:auto;position:static;border-right:none;border-bottom:1px solid #d9d9d9}.side-submit{display:inline-block;margin:10px 0 2px}#nav{flex-direction:row;flex-wrap:wrap}}
+.btn{display:inline-block;border:1px solid #c9c9c9;background:#fff;border-radius:6px;padding:5px 12px;cursor:pointer;font-size:13px;color:#333;text-decoration:none;line-height:1.5}
+.btn:hover{border-color:#2b5bd7;color:#2b5bd7;text-decoration:none}
+.btn.primary{background:#2b5bd7;border-color:#2b5bd7;color:#fff}
+.btn.primary:hover{background:#1e4cc0;color:#fff}
+.btn.small{padding:2px 9px;font-size:12px}
+main{max-width:1100px;margin:22px auto;padding:0 18px}
+h1.page{font-size:18px;margin:0 0 2px}
+.sub{color:#888;font-size:12.5px;margin-bottom:16px}
+.box{background:#fff;border:1px solid #ddd;border-radius:8px;padding:14px 16px;margin-bottom:14px}
+.box>h2{font-size:14.5px;margin:0 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.box h3{font-size:13.5px;margin:12px 0 6px;color:#444}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:#888;font-weight:600;border-bottom:1px solid #ddd;padding:6px 8px;white-space:nowrap}
+td{border-bottom:1px solid #eee;padding:7px 8px;vertical-align:top}
+tr:hover td{background:#f5f7fd}
+.pill{display:inline-block;border:1px solid #bbb;border-radius:10px;padding:0 8px;font-size:11.5px;color:#555;white-space:nowrap;background:#fff}
+.pill.rating{font-family:ui-monospace,monospace;font-weight:700;letter-spacing:1px}
+.pill.hi{background:#111;border-color:#111;color:#fff}
+.pill.dashed{border-style:dashed;color:#999}
+.sketch{border:1px dashed #c9a95c;border-radius:8px;padding:10px 12px;background:#fffdf4;margin-bottom:14px}
+.sketch .sketch-tag{font-size:11px;color:#8a6d1a;border:1px dashed #c9a95c;padding:0 6px;border-radius:8px}
+.stub{color:#999;border-bottom:1px dotted #999;cursor:help}
+.chain{list-style:none;padding:0;margin:0}
+.chain li{padding:5px 0 5px 14px;border-left:2px solid #ddd;margin-left:6px}
+.chain li.first{border-left-color:#2b5bd7}
+.kv{display:grid;grid-template-columns:130px 1fr;gap:5px 10px;font-size:13px;margin:0}
+.kv dt{color:#888}
+.kv dd{margin:0}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;align-items:center}
+.chips .lbl{font-size:12px;color:#888;margin-right:2px}
+.chip{border:1px solid #ccc;border-radius:14px;padding:2px 10px;font-size:12px;cursor:pointer;color:#555;background:#fff}
+.chip.on{border-color:#2b5bd7;color:#2b5bd7;font-weight:600}
+.fbrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.done-note{background:#eef7ee;border:1px solid #bfe0bf;color:#2c6e2c;border-radius:6px;padding:4px 8px;font-size:12px;margin-top:8px;display:inline-block}
+.pipe{list-style:none;padding:0;margin:0}
+.pipe li{display:flex;gap:10px;padding:6px 0;align-items:baseline;font-size:13px}
+.pipe .st{width:56px;font-size:12px;color:#999;flex:none}
+.pipe .done{color:#2c6e2c}
+.pipe .doing{color:#2b5bd7;font-weight:600}
+.pipe .todo{color:#aaa}
+form .field{margin-bottom:10px}
+label{display:block;font-size:12.5px;color:#666;margin-bottom:3px}
+input[type=text],select,textarea{width:100%;padding:6px 8px;border:1px solid #ccc;border-radius:6px;font:inherit;background:#fff}
+textarea{min-height:64px;resize:vertical}
+.err{color:#c0392b;font-size:12px;margin-top:4px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:860px){.grid2{grid-template-columns:1fr}}
+.alertrow{display:flex;gap:10px;align-items:baseline;padding:9px 2px;border-bottom:1px solid #eee}
+.alertrow:last-child{border-bottom:none}
+.alertrow .kind{flex:none;width:104px;text-align:center;font-size:11.5px;padding:1px 0;border-radius:8px;border:1px solid #bbb;background:#fff;color:#555}
+.alertrow.high .kind{background:#111;border-color:#111;color:#fff}
+.alertrow.unread .t{font-weight:700}
+#im{position:fixed;top:0;right:0;bottom:0;width:410px;max-width:95vw;background:#f2f3f5;border-left:1px solid #ccc;box-shadow:-3px 0 14px rgba(0,0,0,.08);z-index:50;overflow-y:auto;padding:14px}
+#im h3{margin:2px 0;font-size:14px}
+.im-note{font-size:11.5px;color:#777;background:#fff;border:1px solid #ddd;border-radius:6px;padding:4px 8px;margin:6px 0 12px}
+.im-time{font-size:11px;color:#999;margin:12px 0 5px}
+.im-card{background:#fff;border:1px solid #ddd;border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.im-card .meta{display:flex;gap:8px;align-items:center;margin:6px 0;flex-wrap:wrap}
+#toasts{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:99;display:flex;flex-direction:column;gap:8px;align-items:center}
+.toast{background:#222;color:#fff;border-radius:8px;padding:8px 16px;font-size:13px;box-shadow:0 2px 10px rgba(0,0,0,.25);max-width:80vw}
+#foot{max-width:1100px;margin:30px auto 24px;padding:10px 18px 0;border-top:1px solid #e2e2e2;color:#999;font-size:12px}
+.empty{color:#999;padding:16px 0;text-align:center}
+.diff td:first-child{color:#888;width:180px}
+.arrow{color:#999}
+</style>
+</head>
+<body>
+<aside id="sidebar">
+  <div class="brand">IIH<span class="tag">概念建模 · 线框</span></div>
+  <a class="btn primary side-submit" href="#/submit">＋ 人工录入</a>
+  <nav id="nav"></nav>
+  <div class="side-note">全局动作，不占导航位（doc-07 §3）</div>
+</aside>
+<div id="right">
+<header id="topbar">
+  <div class="nav-actions">
+    <button class="btn" onclick="imToggle()">推送通道（模拟）</button>
+    <details class="account">
+      <summary>单账号 · lancer ▾</summary>
+      <div class="menu">
+        <div class="menu-title">账号信息</div>
+        <div class="muted">单消费方 · 本机部署（多消费方不在 v1 · 立项 §7）</div>
+        <div class="menu-title">推送通道绑定</div>
+        <div>IM 机器人 · 已绑定 <button class="btn small" onclick="toast('换绑 / 停推为原型占位——推送通道的配置归宿在账户区')">换绑</button></div>
+        <div class="menu-title">分发偏好</div>
+        <div class="muted">晨间分发汇总 08:00 · 警报事件即时（decision-11）</div>
+        <div class="menu-title">站内收件箱</div>
+        <div class="muted">推送通道的兜底与存档视图（decision-11）</div>
+      </div>
+    </details>
+  </div>
+</header>
+<main id="app"></main>
+<aside id="im" hidden></aside>
+<div id="toasts"></div>
+<footer id="foot">
+  低保真线框 · 假数据（W 公司订阅 / 露天矿区间命题示例）· 刷新即重置 ｜
+  <span class="sketch-tag" style="font-size:11px;color:#8a6d1a;border:1px dashed #c9a95c;padding:0 6px;border-radius:8px">草图</span> = 数据依赖视图占位，实现时按真实数据重画 ｜
+  ▶ = 原型模拟控制（非产品行为） ｜ <span class="stub">虚线下划线</span> = 原型不承载（如原文快照）
+</footer>
+</div>
+<script>
+'use strict';
+/* ================= 假数据（示例：W 公司订阅 · 露天矿区间命题） ================= */
+
+const DB = {
+  sources: [
+    {id:'s1', name:'华矿装备观察', type:'行业自媒体', credit:'B', status:'已确认',
+     profile:{domain:'矿山装备 · 整机与配套', freq:'日更', stance:'中立偏业内', indep:'通常独立报道；偶转载 W 公司官网公告'},
+     fb:{valid:32, factual:1, last:'2026-08-15 有效'},
+     creditNote:'半衰期内累计 +30 → 档 B'},
+    {id:'s2', name:'W 公司', type:'机构（官网 / 官方口径）', credit:'A', status:'已确认',
+     profile:{domain:'W 公司官方动态（公告 · 大会发言）', freq:'事件驱动', stance:'官方口径', indep:'一次信源'},
+     fb:{valid:41, factual:0, last:'2026-09-01 有效'},
+     creditNote:'半衰期内累计 +41 → 档 A'},
+    {id:'s3', name:'北方工程机械网', type:'行业媒体', credit:'B', status:'已确认',
+     profile:{domain:'工程机械 · 矿卡', freq:'日更', stance:'中立', indep:'以转载为主，偶发原创'},
+     fb:{valid:18, factual:0, last:'2026-08-20 有效'},
+     creditNote:'半衰期内累计 +18 → 档 B'},
+    {id:'s4', name:'第一矿机周刊', type:'行业媒体', credit:'C', status:'已确认',
+     profile:{domain:'矿山机械', freq:'周更', stance:'中立', indep:'消息面混杂，需穿透'},
+     fb:{valid:9, factual:1, last:'2026-07-30 有效'},
+     creditNote:'半衰期内累计 +7 → 档 C'},
+    {id:'s5', name:'矿山圈快报', type:'行业自媒体', credit:'D', status:'已确认',
+     profile:{domain:'矿山圈内消息', freq:'日更', stance:'猎奇倾向', indep:'独立性存疑'},
+     fb:{valid:4, factual:2, last:'2026-09-04 事实错误'},
+     creditNote:'半衰期内累计 0 → 档 D（事实错误 −2 × 2）'},
+    {id:'s6', name:'矿业装备出口观察', type:'行业自媒体', credit:'—', status:'待确认',
+     found:{channel:'采集发现（R1 采集任务 · 池外自由探索上报）', time:'2026-09-06'},
+     note:'未确认的发现不入信源库、不建画像、不参与信用记账（decision-09）'},
+  ],
+
+  items: [
+    {id:'i1', stmt:'W 公司 2026 上半年矿卡交付量同比增长约 40%', status:'已分发', rating:'B1', indepCount:2,
+     indep:['s1','s2'], provenanceSrc:'s1',
+     provenance:[
+       {src:'s1', role:'首发 · 一次信源 · 本链最早引入', time:'2026-09-05 20:14', carrier:'网页', chain:'A'},
+       {src:'s3', role:'转载 S1（二次信源）', time:'2026-09-06 09:20', carrier:'网页', chain:'A'},
+       {src:'s2', role:'公告确认 · 一次信源 · 独立', time:'2026-09-07 18:00', carrier:'网页', chain:'B'},
+       {src:'s4', role:'转载 S2（二次信源）', time:'2026-09-07 19:40', carrier:'网页', chain:'B'}],
+     ratingHistory:[
+       {v:1, time:'2026-09-07 10:12', rating:'B2', basis:'公式 v1：N=1（S1 独立），R=B → 内容可信度 2'},
+       {v:2, time:'2026-09-07 21:03', rating:'B1', basis:'新印证合并：S2 独立印证，N=2 → 内容可信度 1（触发器：新印证合并 · decision-07）', current:true}],
+     eventTime:'2026-09-05', collectTime:'2026-09-06 08:30', medium:'互联网', carrier:'网页', mode:'自动拉取',
+     hits:['r1'], citedBy:[{claim:'c1', as:'证据挂载 · 参数②（在役矿卡保有量）'}], feedbacks:[],
+     trail:[{t:'已核实（B2）', time:'2026-09-07 10:12'},{t:'已分发', time:'2026-09-08 08:00'}],
+     attribution:'最早引入方 S1 华矿装备观察（decision-08）'},
+
+    {id:'i6', stmt:'W 公司入选国家矿山装备供应商名录（首批）', status:'已分发', rating:'A2', indepCount:1,
+     indep:['s2'], provenanceSrc:'s2',
+     provenance:[{src:'s2', role:'公示 · 一次信源', time:'2026-09-07 10:00', carrier:'网页', chain:'A'}],
+     ratingHistory:[{v:1, time:'2026-09-07 11:40', rating:'A2', basis:'公式 v1：N=1，R=A → 内容可信度 2', current:true}],
+     eventTime:'2026-09-06', collectTime:'2026-09-07 10:30', medium:'互联网', carrier:'网页', mode:'自动拉取',
+     hits:['r1'], citedBy:[], feedbacks:[],
+     trail:[{t:'已核实（A2）', time:'2026-09-07 11:40'},{t:'已分发', time:'2026-09-08 08:00'}],
+     attribution:'最早引入方 S2 W 公司（decision-08）'},
+
+    {id:'i3', stmt:'W 公司渠道大会：下一代电驱矿卡计划 2027Q2 量产', status:'候选情报', rating:null, indepCount:null,
+     indep:[], provenanceSrc:'s2',
+     provenance:[{src:'s2', role:'渠道大会发言 · 一次信源（经录音）', time:'2026-09-05 13:20', carrier:'录音', chain:'A'}],
+     ratingHistory:[],
+     eventTime:'2026-09-05', collectTime:'2026-09-05 14:00', medium:'行业展会', carrier:'录音', mode:'人工提交',
+     hits:['r1'], citedBy:[], feedbacks:[],
+     pipe:[{name:'线索 · 采集（ASR 转写）', state:'done', time:'09-05 14:02'},
+           {name:'审查 · 相关性 / 事件同一性 / 有效性初筛', state:'done', time:'09-05 15:10', note:'通过 → 候选情报（命中 R1）'},
+           {name:'核实评级 · 穿透转引链 · 独立信源检索', state:'doing', since:'09-05 15:30'}],
+     trail:[{t:'线索（人工提交 · 不经定向任务化，直接进入审查）', time:'2026-09-05 14:02'},{t:'候选情报', time:'2026-09-05 15:10'}],
+     verifyPreset:{rating:'A2', basis:'公式 v1：N=1（大会发言，暂无独立佐证），R=A → 内容可信度 2'},
+     attribution:'最早引入方 S2 W 公司（decision-08）'},
+
+    {id:'i2', stmt:'W 公司中标北方露天矿 12 台百吨级矿卡订单', status:'已消费', rating:'A2', indepCount:1,
+     indep:['s2'], provenanceSrc:'s2',
+     provenance:[{src:'s2', role:'中标公告 · 一次信源', time:'2026-08-28 09:00', carrier:'网页', chain:'A'},
+                 {src:'s4', role:'转载 S2（二次信源）', time:'2026-08-29 10:00', carrier:'网页', chain:'A'}],
+     ratingHistory:[{v:1, time:'2026-08-29 14:00', rating:'A2', basis:'公式 v1：N=1，R=A → 内容可信度 2', current:true}],
+     eventTime:'2026-08-28', collectTime:'2026-08-28 10:00', medium:'互联网', carrier:'网页', mode:'自动拉取',
+     hits:['r1'], citedBy:[{claim:'c2', as:'判定证据'}],
+     feedbacks:[{type:'有效', reason:'快捷 · 有效', time:'2026-09-01 08:52', routing:'信用 ↑（归因：S2 W 公司）· 需求/采集配置正向微调'}],
+     trail:[{t:'已核实（A2）', time:'2026-08-29 14:00'},{t:'已分发', time:'2026-08-30 08:00'},{t:'已消费（反馈：有效）', time:'2026-09-01 08:52'}],
+     attribution:'最早引入方 S2 W 公司（decision-08）'},
+
+    {id:'i5', stmt:'西部某省拟出台矿卡新能源置换补贴政策（征求意见稿）', status:'候选情报', rating:null, indepCount:null,
+     indep:[], provenanceSrc:'s4',
+     provenance:[{src:'s4', role:'首发报道', time:'2026-08-20 16:00', carrier:'网页', chain:'A'},
+                 {src:'s3', role:'跟进报道 · 疑似同源', time:'2026-09-07 09:00', carrier:'网页', chain:'A'}],
+     ratingHistory:[],
+     eventTime:'2026-08-20', collectTime:'2026-08-20 16:10', medium:'互联网', carrier:'网页', mode:'自动拉取',
+     hits:['r1'], citedBy:[], feedbacks:[],
+     pipe:[{name:'线索 · 采集（解析）', state:'done', time:'08-20 16:10'},
+           {name:'审查 · 相关性 / 事件同一性 / 有效性初筛', state:'done', time:'08-20 17:00', note:'通过 → 候选情报'},
+           {name:'核实评级 · 独立信源检索（第一次：无法完成 → 存疑）', state:'done', time:'08-24 10:00', note:'核实无法完成，无独立佐证 → 挂存疑（复核兜底期 11-22）'},
+           {name:'存疑复核 · 新证据命中事件级合并键（decision-03）', state:'done', time:'09-07 09:05', note:'S3 跟进报道命中 → 回候选情报，重新核实'},
+           {name:'核实评级 · 重新核实', state:'doing', since:'09-07 09:10'}],
+     trail:[{t:'候选情报', time:'2026-08-20 17:00'},{t:'存疑（核实无法完成）', time:'2026-08-24 10:00'},{t:'候选情报（事件驱动复核回流）', time:'2026-09-07 09:05'}],
+     attribution:'—'},
+
+    {id:'i4', stmt:'W 公司收购 J 矿电驱动部件厂', status:'作废', rating:null, indepCount:1,
+     indep:['s5'], provenanceSrc:'s5',
+     provenance:[{src:'s5', role:'爆料 · 唯一信源', time:'2026-08-20 08:00', carrier:'网页', chain:'A'}],
+     ratingHistory:[{v:1, time:'2026-08-21 09:00', rating:'D4', basis:'公式 v1：N=1，R=D → 内容可信度 4'},
+                    {time:'2026-09-04 09:10', rating:'作废', basis:'事实错误反馈（理由必填）：公告已辟谣——收购主体为其控股股东，非 W 公司。触发级联重估：C2 → 重估中'}],
+     eventTime:'2026-08-19', collectTime:'2026-08-20 08:05', medium:'互联网', carrier:'网页', mode:'自动拉取',
+     hits:['r1'], citedBy:[{claim:'c2', as:'判定证据（已失效）'}],
+     feedbacks:[{type:'事实错误', reason:'公告已辟谣：收购主体为其控股股东，非 W 公司', time:'2026-09-04 09:10', routing:'条目 → 作废并级联重估 · 信用 ↓↓（归因：S5 矿山圈快报）· 核实收紧（独立信源计数要求提高）'}],
+     trail:[{t:'已核实（D4）', time:'2026-08-21 09:00'},{t:'已分发', time:'2026-08-22 08:00'},{t:'已消费（反馈：有效）', time:'2026-08-23 08:40'},{t:'作废（事实错误 → 级联重估 C2）', time:'2026-09-04 09:10'}],
+     attribution:'最早引入方 S5 矿山圈快报（decision-08）'},
+
+    {id:'i7', stmt:'W 公司向东南亚矿业公司交付 20 台电动矿卡', status:'已消费', rating:'A2', indepCount:1,
+     indep:['s2'], provenanceSrc:'s2',
+     provenance:[{src:'s2', role:'交付公告 · 一次信源', time:'2026-05-10 09:00', carrier:'网页', chain:'A'}],
+     ratingHistory:[{v:1, time:'2026-05-11 10:00', rating:'A2', basis:'公式 v1：N=1，R=A → 内容可信度 2', current:true}],
+     eventTime:'2026-05-09', collectTime:'2026-05-10 09:05', medium:'互联网', carrier:'网页', mode:'自动拉取',
+     hits:['r1'], citedBy:[{claim:'c3', as:'证伪依据'}],
+     feedbacks:[{type:'有效', reason:'快捷 · 有效', time:'2026-05-12 08:30', routing:'信用 ↑（归因：S2 W 公司）'}],
+     trail:[{t:'已核实（A2）', time:'2026-05-11 10:00'},{t:'已分发', time:'2026-05-12 08:00'},{t:'已消费（反馈：有效）', time:'2026-05-12 08:30'}],
+     attribution:'最早引入方 S2 W 公司（decision-08）'},
+  ],
+
+  tasks: [
+    {id:'t1', question:'露天矿装车市场空间有多大？', status:'进行中', created:'2026-09-03', registrant:'消费方',
+     attachment:{
+       metrics:[
+         {no:'①', name:'国内露天矿数量与分布', req:'r2', state:'待命中'},
+         {no:'②', name:'在役矿卡保有量', req:'r3', state:'已命中', ev:'i1'},
+         {no:'③', name:'平均车龄与年更换率', req:'r3', state:'待命中'},
+         {no:'④', name:'整机均价与订单结构', req:'r4', state:'已命中', ev:'i2'},
+         {no:'⑤', name:'电驱渗透率', req:'r4', state:'待命中'},
+         {no:'⑥', name:'出口占比与折算', req:null, state:'信源指引覆盖（未单列需求）'}],
+       framework:'三法交叉定区间；父任务取子结论按交集定值合成，叶子参数由子任务/直挂需求采集（构造性测算 v1 由用户完成 · 判定者记人 · decision-12/15）',
+       guide:'行业协会统计、上市公司年报与投资者问答、招标公示网、海关出口数据'},
+     claims:['c1'], scenarios:['露天矿装车市场空间在 150–200 亿元区间（含出口拉动的上限情形）'], spawnedReqs:['r2','r3','r4'],
+     children:['t1a','t1b'],
+     note:'问题树（decision-15）：定向智能体按方法学分解为子任务（各测算法）+ 叶子情报需求；子结论合成父结论。判定以单个答案为单位——判定、置信度、推理记录、反馈内聚于本任务（decision-14）。'},
+    {id:'t1a', parent:'t1', question:'单元存量法测算（单元数 × 配置）', status:'进行中', created:'2026-09-03', registrant:'定向智能体（v2 自动提案）',
+     attachment:null, claims:['c1a'], scenarios:[], spawnedReqs:[], children:[],
+     note:'子任务·方法一（decision-15）：叶子参数（①②③）采集 → 分析智能体出子结论；父任务取子结论合成。'},
+    {id:'t1b', parent:'t1', question:'工作量产能法测算（年总量 ÷ 单台能力 × 份额）', status:'进行中', created:'2026-09-03', registrant:'定向智能体（v2 自动提案）',
+     attachment:null, claims:['c1b'], scenarios:[], spawnedReqs:[], children:[],
+     note:'子任务·方法二（decision-15）：叶子参数（④⑤）采集 → 分析智能体出子结论；父任务取子结论合成。'},
+
+    {id:'t2', question:'W 公司下一代矿卡会全系采用电驱吗？', status:'进行中', created:'2026-09-01', registrant:'消费方',
+     attachment:null, claims:['c2'], scenarios:[], spawnedReqs:[],
+     note:'世界递来的断言（渠道大会口径）顺手包成问题：判断题 = 答案形态为「是/否」的问题（decision-14）。'},
+    {id:'t3', question:'W 公司会退出海外矿卡市场吗？', status:'已结题', created:'2026-04-20', registrant:'消费方',
+     attachment:null, claims:['c3'], scenarios:[], spawnedReqs:[],
+     note:'已证伪留底（负知识资产）：结题保留历史（decision-13/14）。'},
+  ],
+
+  claims: [
+    {id:'c1', stmt:'露天矿装车市场空间在 120–150 亿元区间', status:'假设', confidence:null, registered:'2026-09-03', registrant:'消费方', byTask:'t1',
+     spawnedReqs:[], evidence:[{item:'i1', as:'判定证据（参数② · 在役矿卡保有量）'},{item:'i2', as:'判定证据（参数④ · 整机均价与订单结构）'}],
+     reasoning:[
+       {time:'2026-09-03 10:00', judge:'消费方', action:'登记候选答案（初始态 = 假设，登记时转写）', basis:'decision-14', cites:[]},
+       {time:'2026-09-07 21:10', judge:'记账层（分发检索）', action:'证据挂载：I1（参数②）', basis:'命中探究任务催生的任务型需求', cites:['i1']},
+       {time:'2026-09-07 21:12', judge:'记账层（分发检索）', action:'证据挂载：I2（参数④）', basis:'命中探究任务催生的任务型需求', cites:['i2']},
+       {time:'2026-09-08 09:00', judge:'分析智能体', action:'合成进行中：已取子结论 C1A（单元存量法 80–110 亿），待 C1B（工作量产能法）出结论后交集定值', basis:'非叶子任务从子结论合成（decision-15）', cites:['c1a']}]},
+
+    {id:'c1a', stmt:'单元存量法估 80–110 亿元', status:'结论', confidence:'中', registered:'2026-09-07', registrant:'消费方', byTask:'t1a',
+     spawnedReqs:[], evidence:[{item:'i1', as:'参数② · 在役矿卡保有量'}],
+     reasoning:[
+       {time:'2026-09-07 21:30', judge:'消费方（构造性测算 v1 · 判定者记人 · decision-12/15）', action:'子任务判定：证实 → 子结论', basis:'公式 v1：M=1，W=1 → 置信度 中（单法仅参考区间）', cites:['i1']}]},
+    {id:'c1b', stmt:'工作量产能法估 95–125 亿元', status:'假设', confidence:null, registered:'2026-09-07', registrant:'消费方', byTask:'t1b',
+     spawnedReqs:[], evidence:[{item:'i2', as:'参数④ · 整机均价与订单结构'}],
+     reasoning:[
+       {time:'2026-09-07 21:40', judge:'消费方', action:'登记候选答案（初始态 = 假设）', basis:'decision-14', cites:[]},
+       {time:'2026-09-07 21:42', judge:'记账层（分发检索）', action:'证据挂载：I2（参数④）', basis:'命中子任务催生的任务型需求', cites:['i2']}]},
+
+    {id:'c2', stmt:'W 公司下一代矿卡将全系采用电驱路线', status:'重估中', confidence:'中（重估前）', registered:'2026-09-01', registrant:'消费方', byTask:'t2',
+     spawnedReqs:[], evidence:[{item:'i2', as:'判定证据'},{item:'i4', as:'判定证据（已失效）'}],
+     diff:[
+       {obj:'情报条目 I4（触发源）', before:'D4 · 已消费', after:'作废（事实错误）'},
+       {obj:'答案 C2 状态', before:'结论', after:'重估中'},
+       {obj:'C2 置信度', before:'中（公式 v1：M=2，W=4）', after:'重估中（维持 / 修订 / 降级存疑 / 推翻）'}],
+     reasoning:[
+       {time:'2026-09-01 09:00', judge:'消费方', action:'登记候选答案（初始态 = 假设，登记时转写）', basis:'decision-14', cites:[]},
+       {time:'2026-09-02 09:00', judge:'分析智能体', action:'判定：证实 → 结论', basis:'公式 v1：M=2（I2, I4），W=4（I4 最弱）→ 置信度 中', cites:['i2','i4']},
+       {time:'2026-09-04 09:10', judge:'记账层（调度）', action:'级联重估触发：I4 作废 → 进入重估中', basis:'推理记录引用关系（I4 已失效）', cites:['i4']}],
+     alertNote:'多数情形无需操作——重估自动收敛；对触发源条目可反馈（事实错误 / 评级异议）'},
+
+    {id:'c3', stmt:'W 公司将退出海外矿卡市场', status:'已证伪', confidence:null, registered:'2026-04-20', registrant:'消费方', byTask:'t3',
+     spawnedReqs:[], evidence:[{item:'i7', as:'证伪依据'}],
+     reasoning:[
+       {time:'2026-04-20 10:00', judge:'消费方', action:'登记候选答案（初始态 = 假设，登记时转写）', basis:'decision-14', cites:[]},
+       {time:'2026-05-12 11:00', judge:'分析智能体', action:'判定：证伪 → 已证伪', basis:'I7 交付事实与命题矛盾', cites:['i7']}],
+     note:'负知识资产：默认稳态保留，避免重复提出、辅助排除法；证伪依据动摇时进入重估'},
+  ],
+
+  reqs: [
+    {id:'r1', name:'长期跟踪 W 公司动态', type:'订阅', status:'激活', window:'长期',
+     spec:{topics:'矿卡 · 订单 · 业绩 · 战略动向', keywords:'W 公司；矿卡；交付量；订单；电驱', pref:'一次信源优先，行业媒体次之', timing:'晨间分发汇总（批量）'},
+     coverage:{distr:86, cons:74}, recentHits:['i1','i6','i3','i2']},
+    {id:'r2', name:'盯参数：国内露天矿数量与分布', type:'任务', status:'激活', window:'至探究任务 T1 结题', spawnedBy:'t1', hits:[]},
+    {id:'r3', name:'盯参数：在役矿卡保有量 / 车龄与更换率', type:'任务', status:'激活', window:'至探究任务 T1 结题', spawnedBy:'t1', hits:['i1']},
+    {id:'r4', name:'盯参数：整机均价 / 电驱渗透率', type:'任务', status:'激活', window:'至探究任务 T1 结题', spawnedBy:'t1', hits:['i2']},
+    {id:'r5', name:'跟踪竞品 Z 公司动态', type:'订阅', status:'暂停', window:'长期', coverage:{distr:12, cons:5}},
+  ],
+
+  alerts: [
+    {id:'al1', kind:'翻案警报', level:'高', time:'2026-09-04 09:12', read:false,
+     title:'结论 C2（T2 的答案）进入重估中（级联重估）', body:'情报条目 I4 作废（事实错误反馈）→ 引用它的结论（探究任务 T2 的答案 C2）→ 重估中。', to:'task/t2', toLabel:'查看工作台前后对比'},
+    {id:'al2', kind:'评级重评完成', level:'中', time:'2026-09-07 21:05', read:false,
+     title:'I1 评级 B2 → B1', body:'新印证合并：独立信源 1 → 2（S2 公告确认）。下游引用取当前值。', to:'item/i1', toLabel:'查看评级历史'},
+    {id:'al3', kind:'存疑复核', level:'中', time:'2026-09-07 09:05', read:false,
+     title:'I5 已回候选情报，重新核实', body:'新证据命中事件级合并键（decision-03 事件驱动）——多数情形无需操作。', to:'item/i5', toLabel:'查看条目'},
+  ],
+};
+
+const FB_TYPES = ['有效','不相关','过期','重复/噪音','评级异议','事实错误'];
+const ROUTING_NOTE = {
+  '有效':'信用 ↑（归因至最早引入方）· 需求/采集配置正向微调',
+  '不相关':'已路由：需求 / 采集配置修正',
+  '过期':'已路由：采集频率、时效参数',
+  '重复/噪音':'已路由：审查（去重 / 初筛）迭代',
+  '评级异议':'已触发评级重评（decision-07）',
+  '事实错误':'条目 → 作废并级联重估 · 信用 ↓↓ · 核实收紧',
+};
+const STATUS_ORDER = ['已核实','已分发','已消费','存疑','作废','候选情报','线索'];
+
+/* ================= 工具 ================= */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const src = id => DB.sources.find(x => x.id === id);
+const item = id => DB.items.find(x => x.id === id);
+const claim = id => DB.claims.find(x => x.id === id);
+const req = id => DB.reqs.find(x => x.id === id);
+const srcName = id => { const s = src(id); return s ? s.name : '—'; };
+const srcLink = id => { const s = src(id); return s ? `<a href="#/source/${id}">${esc(s.name)}</a> <span class="pill">信用 ${s.credit}</span>` : '—'; };
+const itemLink = id => { const i = item(id); return i ? `<a href="#/item/${id}">${esc(i.stmt)}</a>` : '—'; };
+const answerLink = id => { const c = claim(id); if (!c) return '—'; return `<a href="#/task/${c.byTask}" title="${esc(c.stmt)}">${esc(c.stmt)}</a>`; };
+const task = id => DB.tasks.find(x => x.id === id);
+const taskLink = id => { const t = task(id); return t ? `<a href="#/task/${id}">${esc(t.question)}</a>` : '—'; };
+const parentLink = id => `由探究任务 ${taskLink(id)} 催生`;
+const taskParentLink = id => `父任务：${taskLink(id)}`;
+const claimLink = id => { const c = claim(id); return c ? `<a href="#/task/${c.byTask}" title="${esc(c.stmt)}">${esc(c.stmt)}</a>` : '—'; };
+const citeLink = id => item(id) ? itemLink(id) : (claim(id) ? claimLink(id) : '—');
+const reqLink = id => { const r = req(id); return r ? `<a href="#/requirement/${id}">${esc(r.name)}</a>` : '—'; };
+const ratingPill = r => r ? `<span class="pill rating">${esc(r)}</span>` : '<span class="pill dashed">未评级</span>';
+const statusPill = s => `<span class="pill${s==='作废'?' dashed':''}">${esc(s)}</span>`;
+const fbTypePill = t => `<span class="pill">${esc(t)}</span>`;
+const inboxCount = () =>
+  DB.items.filter(i => i.status === '已分发').length +
+  DB.alerts.filter(a => !a.read).length +
+  DB.sources.filter(s => s.status === '待确认').length;
+
+function toast(msg){
+  const d = document.createElement('div');
+  d.className = 'toast'; d.textContent = msg;
+  $('#toasts').appendChild(d);
+  setTimeout(() => d.remove(), 4200);
+}
+function refresh(){ render(); renderIm(); }
+
+/* ================= 路由 ================= */
+const NAV_MAP = {inbox:'inbox', items:'items', item:'items', tasks:'tasks', task:'tasks',
+                 reqs:'reqs', requirement:'reqs', sources:'sources', source:'sources', submit:null};
+let PENDING_FB = null;   // 待补理由的事实错误反馈（跳详情）
+let UI = {itemStatus:'已核实起', itemMode:'全部', subCarriers:['录音']};
+
+function route(){
+  const h = location.hash.replace(/^#\/?/, '') || 'inbox';
+  const [page, id] = h.split('/');
+  return {page, id};
+}
+function renderNav(active){
+  const links = [['inbox','收件箱'],['items','情报条目'],['tasks','探究任务'],['reqs','情报需求'],['sources','信源库']];
+  $('#nav').innerHTML = links.map(([p, label]) =>
+    `<a href="#/${p}" class="${active===p?'active':''}">${label}${p==='inbox'?`<span class="cnt">${inboxCount()}</span>`:''}</a>`
+  ).join('');
+}
+const PAGES = {
+  inbox: renderInbox, items: renderItems, item: renderItemDetail,
+  tasks: renderTasks, task: renderTaskDetail,
+  reqs: renderReqs, requirement: renderReqDetail,
+  sources: renderSources, source: renderSourceDetail, submit: renderSubmit,
+};
+function render(){
+  const {page, id} = route();
+  if (!(page === 'item' && id === PENDING_FB)) PENDING_FB = null;   // 事实错误跳详情：仅目标页保留预选
+  renderNav(NAV_MAP[page]);
+  const fn = PAGES[page] || PAGES.inbox;
+  $('#app').innerHTML = id ? fn(id) : fn();
+  if (PENDING_FB){ const el = $('#fb-reason-' + PENDING_FB); if (el) el.focus(); }
+  window.scrollTo(0, 0);
+}
+
+/* ================= 收件箱 ================= */
+function renderInbox(){
+  const pending = DB.items.filter(i => i.status === '已分发');
+  const alerts = DB.alerts;
+  const pendSrc = DB.sources.filter(s => s.status === '待确认');
+  return `
+  <h1 class="page">收件箱</h1>
+  <div class="sub">三类待办聚合：待反馈条目 · 警报汇总 · 待确认信源（新信源确认队列 · decision-09）。站内收件箱为推送通道的兜底与存档（decision-11）。</div>
+
+  <div class="box"><h2>已分发待反馈</h2>
+    ${pending.length ? pending.map(i => `
+      <div style="border-bottom:1px solid #eee;padding:10px 0;">
+        <div><a href="#/item/${i.id}"><b>${esc(i.stmt)}</b></a></div>
+        <div class="meta" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;">
+          ${ratingPill(i.rating)} <span class="pill">独立信源 ×${i.indepCount}</span>
+          <span class="muted">事件时间 ${esc(i.eventTime)} · 命中 ${i.hits.map(reqLink).join('、') || '—'}</span>
+        </div>
+        <div class="fbrow">${fbQuickRow(i.id)}</div>
+      </div>`).join('') : '<div class="empty">无待反馈条目</div>'}
+  </div>
+
+  <div class="box"><h2>警报汇总</h2>
+    ${alerts.map((a, n) => `
+      <div class="alertrow ${a.level==='高'?'high':''} ${a.read?'':'unread'}">
+        <span class="kind">${esc(a.kind)}</span>
+        <span style="flex:1"><span class="t">${esc(a.title)}</span><br><span class="muted">${esc(a.body)}</span></span>
+        <span class="muted" style="white-space:nowrap;">${esc(a.time)}</span>
+        <a class="btn small" href="#/${a.to}" onclick="alertRead(${n})">${esc(a.toLabel)}</a>
+      </div>`).join('')}
+    <div class="muted" style="margin-top:8px">警报与日常分发区分级别，经推送通道即时送达（doc-07 §2.4）。</div>
+  </div>
+
+  <div class="box"><h2>待确认信源（新信源确认队列）</h2>
+    ${pendSrc.length ? pendSrc.map(s => `
+      <div style="border-bottom:1px solid #eee;padding:10px 0;">
+        <div><b>${esc(s.name)}</b> <span class="pill">${esc(s.type)}</span> <span class="pill dashed">待确认</span></div>
+        <div class="muted" style="margin:4px 0">${esc(s.found.channel)} · ${esc(s.found.time)} · ${esc(s.note)}</div>
+        <div class="fbrow">
+          <button class="btn small primary" onclick="confirmSource('${s.id}')">确认入信源库</button>
+          <button class="btn small" onclick="ignoreSource('${s.id}')">忽略</button>
+        </div>
+      </div>`).join('') : '<div class="empty">队列为空</div>'}
+    <div class="muted" style="margin-top:8px">双通道：人工登记 / 采集发现；准入一律经确认（decision-09）。</div>
+  </div>`;
+}
+
+/* ================= 情报条目 ================= */
+const ITEM_FILTER_STATUS = ['已核实起','线索','候选情报','存疑','作废','全部状态'];
+const ITEM_FILTER_MODE = ['全部','自动拉取','人工提交'];
+
+function renderItems(){
+  const rows = DB.items.filter(i => {
+    const st = UI.itemStatus;
+    const okSt = st === '全部状态' ? true
+      : st === '已核实起' ? ['已核实','已分发','已消费','存疑','作废'].includes(i.status)
+      : i.status === st;
+    const okMode = UI.itemMode === '全部' ? true : i.mode === UI.itemMode;
+    return okSt && okMode;
+  }).sort((a,b) => (b.eventTime||'').localeCompare(a.eventTime||''));
+  return `
+  <h1 class="page">情报条目</h1>
+  <div class="sub">已核实起全状态可滤（doc-07 §3）；对象一页制——本页 + 条目详情。</div>
+  <div class="box">
+    <div class="chips"><span class="lbl">状态</span>${ITEM_FILTER_STATUS.map(s =>
+      `<span class="chip ${UI.itemStatus===s?'on':''}" onclick="setItemFilter('${s}')">${s}</span>`).join('')}</div>
+    <div class="chips"><span class="lbl">采集模式</span>${ITEM_FILTER_MODE.map(m =>
+      `<span class="chip ${UI.itemMode===m?'on':''}" onclick="setItemMode('${m}')">${m}</span>`).join('')}</div>
+    <table>
+      <tr><th>陈述</th><th>评级</th><th>独立信源</th><th>状态</th><th>出处信源</th><th>媒介 / 载体</th><th>采集模式</th><th>事件时间</th></tr>
+      ${rows.length ? rows.map(i => `
+        <tr>
+          <td><a href="#/item/${i.id}">${esc(i.stmt)}</a>${i.mode==='人工提交'?' <span class="pill">人工提交</span>':''}</td>
+          <td>${ratingPill(i.rating)}</td>
+          <td>${i.indepCount!=null?`×${i.indepCount}`:'—'}</td>
+          <td>${statusPill(i.status)}</td>
+          <td>${srcLink(i.provenanceSrc)}</td>
+          <td class="muted">${esc(i.medium)} / ${esc(i.carrier)}</td>
+          <td class="muted">${esc(i.mode)}</td>
+          <td class="muted">${esc(i.eventTime)}</td>
+        </tr>`).join('') : `<tr><td colspan="8"><div class="empty">当前筛选下无条目${UI.itemStatus==='存疑'?'——上一存疑项 I5 已于 09-07 事件驱动复核回流（decision-03）':''}</div></td></tr>`}
+    </table>
+  </div>`;
+}
+function setItemFilter(s){ UI.itemStatus = s; render(); }
+function setItemMode(m){ UI.itemMode = m; render(); }
+
+function fbQuickRow(id){
+  const i = item(id);
+  if (i.feedbacks.length && ['已消费','作废'].includes(i.status))
+    return `<span class="done-note">✓ 已反馈 · ${esc(i.feedbacks[i.feedbacks.length-1].type)}（${esc(i.feedbacks[i.feedbacks.length-1].reason)}）</span>`;
+  return FB_TYPES.map(t =>
+    t === '事实错误'
+      ? `<a class="btn small" href="#/item/${id}" onclick="fbJump('${id}')">事实错误 ↗详情</a>`
+      : `<button class="btn small" onclick="fbQuick('${id}','${t}')">${t}</button>`
+  ).join('') + `<a class="btn small" href="#/item/${id}">详情</a>`;
+}
+function fbJump(id){ PENDING_FB = id; render(); }
+
+function renderItemDetail(id){
+  const i = item(id); if (!i) return '<div class="empty">条目不存在</div>';
+  const chainGroups = {};
+  i.provenance.forEach(p => { (chainGroups[p.chain] = chainGroups[p.chain] || []).push(p); });
+  const meta = `
+    <dl class="kv">
+      <dt>状态</dt><dd>${statusPill(i.status)}</dd>
+      <dt>事件时间</dt><dd>${esc(i.eventTime)}</dd>
+      <dt>采集时间</dt><dd>${esc(i.collectTime)}</dd>
+      <dt>媒介 / 载体</dt><dd>${esc(i.medium)} / ${esc(i.carrier)}</dd>
+      <dt>采集模式</dt><dd>${esc(i.mode)}</dd>
+      <dt>出处信源</dt><dd>${srcLink(i.provenanceSrc)}</dd>
+      <dt>命中情报需求</dt><dd>${i.hits.map(reqLink).join('、') || '—'}</dd>
+      <dt>被引用</dt><dd>${i.citedBy.map(c => `${answerLink(c.claim)}<span class="muted">（${esc(c.as)}）</span>`).join('；') || '—'}</dd>
+    </dl>`;
+  return `
+  <h1 class="page"><a href="#/items">情报条目</a> / 详情</h1>
+  <div class="sub">消费动线与核查动线的交汇点：一屏尽出（doc-07 §3）。</div>
+
+  <div class="box">
+    <h2>${esc(i.stmt)} &nbsp;${statusPill(i.status)} ${ratingPill(i.rating)} ${i.indepCount!=null?`<span class="pill">独立信源 ×${i.indepCount}</span>`:''}</h2>
+    <h3>状态迁移</h3>
+    <div class="muted">${i.trail.map(t => `${esc(t.t)}<span class="muted">（${esc(t.time)}）</span>`).join(' <span class="arrow">→</span> ')}</div>
+  </div>
+
+  <div class="box"><h2>元数据</h2>${meta}</div>
+
+  <div class="box"><h2>独立信源计数</h2>
+    <div>穿透转引链后：<b>${i.indepCount!=null?`×${i.indepCount}`:'—'}</b>
+      ${i.indep.length?`（${i.indep.map(srcLink).join('、')}）`:''}</div>
+    <div class="muted" style="margin-top:4px">N 家转载同一通稿 = 1 个独立信源（术语表 · 独立信源）。</div>
+  </div>
+
+  <div class="sketch"><h2 style="font-size:14.5px;margin:0 0 10px;display:flex;gap:8px;align-items:center">转引链穿透视图 <span class="sketch-tag">草图 · 实现时按真实数据重画</span></h2>
+    ${Object.entries(chainGroups).map(([c, nodes]) => `
+      <div style="margin-bottom:8px"><span class="muted">链 ${esc(c)}</span>
+      <ul class="chain">${nodes.map((p, n) => `
+        <li class="${n===0?'first':''}">
+          ${srcLink(p.src)} <span class="pill">${esc(p.role)}</span>
+          <span class="muted">${esc(p.time)} · 载体 ${esc(p.carrier)}
+          ${p.src===i.provenanceSrc?' · <b>信用归因对象（最早引入方 · decision-08）</b>':''}</span>
+          <span class="stub" title="原文快照仅内部留存用于溯源（立项 §8），分发携带链接而非快照本体">原文快照</span>
+        </li>`).join('')}</ul></div>`).join('')}
+    <div class="muted">转引链 = 载体 → … → 原始信源；核实与独立性判断的依据（术语表）。</div>
+  </div>
+
+  ${i.ratingHistory.length ? `
+  <div class="sketch"><h2 style="font-size:14.5px;margin:0 0 10px;display:flex;gap:8px;align-items:center">评级历史（版本化 · 可重放） <span class="sketch-tag">草图 · 实现时按真实数据重画</span></h2>
+    <table>
+      <tr><th>版本</th><th>时间</th><th>评级</th><th>依据</th></tr>
+      ${i.ratingHistory.map(r => `
+        <tr><td>${r.v?`v${r.v}`:'—'}</td><td class="muted">${esc(r.time)}</td>
+        <td>${r.rating==='作废'?statusPill('作废'):ratingPill(r.rating)}</td>
+        <td class="muted">${esc(r.basis)}${r.current?' <b>（当前）</b>':''}</td></tr>`).join('')}
+    </table>
+    <div class="muted" style="margin-top:6px">重评触发器：新印证合并｜信源信用分档迁移｜人工触发｜评级异议（decision-07）；下游引用取当前值。</div>
+  </div>` : ''}
+
+  ${i.pipe ? `
+  <div class="box"><h2>管线进度（线索 → 审查 → 核实评级）</h2>
+    <ul class="pipe">${i.pipe.map(p => `
+      <li><span class="st ${p.state}">${p.state==='done'?'✓':p.state==='doing'?'●':'○'}</span>
+      <span>${esc(p.name)} ${p.time?`<span class="muted">${esc(p.time)}</span>`:''}${p.since?`<span class="muted">自 ${esc(p.since)}</span>`:''}
+      ${p.note?`<br><span class="muted">${esc(p.note)}</span>`:''}</span></li>`).join('')}
+    </ul>
+    ${i.status==='线索'||i.status==='候选情报' ? `
+      <div class="fbrow"><button class="btn small primary" onclick="pipeAdvance('${i.id}')">▶ 模拟推进（原型专用）</button></div>
+      <div class="muted" style="margin-top:6px">人工提交不经定向任务化，直接进入审查（doc-06 §3）；核实完成后经正常分发回来。</div>` : ''}
+  </div>` : ''}
+
+  ${['已核实','已分发','已消费'].includes(i.status) ? `
+  <div class="box"><h2>反馈（Web · 理由可补写）</h2>
+    <div class="field"><label>反馈类型（六类型 · 领域模型 §6）</label>
+      <select id="fb-type-${i.id}">
+        ${FB_TYPES.map(t => `<option value="${t}" ${PENDING_FB===i.id&&t==='事实错误'?'selected':''}>${t}</option>`).join('')}
+      </select></div>
+    <div class="field"><label>理由（事实错误必填 · 其余可空，空则记「快捷 · {类型}」· decision-11）</label>
+      <textarea id="fb-reason-${i.id}" placeholder="${PENDING_FB===i.id?'必填：请说明事实错误的依据':''}"></textarea></div>
+    <div class="err" id="fb-err-${i.id}" hidden>事实错误理由必填。</div>
+    <button class="btn primary" onclick="fbSubmit('${i.id}')">提交反馈</button>
+  </div>` : `
+  <div class="box"><h2>反馈</h2><div class="muted">当前状态（${esc(i.status)}）不开放反馈——反馈挂载于已分发 / 已消费等消费现场（doc-07 §4）。</div></div>`}
+
+  <div class="box"><h2>反馈记录</h2>
+    ${i.feedbacks.length ? i.feedbacks.map(f => `
+      <div style="border-bottom:1px solid #eee;padding:8px 0">
+        ${fbTypePill(f.type)} <span class="muted">${esc(f.time)}</span>
+        <div style="margin:3px 0">理由：${esc(f.reason)}</div>
+        <div class="muted">路由：${esc(f.routing)}</div>
+      </div>`).join('') : '<div class="empty">暂无反馈</div>'}
+  </div>`;
+}
+
+/* ================= 探究任务 ================= */
+function renderTasks(){
+  const groups = ['进行中','已结题'];
+  return `
+  <h1 class="page">探究任务</h1>
+  <div class="sub">问题的一等容器，可递归分解为子探究任务（问题树 · decision-15）：问题陈述 + 候选答案与判定 + 方法学附件 + 催生的任务型需求/子任务 + 工作台聚合（decision-13/14/15）。子任务在父任务工作台展开，不入顶层列表。</div>
+  <div class="box">
+    ${groups.map(g => {
+      const list = DB.tasks.filter(t => t.status === g && !t.parent);
+      if (!list.length) return '';
+      return `<h3 style="margin:10px 0 4px">${g} <span class="muted">× ${list.length}</span></h3>
+      <table>
+        <tr><th>问题</th><th>答案（命题）</th><th>催生需求</th><th>创建</th><th>登记方</th></tr>
+        ${list.map(t => `
+          <tr><td><a href="#/task/${t.id}">${esc(t.question)}</a></td>
+          <td>${t.claims.map(cid => { const c = claim(cid); return `<a href="#/task/${t.id}" title="${esc(c.stmt)}">${cid.toUpperCase()}·${esc(c.status)}</a>`; }).join('、') || '<span class="muted">—（未设候选答案）</span>'}</td>
+          <td class="muted">${t.spawnedReqs.length?t.spawnedReqs.map(reqLink).join('、'):'—'}</td>
+          <td class="muted">${esc(t.created)}</td>
+          <td class="muted">${esc(t.registrant)}</td></tr>`).join('')}
+      </table>`;
+    }).join('') || '<div class="empty">暂无探究任务</div>'}
+  </div>
+  <div class="box"><h2>登记探究任务</h2>
+    <div class="field"><label>问题陈述（问句——候选答案是可判真假的陈述，答案在工作台落成）</label>
+      <textarea id="task-question" placeholder="例：某细分市场空间有多大？"></textarea></div>
+    <div class="field"><label>转写首个候选答案（可选——判断题是答案形态为「是/否」的问题；估算类可不转写，竞争情形记场景草稿）</label>
+      <input type="text" id="task-hypo" placeholder="例：该市场空间在 A–B 亿元区间（留空则本任务暂不含候选答案）"></div>
+    <div class="field"><label><input type="checkbox" id="task-att" style="width:auto"> 挂载方法学附件（指标清单 / 测算框架 / 信源指引 · decision-12，单轨挂探究任务）</label></div>
+    <button class="btn primary" onclick="taskRegister()">登记</button>
+    <div class="muted" style="margin-top:8px">候选答案可选：世界递来的断言顺手包成问题（登记时转写）；自己的问题等测算完成在工作台作答（登记即判定）。</div>
+  </div>`;
+}
+
+function renderTaskDetail(id){
+  const t = task(id); if (!t) return '<div class="empty">探究任务不存在</div>';
+  const claims = t.claims.map(claim);
+  const hitItems = t.attachment ? [...new Set(t.attachment.metrics.filter(m => m.ev).map(m => m.ev))] : [];
+  const judging = claims.filter(c => c.status === '假设' && c.evidence.length);
+  const diffClaim = claims.find(c => c.diff);
+  const reasoning = claims.flatMap(c => c.reasoning.map(r => ({...r, cid:c.id}))).sort((a,b) => b.time.localeCompare(a.time));
+  return `
+  <h1 class="page"><a href="#/tasks">探究任务</a> / 工作台</h1>
+  <div class="sub">任务探究期间的工作台停留点（doc-07 §1 项目式节奏）：候选答案与判定、场景草稿、方法学附件、命中条目一屏聚合（decision-14）。</div>
+
+  <div class="box">
+    <h2>${esc(t.question)} &nbsp;${statusPill(t.status)}</h2>
+    <div class="muted">创建 ${esc(t.created)} · 登记方 ${esc(t.registrant)} · 判定机制内聚于此：判定、置信度、推理记录、反馈以单个答案为单位（decision-14）。</div>
+    ${t.status==='进行中'?`<div class="fbrow" style="margin-top:8px"><button class="btn small" onclick="taskClose('${t.id}')">结题（问题已回答或放弃 · 历史保留）</button></div>`:''}
+  </div>
+
+  ${t.parent || (t.children && t.children.length) ? `
+  <div class="box"><h2>任务树（问题树 · decision-15）</h2>
+    ${t.parent ? `<div class="muted">${taskParentLink(t.parent)}（子任务）</div>` : ''}
+    ${t.children && t.children.length ? `
+      <h3>子任务（按方法分解）</h3>
+      <table>
+        <tr><th>子任务</th><th>子结论</th><th>状态</th><th>置信度</th></tr>
+        ${t.children.map(cid => { const ct = task(cid); const cc = ct.claims.map(claim)[0] || null; return `
+          <tr><td><a href="#/task/${cid}">${esc(ct.question)}</a></td>
+          <td>${cc?esc(cc.stmt):'—'}</td>
+          <td>${cc?statusPill(cc.status):'—'}</td>
+          <td>${cc&&cc.confidence?esc(cc.confidence):'—'}</td></tr>`; }).join('')}
+      </table>
+      <div class="muted" style="margin-top:6px">父结论由分析智能体取子结论按框架合成（非叶子任务从子结论合成 · decision-15）；子结论变 → 父结论级联重估。</div>` : ''}
+  </div>` : ''}
+
+  <div class="box"><h2>候选答案与结论（命题 · 可选）</h2>
+    ${claims.length ? `<table>
+      <tr><th>答案陈述</th><th>状态</th><th>置信度</th><th>证据</th><th>动作</th></tr>
+      ${claims.map(c => `
+        <tr><td>${esc(c.stmt)}</td>
+        <td>${statusPill(c.status)}</td>
+        <td>${c.confidence?esc(c.confidence):'—'}</td>
+        <td class="muted">${c.evidence.length} 条</td>
+        <td>${c.status==='结论'?`<button class="btn small" onclick="claimFbError('${c.id}')">事实错误 → 重估</button>`:'<span class="muted">—</span>'}</td></tr>`).join('')}
+    </table>` : '<div class="muted">未设候选答案——估算类可不转写，最终答案作答（登记即判定）落成结论（decision-14）。</div>'}
+    <div class="muted" style="margin:6px 0 0">答案状态机：假设 ⇄ 结论 ⇄ 重估中 ⇄ 已证伪（锚点为探究任务的答案，机制不动 · decision-14）；结论反馈仅作用于结论态，非结论态翻案由系统触发。</div>
+
+    <h3 style="margin-top:14px">场景草稿（竞争情形 · 判定前不是答案）</h3>
+    ${(t.scenarios||[]).map(s => `<div style="border-bottom:1px solid #eee;padding:6px 0">${esc(s)}</div>`).join('') || '<div class="muted">暂无</div>'}
+    <div class="field" style="margin-top:10px"><label>补记场景草稿</label>
+      <input type="text" id="task-scenario" placeholder="例：该市场空间在 C–D 亿元区间（另一情形）"></div>
+    <button class="btn small" onclick="taskAddScenario('${t.id}')">补记</button>
+    <div class="muted" style="margin-top:6px">需被证据长期检验的情形可转写为候选答案；最终答案作答即判定（decision-13/14）。</div>
+
+    ${judging.length ? `
+    <h3 style="margin-top:14px">判定（构造性测算 v1 由用户完成）</h3>
+    ${judging.map(c => `
+      <div class="field"><label>${esc(c.stmt)} —— 测算结果（转结论；判定者记人 · decision-12，置信度仍由公式计算）</label>
+        <input type="text" id="judge-val-${c.id}" value="${c.id==='c1'?'128–142 亿元（落在登记区间内 → 证实）':''}"></div>`).join('')}
+    <div class="muted" style="margin-bottom:8px">公式 v1 预览：M=2（引用条目数），W=2（最弱条目内容可信度）→ 置信度 <b>高</b>（doc-04 §2.2）。</div>
+    ${judging.map(c => `<button class="btn small primary" style="margin-right:6px" onclick="claimJudge('${c.id}')">▶ ${c.id.toUpperCase()} 录入测算结果 → 转结论（原型模拟）</button>`).join('')}
+    ` : ''}
+
+    <h3 style="margin-top:14px">作答（登记即判定 · 无候选答案路径）</h3>
+    <div class="field"><label>答案陈述（构造性测算 v1 由用户完成 · 判定者记人；登记 + 判定两步并一步，直接落成结论）</label>
+      <input type="text" id="task-answer" placeholder="例：该市场空间在 126–140 亿元区间（测算结果）"></div>
+    <button class="btn small" onclick="answerRegister('${t.id}')">作答 → 结论</button>
+  </div>
+
+  ${diffClaim ? `
+  <div class="box"><h2>变化前后对比（${esc(diffClaim.id.toUpperCase())} · 重估中）</h2>
+    <table class="diff">
+      ${diffClaim.diff.map(d => `<tr><td>${esc(d.obj)}</td><td>${esc(d.before)}</td><td class="arrow">→</td><td><b>${esc(d.after)}</b></td></tr>`).join('')}
+    </table>
+    <div class="muted" style="margin-top:6px">${esc(diffClaim.alertNote)}</div>
+    <div style="margin-top:6px">触发源条目：${itemLink('i4')} <span class="muted">（可反馈事实错误 / 评级异议）</span></div>
+  </div>` : ''}
+
+  ${t.attachment ? `
+  <div class="box"><h2>方法学附件（单轨挂探究任务 · decision-12/14）</h2>
+    <h3>指标清单</h3>
+    <table>
+      <tr><th>参数</th><th>任务型需求（催生）</th><th>状态</th><th>命中证据</th></tr>
+      ${t.attachment.metrics.map(m => `
+        <tr><td>${esc(m.no)} ${esc(m.name)}</td>
+        <td>${m.req?reqLink(m.req):'<span class="muted">—</span>'}</td>
+        <td>${m.state==='已命中'?`<span class="pill">已命中</span>`:`<span class="muted">${esc(m.state)}</span>`}</td>
+        <td>${m.ev?itemLink(m.ev):'—'}</td></tr>`).join('')}
+    </table>
+    <h3>测算框架</h3><div class="muted">${esc(t.attachment.framework)}</div>
+    <h3>信源指引</h3><div class="muted">${esc(t.attachment.guide)}</div>
+    <div class="muted" style="margin-top:6px">附件是输入供货非判断主体：由记账层组装注入定向（采集依据）与分析（合成框架）的上下文（decision-12）。</div>
+  </div>` : ''}
+
+  <div class="box"><h2>催生的任务型需求</h2>
+    <div>${t.spawnedReqs.map(reqLink).join('、') || '—'}</div>
+    <div class="muted" style="margin-top:4px">v1 由消费方按指标清单落成（一次性，之后无人值守）；定向智能体自动提案落成列 v2（decision-12/14）。生效窗口至本任务结题。</div>
+  </div>
+
+  ${reasoning.length ? `
+  <div class="sketch"><h2 style="font-size:14.5px;margin:0 0 10px;display:flex;gap:8px;align-items:center">推理记录（全部答案 · 每次判定落档） <span class="sketch-tag">草图 · 实现时按真实数据重画</span></h2>
+    <table>
+      <tr><th>时间</th><th>答案</th><th>判定者</th><th>动作</th><th>依据（含公式版本）</th><th>引用</th></tr>
+      ${reasoning.map(r => `
+        <tr><td class="muted" style="white-space:nowrap">${esc(r.time)}</td><td>${esc(r.cid.toUpperCase())}</td><td>${esc(r.judge)}</td>
+        <td>${esc(r.action)}</td><td class="muted">${esc(r.basis)}</td>
+        <td>${r.cites.map(citeLink).join('、')||'—'}</td></tr>`).join('')}
+    </table>
+    <div class="muted" style="margin-top:6px">结论可审计、可级联重估的前提（术语表 · 推理记录）；命题页已撤，记录聚合于工作台（decision-14）。</div>
+  </div>` : ''}
+
+  ${hitItems.length ? `
+  <div class="box"><h2>命中条目（按指标聚合）</h2>
+    ${hitItems.map(iid => { const i = item(iid); return `
+      <div style="border-bottom:1px solid #eee;padding:7px 0">
+        <a href="#/item/${iid}">${esc(i.stmt)}</a> ${statusPill(i.status)} ${ratingPill(i.rating)}
+      </div>`; }).join('')}
+  </div>` : ''}`;
+}
+
+/* ================= 情报需求 ================= */
+function renderReqs(){
+  return `
+  <h1 class="page">情报需求</h1>
+  <div class="sub">订阅（长期）与任务（临时）两类；可由探究任务催生（decision-12/14）。覆盖度量内联，不设独立仪表盘（doc-07 §3）。</div>
+  <div class="box">
+    <table>
+      <tr><th>需求</th><th>类型</th><th>状态</th><th>覆盖 / 命中</th><th>生效窗口</th><th>催生关系</th></tr>
+      ${DB.reqs.map(r => `
+        <tr>
+          <td><a href="#/requirement/${r.id}">${esc(r.name)}</a></td>
+          <td><span class="pill">${r.type}</span></td>
+          <td>${statusPill(r.status)}</td>
+          <td>${r.coverage?`已分发 ${r.coverage.distr} · 已消费 ${r.coverage.cons}`:(r.hits?`命中 ${r.hits.length}`:'—')}</td>
+          <td class="muted">${esc(r.window)}</td>
+          <td class="muted">${r.spawnedBy?parentLink(r.spawnedBy):'—'}</td>
+        </tr>`).join('')}
+    </table>
+  </div>
+  <div class="box"><h2>新建情报需求</h2>
+    <div class="grid2">
+      <div class="field"><label>名称</label><input type="text" id="req-name" placeholder="例：长期跟踪某公司动态"></div>
+      <div class="field"><label>类型</label><select id="req-type"><option>订阅</option><option>任务</option></select></div>
+    </div>
+    <div class="field"><label>内容规格 · 主题</label><input type="text" id="req-topics" placeholder="主题词，以 · 分隔"></div>
+    <button class="btn primary" onclick="reqCreate()">创建（初始态 = 草稿）</button>
+  </div>`;
+}
+
+function renderReqDetail(id){
+  const r = req(id); if (!r) return '<div class="empty">需求不存在</div>';
+  const editable = r.status === '激活' && r.type === '订阅';
+  return `
+  <h1 class="page"><a href="#/reqs">情报需求</a> / 详情</h1>
+  <div class="sub">${esc(r.name)}</div>
+
+  <div class="box"><h2>${esc(r.name)} &nbsp;<span class="pill">${r.type}</span> ${statusPill(r.status)}</h2>
+    ${r.spawnedBy?`<div class="muted">${parentLink(r.spawnedBy)}（任务型 · decision-12/14）。</div>`:''}
+    <div class="fbrow" style="margin-top:8px">
+      ${r.status==='激活'?`<button class="btn small" onclick="reqAction('${r.id}','暂停')">暂停</button><button class="btn small" onclick="reqAction('${r.id}','关闭')">关闭</button>`:''}
+      ${r.status==='暂停'?`<button class="btn small" onclick="reqAction('${r.id}','激活')">恢复</button><button class="btn small" onclick="reqAction('${r.id}','关闭')">关闭</button>`:''}
+      ${r.status==='草稿'?`<button class="btn small primary" onclick="reqAction('${r.id}','激活')">确认激活</button>`:''}
+    </div>
+  </div>
+
+  ${r.spec ? `
+  <div class="box"><h2>内容规格 ${editable?'<span class="muted">（周频微调 · 旅程 2.1）</span>':''}</h2>
+    <div class="field"><label>主题</label><input type="text" id="spec-topics" value="${esc(r.spec.topics)}" ${editable?'':'disabled'}></div>
+    <div class="field"><label>关键词</label><input type="text" id="spec-keywords" value="${esc(r.spec.keywords)}" ${editable?'':'disabled'}></div>
+    <div class="field"><label>信源偏好</label><input type="text" id="spec-pref" value="${esc(r.spec.pref)}" ${editable?'':'disabled'}></div>
+    <div class="field"><label>时效 / 节奏</label><input type="text" id="spec-timing" value="${esc(r.spec.timing)}" ${editable?'':'disabled'}></div>
+    ${editable?`<button class="btn primary" onclick="reqSpecSave('${r.id}')">保存微调</button>`:''}
+  </div>` : ''}
+
+  ${r.coverage ? `
+  <div class="box"><h2>覆盖度量（内联）</h2>
+    <div>已分发 <b>${r.coverage.distr}</b> · 已消费 <b>${r.coverage.cons}</b> · 覆盖 <b>${Math.round(r.coverage.cons/r.coverage.distr*100)}%</b></div>
+    <div class="muted" style="margin-top:4px">已分发 / 已消费状态度量需求覆盖，防「采而不用，沦为信息坟场」（立项 §8 · 领域模型 §4.1）。</div>
+  </div>` : ''}
+
+  ${r.hits ? `
+  <div class="box"><h2>命中条目</h2>
+    ${r.hits.length ? r.hits.map(itemLink).join('、') : '<div class="empty">待命中——参数不会自己撞上来（decision-12 背景）</div>'}
+  </div>` : ''}
+
+  ${r.recentHits ? `
+  <div class="box"><h2>近期命中（最近优先）</h2>
+    ${r.recentHits.map(iid => { const i = item(iid); return `
+      <div style="border-bottom:1px solid #eee;padding:7px 0">
+        <a href="#/item/${iid}">${esc(i.stmt)}</a> ${statusPill(i.status)}
+      </div>`; }).join('')}
+  </div>` : ''}`;
+}
+
+/* ================= 信源库 ================= */
+function renderSources(){
+  const ok = DB.sources.filter(s => s.status === '已确认');
+  const pend = DB.sources.filter(s => s.status === '待确认');
+  return `
+  <h1 class="page">信源库</h1>
+  <div class="sub">已准入信源的全集；新信源经双通道确认制准入（decision-09）。</div>
+
+  ${pend.length ? `
+  <div class="box"><h2>待确认（不入库 · 不建画像 · 不记账）</h2>
+    ${pend.map(s => `
+      <div style="border-bottom:1px solid #eee;padding:9px 0">
+        <b>${esc(s.name)}</b> <span class="pill">${esc(s.type)}</span>
+        <span class="muted"> · ${esc(s.found.channel)} · ${esc(s.found.time)}</span>
+        <div class="fbrow">
+          <button class="btn small primary" onclick="confirmSource('${s.id}')">确认入信源库</button>
+          <button class="btn small" onclick="ignoreSource('${s.id}')">忽略</button>
+        </div>
+      </div>`).join('')}
+  </div>` : ''}
+
+  <div class="box">
+    <table>
+      <tr><th>信源</th><th>类型</th><th>信源信用</th><th>领域覆盖</th><th>历史反馈</th><th>状态</th></tr>
+      ${ok.map(s => `
+        <tr>
+          <td><a href="#/source/${s.id}">${esc(s.name)}</a></td>
+          <td class="muted">${esc(s.type)}</td>
+          <td><span class="pill rating">${s.credit}</span></td>
+          <td class="muted">${esc(s.profile.domain)}</td>
+          <td class="muted">有效 ×${s.fb.valid} · 事实错误 ×${s.fb.factual}</td>
+          <td>${statusPill(s.status)}</td>
+        </tr>`).join('')}
+    </table>
+  </div>
+
+  <div class="box"><h2>人工登记信源（双通道 · 通道一）</h2>
+    <div class="grid2">
+      <div class="field"><label>名称</label><input type="text" id="src-name" placeholder="例：某行业协会官网"></div>
+      <div class="field"><label>类型</label><select id="src-type"><option>机构官网</option><option>行业媒体</option><option>行业自媒体</option><option>人物</option></select></div>
+    </div>
+    <button class="btn primary" onclick="srcRegister()">登记（经确认入信源库）</button>
+  </div>`;
+}
+
+function renderSourceDetail(id){
+  const s = src(id); if (!s) return '<div class="empty">信源不存在</div>';
+  const inItems = DB.items.filter(i => i.provenance.some(p => p.src === id) || i.provenanceSrc === id);
+  return `
+  <h1 class="page"><a href="#/sources">信源库</a> / 信源画像</h1>
+  <div class="sub">${esc(s.name)} · ${esc(s.type)} ${statusPill(s.status)}</div>
+
+  <div class="box"><h2>信源信用 <span class="pill rating">${s.credit}</span></h2>
+    <div class="muted">${esc(s.creditNote)}</div>
+    <div class="muted" style="margin-top:4px">公式 v1：有效 +1 · 事实错误 −2 · 180 天半衰期 · 累计分分档映射 A–F（decision-04）；更新过程可重放。信用只能记在信源上。</div>
+    <div class="muted" style="margin-top:4px">信用归因：反馈定位到转引链上最早引入该陈述的信源，如实转述者不受奖惩（decision-08）。</div>
+  </div>
+
+  <div class="box"><h2>信源画像</h2>
+    <dl class="kv">
+      <dt>领域覆盖</dt><dd>${esc(s.profile.domain)}</dd>
+      <dt>更新频率</dt><dd>${esc(s.profile.freq)}</dd>
+      <dt>立场偏差</dt><dd>${esc(s.profile.stance)}</dd>
+      <dt>独立性关联</dt><dd>${esc(s.profile.indep)}</dd>
+      <dt>历史反馈</dt><dd>有效 ×${s.fb.valid} · 事实错误 ×${s.fb.factual} · 最近 ${esc(s.fb.last)}</dd>
+    </dl>
+    <div class="muted" style="margin-top:6px">画像 ≠ 信用：信用只是画像中的一个动态字段（术语表）。</div>
+  </div>
+
+  <div class="box"><h2>参与条目（转引链出现即计）</h2>
+    ${inItems.length ? inItems.map(i => `
+      <div style="border-bottom:1px solid #eee;padding:7px 0">
+        <a href="#/item/${i.id}">${esc(i.stmt)}</a> ${statusPill(i.status)} ${ratingPill(i.rating)}
+        ${i.provenanceSrc===id?'<span class="pill">出处信源</span>':''}
+      </div>`).join('') : '<div class="empty">暂无</div>'}
+  </div>`;
+}
+
+/* ================= 人工录入 ================= */
+const CARRIERS = ['录音','图片','文字','文档'];
+function toggleCarrier(c){
+  const n = UI.subCarriers.indexOf(c);
+  n >= 0 ? UI.subCarriers.splice(n, 1) : UI.subCarriers.push(c);
+  render();
+}
+function renderSubmit(){
+  const manual = DB.items.filter(i => i.mode === '人工提交');
+  const cs = UI.subCarriers;
+  return `
+  <h1 class="page">人工录入</h1>
+  <div class="sub">全局动作，不占导航位（doc-07 §3）；人工提交是采集模式之一（由媒介派生），素材与自动采集走同一条流水线，不经定向任务化、直接进入审查（doc-06 §3）。</div>
+
+  <div class="box"><h2>提交素材</h2>
+    <div class="field"><label>媒介（获取场景 · 决定采集模式——互联网为自动拉取，不走本页）</label>
+      <select id="sub-medium">
+        <option>行业展会</option><option>用户访谈</option><option>行业交流</option><option>内部会议</option><option>文档交换</option>
+      </select></div>
+    <div class="field"><label>载体（可多选 · 每个载体各自走处理管线 ASR / OCR / 解析；跨素材的同一事件由审查按事件同一性合并 · decision-02 / decision-10）</label>
+      <div class="chips">${CARRIERS.map(c => `<span class="chip ${cs.includes(c)?'on':''}" onclick="toggleCarrier('${c}')">${c}</span>`).join('')}</div></div>
+    ${['录音','图片','文档'].filter(c => cs.includes(c)).map(c => `
+      <div class="field"><label>载体素材 · ${c}</label>
+        <button class="btn" onclick="$('#sub-file-${c}').textContent='已选择：素材_${c}（原型占位）'">选择文件…</button>
+        <span class="muted" id="sub-file-${c}">未选择——可先提交，后补素材</span></div>`).join('')}
+    <div class="field"><label>文字纪要（最简路径：没有录音 / 照片时，直接给文字即可）</label>
+      <textarea id="sub-text" placeholder="会议 / 访谈纪要，或当场记录的要点；留空则陈述由采集智能体从素材识别"></textarea></div>
+    <div class="field"><label>关联情报需求（可选）——关联后素材作为该需求的命中候选，核实完成后按其分发回来；不填则由审查按激活需求自动匹配相关性</label>
+      <select id="sub-req"><option value="">不关联（按激活需求自动匹配）</option>${DB.reqs.filter(r=>r.status==='激活').map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select></div>
+    <div class="muted" style="margin:10px 0">流水线：素材 →（采集 · 按载体管线）→ 线索 →（审查 · 人工提交不经定向任务化）→ 候选情报 →（核实评级）→ 已核实 → 按需求分发回来</div>
+    <button class="btn primary" onclick="submitManual()">提交</button>
+  </div>
+
+  <div class="box"><h2>近期人工提交（进度在条目列表按人工提交过滤可见）</h2>
+    ${manual.length ? manual.map(i => `
+      <div style="border-bottom:1px solid #eee;padding:8px 0">
+        <a href="#/item/${i.id}">${esc(i.stmt)}</a> ${statusPill(i.status)}
+        <span class="muted">${esc(i.medium)} / ${esc(i.carrier)} · ${esc(i.collectTime)}</span>
+      </div>`).join('') : '<div class="empty">暂无</div>'}
+  </div>`;
+}
+
+/* ================= 推送通道（模拟 IM） ================= */
+function imToggle(){
+  const el = $('#im');
+  el.hidden = !el.hidden;
+  renderIm();
+}
+function renderIm(){
+  const el = $('#im');
+  if (el.hidden) return;
+  const digest = DB.items.filter(i => i.status === '已分发');
+  const pendSrc = DB.sources.filter(s => s.status === '待确认');
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h3>推送通道 · IM 机器人（模拟）</h3>
+      <button class="btn small" onclick="imToggle()">✕ 关闭</button>
+    </div>
+    <div class="im-note">IM 机器人为唯一推送通道：主动触达 · 批量摘要 · 消息内反馈（decision-11）；站内收件箱兜底存档，邮件 v1 不做。</div>
+
+    <div class="im-time">☀ 晨间分发汇总 · 2026-09-08 08:00 · 批量节奏</div>
+    <div class="muted" style="margin-bottom:6px">订阅「长期跟踪 W 公司动态」 · 昨日新核实 ${digest.length} 条</div>
+    ${digest.map(i => `
+      <div class="im-card">
+        <div><b>${esc(i.stmt)}</b></div>
+        <div class="meta">${ratingPill(i.rating)} <span class="pill">独立信源 ×${i.indepCount}</span></div>
+        <div class="fbrow">${fbQuickRow(i.id)}</div>
+      </div>`).join('') || '<div class="im-card muted">无新条目</div>'}
+
+    <div class="im-time">⚠ 警报 · 事件即时（与日常分发区分级别）</div>
+    ${DB.alerts.map(a => `
+      <div class="im-card" style="${a.level==='高'?'border-color:#111;border-width:1.5px':''}">
+        <div><span class="pill ${a.level==='高'?'hi':''}">${esc(a.kind)}</span> <b>${esc(a.title)}</b></div>
+        <div class="muted" style="margin:4px 0">${esc(a.body)}</div>
+        <div class="muted">${esc(a.time)}</div>
+        <div class="fbrow"><a class="btn small" href="#/${a.to}" onclick="imToggle()">${esc(a.toLabel)}</a></div>
+      </div>`).join('')}
+
+    ${pendSrc.length ? `
+    <div class="im-time">◯ 新信源确认提醒</div>
+    ${pendSrc.map(s => `
+      <div class="im-card">
+        <div><b>${esc(s.name)}</b> <span class="muted">· ${esc(s.found.channel)}</span></div>
+        <div class="muted">${esc(s.note)}</div>
+        <div class="fbrow"><a class="btn small" href="#/inbox" onclick="imToggle()">去确认</a></div>
+      </div>`).join('')}` : ''}`;
+}
+
+/* ================= 动作（原型模拟） ================= */
+function alertRead(n){ DB.alerts[n].read = true; renderNav('inbox'); }
+
+function applyFeedback(it, type, reason){
+  const r = reason && reason.trim() ? reason.trim() : '快捷 · ' + type;
+  it.feedbacks.push({type, reason:r, time:'2026-09-08 08:41',
+    routing:ROUTING_NOTE[type] + (['有效','事实错误'].includes(type)&&it.attribution&&it.attribution!=='—'?` · 归因：${it.attribution}`:'')});
+  if (type === '事实错误'){
+    it.status = '作废';
+    it.trail.push({t:'作废（事实错误）', time:'2026-09-08 08:41'});
+    const cascaded = [];
+    DB.claims.forEach(c => {
+      if (['结论','已证伪'].includes(c.status) && c.evidence.some(e => e.item === it.id)){
+        c.status = '重估中';
+        c.reasoning.push({time:'2026-09-08 08:41', judge:'记账层（调度）', action:'级联重估触发：' + it.id + ' 作废 → 进入重估中', basis:'推理记录引用关系', cites:[it.id]});
+        cascaded.push(c.id);
+      }
+    });
+    toast('已作废' + (cascaded.length?'，级联重估：'+cascaded.join('、'):'（无结论引用该条目）'));
+  } else if (type === '评级异议'){
+    if (it.status === '已分发'){ it.status = '已消费'; it.trail.push({t:'已消费（反馈：评级异议）', time:'2026-09-08 08:41'}); }
+    it.ratingHistory.push({time:'2026-09-08 08:41', rating:it.rating, basis:'评级异议触发重评（decision-07）· 重评中'});
+    toast('已记录评级异议 · 已触发评级重评');
+  } else {
+    if (it.status === '已分发'){ it.status = '已消费'; it.trail.push({t:'已消费（反馈：' + type + '）', time:'2026-09-08 08:41'}); }
+    toast('已记录 ' + type + ' · ' + ROUTING_NOTE[type]);
+  }
+}
+function fbQuick(id, type){
+  const it = item(id); if (!it) return;
+  if (type === '事实错误'){ PENDING_FB = id; location.hash = '#/item/' + id; render(); return; }
+  applyFeedback(it, type, null);
+  refresh();
+}
+function fbSubmit(id){
+  const it = item(id); if (!it) return;
+  const type = $('#fb-type-' + id).value;
+  const reason = $('#fb-reason-' + id).value;
+  if (type === '事实错误' && !reason.trim()){
+    const err = $('#fb-err-' + id); err.hidden = false; return;
+  }
+  PENDING_FB = null;
+  applyFeedback(it, type, reason);
+  refresh();
+}
+
+function confirmSource(id){
+  const s = src(id);
+  s.status = '已确认';
+  s.profile = {domain:'（待积累画像）', freq:'—', stance:'—', indep:'—'};
+  s.fb = {valid:0, factual:0, last:'—'};
+  s.credit = 'F'; s.creditNote = '新准入 · 无半衰期内记录 → 档 F（无法判断）';
+  toast('已确认入信源库 · 开始建画像与记账');
+  refresh();
+}
+function ignoreSource(id){
+  DB.sources = DB.sources.filter(s => s.id !== id);
+  toast('已忽略（仅作记录，不入库）');
+  refresh();
+}
+function srcRegister(){
+  const name = $('#src-name').value.trim();
+  if (!name){ toast('请填写信源名称'); return; }
+  DB.sources.push({id:'s' + (DB.sources.length + 1), name, type:$('#src-type').value, credit:'F', status:'已确认',
+    profile:{domain:'（待积累画像）', freq:'—', stance:'—', indep:'—'}, fb:{valid:0, factual:0, last:'—'},
+    creditNote:'人工登记（通道一 · decision-09）· 新准入 → 档 F'});
+  toast('已登记入信源库（人工登记通道）');
+  refresh();
+}
+
+function pipeAdvance(id){
+  const i = item(id); if (!i) return;
+  if (i.status === '线索'){
+    i.status = '候选情报';
+    i.pipe[1].state = 'done'; i.pipe[1].time = '09-08 08:42'; i.pipe[1].note = '通过 → 候选情报';
+    i.pipe[2].state = 'doing'; i.pipe[2].since = '09-08 08:42';
+    i.trail.push({t:'候选情报（审查通过）', time:'2026-09-08 08:42'});
+    toast('审查通过 → 候选情报');
+  } else if (i.status === '候选情报'){
+    i.status = '已核实';
+    const p = i.verifyPreset || {rating:'B3', basis:'公式 v1：N=1，R=B → 内容可信度 3'};
+    i.rating = p.rating; i.indepCount = 1; i.indep = i.indep.length ? i.indep : [i.provenanceSrc];
+    i.ratingHistory.push({v:1, time:'2026-09-08 08:43', rating:p.rating, basis:p.basis, current:true});
+    i.pipe && i.pipe.forEach(s => { if (s.state === 'doing'){ s.state = 'done'; s.time = '09-08 08:43'; } });
+    i.trail.push({t:'已核实（' + p.rating + '）', time:'2026-09-08 08:43'});
+    toast('核实评级完成 → 已核实 ' + p.rating);
+  } else if (i.status === '已核实'){
+    i.status = '已分发';
+    if (!i.hits.length) i.hits = ['r1'];
+    i.trail.push({t:'已分发（命中 ' + i.hits.join('、') + '）', time:'2026-09-08 08:44'});
+    toast('已分发 · 见收件箱（晨间分发汇总为批量节奏，下一晨间送达推送）');
+  }
+  refresh();
+}
+
+function submitManual(){
+  const medium = $('#sub-medium').value;
+  const textEl = $('#sub-text');
+  const text = textEl ? textEl.value.trim() : '';
+  const carriers = UI.subCarriers.slice();
+  if (!carriers.length && text) carriers.push('文字');
+  if (!carriers.length){ toast('请选择载体素材，或填写文字纪要'); return; }
+  const carrier = carriers.join(' + ');
+  const rid = $('#sub-req').value;
+  const stmt = text || '（人工录入 ' + carrier + ' · 陈述待采集智能体识别）';
+  const id = 'i' + (DB.items.length + 1);
+  DB.items.unshift({
+    id, stmt, status:'线索', rating:null, indepCount:null, indep:[], provenanceSrc:null,
+    provenance:[{src:null, role:'人工素材 · 溯源五要素待组装', time:'2026-09-08 08:45', carrier, chain:'A'}],
+    ratingHistory:[], eventTime:'2026-09-08', collectTime:'2026-09-08 08:45', medium, carrier, mode:'人工提交',
+    hits:rid?[rid]:[], citedBy:[], feedbacks:[],
+    pipe:[{name:'线索 · 采集（按载体管线：' + (carriers.length > 1 ? carriers.join(' / ') + ' 并行，各自产出线索' : 'ASR / OCR / 解析') + '）', state:'done', time:'09-08 08:45'},
+          {name:'审查 · 相关性 / 事件同一性 / 有效性初筛', state:'todo'},
+          {name:'核实评级 · 穿透转引链 · 独立信源检索', state:'todo'}],
+    trail:[{t:'线索（人工提交 · 不经定向任务化，直接进入审查）', time:'2026-09-08 08:45'}],
+    attribution:'—'
+  });
+  toast('已提交 → 线索（同一流水线，进度见条目详情）');
+  location.hash = '#/item/' + id;
+}
+
+function taskRegister(){
+  const q = $('#task-question').value.trim();
+  const h = $('#task-hypo').value.trim();
+  if (!q){ toast('请填写问题陈述'); return; }
+  const tid = 't' + (DB.tasks.length + 1);
+  let cid = null;
+  if (h){
+    cid = 'c' + (DB.claims.length + 1);
+    DB.claims.push({id:cid, stmt:h, status:'假设', confidence:null, registered:'2026-09-08', registrant:'消费方', byTask:tid,
+      spawnedReqs:[], evidence:[],
+      reasoning:[{time:'2026-09-08 08:50', judge:'消费方', action:'登记候选答案（初始态 = 假设，登记时转写）', basis:'decision-14', cites:[]}]});
+  }
+  DB.tasks.push({id:tid, question:q, status:'进行中', created:'2026-09-08', registrant:'消费方',
+    attachment:$('#task-att').checked?{metrics:[], framework:'（示例附件占位）', guide:'（示例附件占位）'}:null,
+    claims:cid?[cid]:[], scenarios:[], spawnedReqs:[]});
+  toast('已登记探究任务' + (h?' + 转写首个候选答案':'（未转写——答案可作答即判定）'));
+  location.hash = '#/task/' + tid;
+}
+function taskAddScenario(tid){
+  const t = task(tid); if (!t) return;
+  const s = $('#task-scenario').value.trim();
+  if (!s){ toast('请填写场景草稿内容'); return; }
+  (t.scenarios = t.scenarios || []).push(s);
+  toast('已补记场景草稿（判定前不是答案）');
+  refresh();
+}
+function taskClose(tid){
+  const t = task(tid); if (!t) return;
+  t.status = '已结题';
+  const closed = [];
+  (t.children||[]).forEach(cid => { const ct = task(cid); if (ct && ct.status === '进行中'){ ct.status = '已结题'; closed.push(cid.toUpperCase() + '·子任务'); } });
+  t.spawnedReqs.forEach(rid => { const r = req(rid); if (r && r.status === '激活'){ r.status = '关闭'; closed.push(rid.toUpperCase()); } });
+  toast('探究任务已结题 · 历史保留' + (closed.length?' · 关闭：' + closed.join('、'):'') + '（decision-13/15）');
+  refresh();
+}
+
+function answerRegister(tid){
+  const t = task(tid); if (!t) return;
+  const stmt = $('#task-answer').value.trim();
+  if (!stmt){ toast('请填写答案陈述'); return; }
+  const cid = 'c' + (DB.claims.length + 1);
+  const ev = (t.attachment ? t.attachment.metrics.filter(m => m.ev).map(m => m.ev) : [])
+    .map(iid => ({item:iid, as:'判定证据（工作台聚合）'}));
+  DB.claims.push({id:cid, stmt, status:'结论', confidence:'高', registered:'2026-09-08', registrant:'消费方', byTask:tid,
+    spawnedReqs:[], evidence:ev,
+    reasoning:[{time:'2026-09-08 08:52', judge:'消费方（构造性测算 v1 · 判定者记人）',
+      action:'作答（登记即判定）→ 结论', basis:'置信度由公式从账本变量计算（decision-12/14）', cites:ev.map(e => e.item)}]});
+  t.claims.push(cid);
+  toast('已作答 · 结论（登记即判定）· 置信度由公式计算 · 结论可被引用（间接消费）');
+  refresh();
+}
+function claimJudge(id){
+  const c = claim(id); if (!c) return;
+  const el = $('#judge-val-' + id);
+  const val = (el && el.value.trim()) || '（构造性测算结果）';
+  c.status = '结论';
+  c.confidence = '高';
+  c.reasoning.push({time:'2026-09-08 08:47', judge:'消费方（构造性测算 v1 · 判定者记人 · decision-12）',
+    action:'判定：证实 → 结论（' + val + '）', basis:'公式 v1：M=2，W=2 → 置信度 高', cites:c.evidence.map(e => e.item)});
+  toast('已转结论 · 置信度 高（公式从账本变量计算）· 结论可被引用（间接消费）');
+  refresh();
+}
+function claimFbError(id){
+  const c = claim(id); if (!c) return;
+  c.status = '重估中';
+  c.reasoning.push({time:'2026-09-08 08:48', judge:'记账层（反馈路由）', action:'事实错误反馈 → 进入重估中', basis:'结论反馈仅作用于结论态答案（探究任务工作台入口）；理由必填（示例：测算参数引用失效）', cites:[]});
+  toast('结论 → 重估中（对结论态答案提事实错误触发重估）');
+  refresh();
+}
+
+function reqAction(id, to){
+  const r = req(id); if (!r) return;
+  r.status = to;
+  toast('情报需求 → ' + to);
+  refresh();
+}
+function reqSpecSave(id){
+  const r = req(id); if (!r) return;
+  r.spec.topics = $('#spec-topics').value;
+  r.spec.keywords = $('#spec-keywords').value;
+  r.spec.pref = $('#spec-pref').value;
+  r.spec.timing = $('#spec-timing').value;
+  toast('内容规格已更新 · 微调生效于下轮采集');
+  refresh();
+}
+function reqCreate(){
+  const name = $('#req-name').value.trim();
+  if (!name){ toast('请填写需求名称'); return; }
+  const id = 'r' + (DB.reqs.length + 1);
+  DB.reqs.push({id, name, type:$('#req-type').value, status:'草稿', window:'长期',
+    spec:{topics:$('#req-topics').value, keywords:'', pref:'', timing:'晨间分发汇总（批量）'}});
+  toast('已创建 · 初始态 = 草稿');
+  location.hash = '#/requirement/' + id;
+}
+
+/* ================= 启动 ================= */
+window.addEventListener('hashchange', render);
+render();
+</script>
+</body>
+</html>
