@@ -113,7 +113,7 @@ textarea{min-height:64px;resize:vertical}
       <summary>单账号 · lancer ▾</summary>
       <div class="menu">
         <div class="menu-title">账号信息</div>
-        <div class="muted">单消费方 · 本机部署（多消费方不在 v1 · 立项 §7）</div>
+        <div class="muted">单消费方 · 本机部署（多消费方不在范围 · 立项 §7）</div>
         <div class="menu-title">推送通道绑定</div>
         <div>IM 机器人 · 已绑定 <button class="btn small" onclick="toast('换绑 / 停推为原型占位——推送通道的配置归宿在账户区')">换绑</button></div>
         <div class="menu-title">分发偏好</div>
@@ -252,7 +252,7 @@ const DB = {
 
   tasks: [
     {id:'t1', question:'露天矿装车市场空间有多大？', status:'进行中', created:'2026-09-03', registrant:'消费方',
-     attachment:{
+     prompt:{
        metrics:[
          {no:'①', name:'国内露天矿数量与分布', req:'r2', state:'待命中'},
          {no:'②', name:'在役矿卡保有量', req:'r3', state:'已命中', ev:'i1'},
@@ -260,78 +260,75 @@ const DB = {
          {no:'④', name:'整机均价与订单结构', req:'r4', state:'已命中', ev:'i2'},
          {no:'⑤', name:'电驱渗透率', req:'r4', state:'待命中'},
          {no:'⑥', name:'出口占比与折算', req:null, state:'信源指引覆盖（未单列需求）'}],
-       framework:'三法交叉定区间；父任务取子结论按交集定值合成，叶子参数由子任务/直挂需求采集（构造性测算 v1 由用户完成 · 判定者记人 · decision-12/15）',
+       framework:'三法交叉定区间；父课题取子命题按交集定值合成，叶子参数由子课题/直挂需求采集（构造性测算由用户完成 · 判定者记人 · decision-15）',
        guide:'行业协会统计、上市公司年报与投资者问答、招标公示网、海关出口数据'},
      claims:['c1'], scenarios:['露天矿装车市场空间在 150–200 亿元区间（含出口拉动的上限情形）'], spawnedReqs:['r2','r3','r4'],
      children:['t1a','t1b'],
-     note:'问题树（decision-15）：定向智能体按方法学分解为子任务（各测算法）+ 叶子情报需求；子结论合成父结论。判定以单个答案为单位——判定、置信度、推理记录、反馈内聚于本任务（decision-14）。'},
-    {id:'t1a', parent:'t1', question:'单元存量法测算（单元数 × 配置）', status:'进行中', created:'2026-09-03', registrant:'定向智能体（v2 自动提案）',
-     attachment:null, claims:['c1a'], scenarios:[], spawnedReqs:[], children:[],
-     note:'子任务·方法一（decision-15）：叶子参数（①②③）采集 → 分析智能体出子结论；父任务取子结论合成。'},
-    {id:'t1b', parent:'t1', question:'工作量产能法测算（年总量 ÷ 单台能力 × 份额）', status:'进行中', created:'2026-09-03', registrant:'定向智能体（v2 自动提案）',
-     attachment:null, claims:['c1b'], scenarios:[], spawnedReqs:[], children:[],
-     note:'子任务·方法二（decision-15）：叶子参数（④⑤）采集 → 分析智能体出子结论；父任务取子结论合成。'},
+     note:'问题树（decision-15）：定向智能体按提示词递归分解为子课题（各测算法）+ 叶子情报需求（盯输入）；子命题合成父命题。判定、置信度、推理记录归命题。'},
+    {id:'t1a', parent:'t1', question:'单元存量法测算（单元数 × 配置）', status:'进行中', created:'2026-09-03', registrant:'定向智能体',
+     prompt:null, claims:['c1a'], scenarios:[], spawnedReqs:[], children:[],
+     note:'子课题·方法一（decision-15）：叶子参数（①②③）采集 → 分析智能体判定子命题；父课题取子命题合成。'},
+    {id:'t1b', parent:'t1', question:'工作量产能法测算（年总量 ÷ 单台能力 × 份额）', status:'进行中', created:'2026-09-03', registrant:'定向智能体',
+     prompt:null, claims:['c1b'], scenarios:[], spawnedReqs:[], children:[],
+     note:'子课题·方法二（decision-15）：叶子参数（④⑤）采集 → 分析智能体判定子命题；父课题取子命题合成。'},
 
     {id:'t2', question:'W 公司下一代矿卡会全系采用电驱吗？', status:'进行中', created:'2026-09-01', registrant:'消费方',
-     attachment:null, claims:['c2'], scenarios:[], spawnedReqs:[],
-     note:'世界递来的断言（渠道大会口径）顺手包成问题：判断题 = 答案形态为「是/否」的问题（decision-14）。'},
+     prompt:null, claims:['c2'], scenarios:[], spawnedReqs:[],
+     note:'渠道大会口径顺手包成问题；答案落成命题（decision-15）。'},
     {id:'t3', question:'W 公司会退出海外矿卡市场吗？', status:'已结题', created:'2026-04-20', registrant:'消费方',
-     attachment:null, claims:['c3'], scenarios:[], spawnedReqs:[],
-     note:'已证伪留底（负知识资产）：结题保留历史（decision-13/14）。'},
+     prompt:null, claims:['c3'], scenarios:[], spawnedReqs:[],
+     note:'已证伪留底（负知识资产）：命题不受结题影响，可继续被引用与翻案（decision-15）。'},
   ],
 
   claims: [
     {id:'c1', stmt:'露天矿装车市场空间在 120–150 亿元区间', status:'假设', confidence:null, registered:'2026-09-03', registrant:'消费方', byTask:'t1',
-     spawnedReqs:[], evidence:[{item:'i1', as:'判定证据（参数② · 在役矿卡保有量）'},{item:'i2', as:'判定证据（参数④ · 整机均价与订单结构）'}],
+     spawnedReqs:[], evidence:[{subclaim:'c1a', as:'子结论 · 单元存量法'},{subclaim:'c1b', as:'子结论 · 工作量产能法'}],
      reasoning:[
-       {time:'2026-09-03 10:00', judge:'消费方', action:'登记候选答案（初始态 = 假设，登记时转写）', basis:'decision-14', cites:[]},
-       {time:'2026-09-07 21:10', judge:'记账层（分发检索）', action:'证据挂载：I1（参数②）', basis:'命中探究任务催生的任务型需求', cites:['i1']},
-       {time:'2026-09-07 21:12', judge:'记账层（分发检索）', action:'证据挂载：I2（参数④）', basis:'命中探究任务催生的任务型需求', cites:['i2']},
-       {time:'2026-09-08 09:00', judge:'分析智能体', action:'合成进行中：已取子结论 C1A（单元存量法 80–110 亿），待 C1B（工作量产能法）出结论后交集定值', basis:'非叶子任务从子结论合成（decision-15）', cites:['c1a']}]},
+       {time:'2026-09-03 10:00', judge:'消费方', action:'登记候选答案命题（初始态 = 假设）', basis:'decision-15', cites:[]},
+       {time:'2026-09-08 09:00', judge:'分析智能体', action:'合成进行中：已取子命题 C1A（单元存量法 80–110 亿），待 C1B 出结论后交集定值', basis:'非叶子命题从子命题合成（逻辑合成 · decision-15）', cites:['c1a']}]},
 
     {id:'c1a', stmt:'单元存量法估 80–110 亿元', status:'结论', confidence:'中', registered:'2026-09-07', registrant:'消费方', byTask:'t1a',
      spawnedReqs:[], evidence:[{item:'i1', as:'参数② · 在役矿卡保有量'}],
      reasoning:[
-       {time:'2026-09-07 21:30', judge:'消费方（构造性测算 v1 · 判定者记人 · decision-12/15）', action:'子任务判定：证实 → 子结论', basis:'公式 v1：M=1，W=1 → 置信度 中（单法仅参考区间）', cites:['i1']}]},
+       {time:'2026-09-07 21:30', judge:'消费方（构造性测算 · 判定者记人 · decision-15）', action:'子课题判定：证实 → 子结论命题', basis:'公式 v1：M=1，W=1 → 置信度 中（单法仅参考区间）', cites:['i1']}]},
     {id:'c1b', stmt:'工作量产能法估 95–125 亿元', status:'假设', confidence:null, registered:'2026-09-07', registrant:'消费方', byTask:'t1b',
      spawnedReqs:[], evidence:[{item:'i2', as:'参数④ · 整机均价与订单结构'}],
      reasoning:[
-       {time:'2026-09-07 21:40', judge:'消费方', action:'登记候选答案（初始态 = 假设）', basis:'decision-14', cites:[]},
-       {time:'2026-09-07 21:42', judge:'记账层（分发检索）', action:'证据挂载：I2（参数④）', basis:'命中子任务催生的任务型需求', cites:['i2']}]},
+       {time:'2026-09-07 21:40', judge:'消费方', action:'登记候选答案命题（初始态 = 假设）', basis:'decision-15', cites:[]}]},
 
     {id:'c2', stmt:'W 公司下一代矿卡将全系采用电驱路线', status:'重估中', confidence:'中（重估前）', registered:'2026-09-01', registrant:'消费方', byTask:'t2',
      spawnedReqs:[], evidence:[{item:'i2', as:'判定证据'},{item:'i4', as:'判定证据（已失效）'}],
      diff:[
        {obj:'情报条目 I4（触发源）', before:'D4 · 已消费', after:'作废（事实错误）'},
-       {obj:'答案 C2 状态', before:'结论', after:'重估中'},
+       {obj:'命题 C2 状态', before:'结论', after:'重估中'},
        {obj:'C2 置信度', before:'中（公式 v1：M=2，W=4）', after:'重估中（维持 / 修订 / 降级存疑 / 推翻）'}],
      reasoning:[
-       {time:'2026-09-01 09:00', judge:'消费方', action:'登记候选答案（初始态 = 假设，登记时转写）', basis:'decision-14', cites:[]},
-       {time:'2026-09-02 09:00', judge:'分析智能体', action:'判定：证实 → 结论', basis:'公式 v1：M=2（I2, I4），W=4（I4 最弱）→ 置信度 中', cites:['i2','i4']},
+       {time:'2026-09-01 09:00', judge:'消费方', action:'登记候选答案命题（初始态 = 假设）', basis:'decision-15', cites:[]},
+       {time:'2026-09-02 09:00', judge:'分析智能体', action:'判定：证实 → 结论命题', basis:'公式 v1：M=2（I2, I4），W=4（I4 最弱）→ 置信度 中', cites:['i2','i4']},
        {time:'2026-09-04 09:10', judge:'记账层（调度）', action:'级联重估触发：I4 作废 → 进入重估中', basis:'推理记录引用关系（I4 已失效）', cites:['i4']}],
      alertNote:'多数情形无需操作——重估自动收敛；对触发源条目可反馈（事实错误 / 评级异议）'},
 
     {id:'c3', stmt:'W 公司将退出海外矿卡市场', status:'已证伪', confidence:null, registered:'2026-04-20', registrant:'消费方', byTask:'t3',
      spawnedReqs:[], evidence:[{item:'i7', as:'证伪依据'}],
      reasoning:[
-       {time:'2026-04-20 10:00', judge:'消费方', action:'登记候选答案（初始态 = 假设，登记时转写）', basis:'decision-14', cites:[]},
+       {time:'2026-04-20 10:00', judge:'消费方', action:'登记候选答案命题（初始态 = 假设）', basis:'decision-15', cites:[]},
        {time:'2026-05-12 11:00', judge:'分析智能体', action:'判定：证伪 → 已证伪', basis:'I7 交付事实与命题矛盾', cites:['i7']}],
      note:'负知识资产：默认稳态保留，避免重复提出、辅助排除法；证伪依据动摇时进入重估'},
   ],
 
   reqs: [
-    {id:'r1', name:'长期跟踪 W 公司动态', type:'订阅', status:'激活', window:'长期',
+    {id:'r1', name:'长期跟踪 W 公司动态', status:'激活', window:'常驻',
      spec:{topics:'矿卡 · 订单 · 业绩 · 战略动向', keywords:'W 公司；矿卡；交付量；订单；电驱', pref:'一次信源优先，行业媒体次之', timing:'晨间分发汇总（批量）'},
      coverage:{distr:86, cons:74}, recentHits:['i1','i6','i3','i2']},
-    {id:'r2', name:'盯参数：国内露天矿数量与分布', type:'任务', status:'激活', window:'至探究任务 T1 结题', spawnedBy:'t1', hits:[]},
-    {id:'r3', name:'盯参数：在役矿卡保有量 / 车龄与更换率', type:'任务', status:'激活', window:'至探究任务 T1 结题', spawnedBy:'t1', hits:['i1']},
-    {id:'r4', name:'盯参数：整机均价 / 电驱渗透率', type:'任务', status:'激活', window:'至探究任务 T1 结题', spawnedBy:'t1', hits:['i2']},
-    {id:'r5', name:'跟踪竞品 Z 公司动态', type:'订阅', status:'暂停', window:'长期', coverage:{distr:12, cons:5}},
+    {id:'r2', name:'盯输入：国内露天矿数量与分布', status:'激活', window:'至 T1 结题', spawnedBy:'t1', hits:[]},
+    {id:'r3', name:'盯输入：在役矿卡保有量 / 车龄与更换率', status:'激活', window:'至 T1 结题', spawnedBy:'t1', hits:['i1']},
+    {id:'r4', name:'盯输入：整机均价 / 电驱渗透率', status:'激活', window:'至 T1 结题', spawnedBy:'t1', hits:['i2']},
+    {id:'r5', name:'跟踪竞品 Z 公司动态', status:'暂停', window:'常驻', coverage:{distr:12, cons:5}},
   ],
 
   alerts: [
     {id:'al1', kind:'翻案警报', level:'高', time:'2026-09-04 09:12', read:false,
-     title:'结论 C2（T2 的答案）进入重估中（级联重估）', body:'情报条目 I4 作废（事实错误反馈）→ 引用它的结论（探究任务 T2 的答案 C2）→ 重估中。', to:'task/t2', toLabel:'查看工作台前后对比'},
+     title:'命题 C2 进入重估中（级联重估）', body:'情报条目 I4 作废（事实错误反馈）→ 引用它的命题 C2（研究课题 T2 的答案）→ 重估中。', to:'claim/c2', toLabel:'查看命题前后对比'},
     {id:'al2', kind:'评级重评完成', level:'中', time:'2026-09-07 21:05', read:false,
      title:'I1 评级 B2 → B1', body:'新印证合并：独立信源 1 → 2（S2 公告确认）。下游引用取当前值。', to:'item/i1', toLabel:'查看评级历史'},
     {id:'al3', kind:'存疑复核', level:'中', time:'2026-09-07 09:05', read:false,
@@ -360,12 +357,11 @@ const req = id => DB.reqs.find(x => x.id === id);
 const srcName = id => { const s = src(id); return s ? s.name : '—'; };
 const srcLink = id => { const s = src(id); return s ? `<a href="#/source/${id}">${esc(s.name)}</a> <span class="pill">信用 ${s.credit}</span>` : '—'; };
 const itemLink = id => { const i = item(id); return i ? `<a href="#/item/${id}">${esc(i.stmt)}</a>` : '—'; };
-const answerLink = id => { const c = claim(id); if (!c) return '—'; return `<a href="#/task/${c.byTask}" title="${esc(c.stmt)}">${esc(c.stmt)}</a>`; };
 const task = id => DB.tasks.find(x => x.id === id);
 const taskLink = id => { const t = task(id); return t ? `<a href="#/task/${id}">${esc(t.question)}</a>` : '—'; };
-const parentLink = id => `由探究任务 ${taskLink(id)} 催生`;
-const taskParentLink = id => `父任务：${taskLink(id)}`;
-const claimLink = id => { const c = claim(id); return c ? `<a href="#/task/${c.byTask}" title="${esc(c.stmt)}">${esc(c.stmt)}</a>` : '—'; };
+const parentLink = id => task(id) ? `由研究课题 ${taskLink(id)} 催生（盯输入）` : (claim(id) ? `由命题 ${claimLink(id)} 催生（盯证据）` : '—');
+const taskParentLink = id => `父课题：${taskLink(id)}`;
+const claimLink = id => { const c = claim(id); return c ? `<a href="#/claim/${id}" title="${esc(c.stmt)}">${esc(c.stmt)}</a>` : '—'; };
 const citeLink = id => item(id) ? itemLink(id) : (claim(id) ? claimLink(id) : '—');
 const reqLink = id => { const r = req(id); return r ? `<a href="#/requirement/${id}">${esc(r.name)}</a>` : '—'; };
 const ratingPill = r => r ? `<span class="pill rating">${esc(r)}</span>` : '<span class="pill dashed">未评级</span>';
@@ -386,6 +382,7 @@ function refresh(){ render(); renderIm(); }
 
 /* ================= 路由 ================= */
 const NAV_MAP = {inbox:'inbox', items:'items', item:'items', tasks:'tasks', task:'tasks',
+                 claims:'claims', claim:'claims',
                  reqs:'reqs', requirement:'reqs', sources:'sources', source:'sources', submit:null};
 let PENDING_FB = null;   // 待补理由的事实错误反馈（跳详情）
 let UI = {itemStatus:'已核实起', itemMode:'全部', subCarriers:['录音']};
@@ -396,7 +393,7 @@ function route(){
   return {page, id};
 }
 function renderNav(active){
-  const links = [['inbox','收件箱'],['items','情报条目'],['tasks','探究任务'],['reqs','情报需求'],['sources','信源库']];
+  const links = [['inbox','收件箱'],['items','情报条目'],['tasks','研究课题'],['claims','命题'],['reqs','情报需求'],['sources','信源库']];
   $('#nav').innerHTML = links.map(([p, label]) =>
     `<a href="#/${p}" class="${active===p?'active':''}">${label}${p==='inbox'?`<span class="cnt">${inboxCount()}</span>`:''}</a>`
   ).join('');
@@ -404,6 +401,7 @@ function renderNav(active){
 const PAGES = {
   inbox: renderInbox, items: renderItems, item: renderItemDetail,
   tasks: renderTasks, task: renderTaskDetail,
+  claims: renderClaims, claim: renderClaimDetail,
   reqs: renderReqs, requirement: renderReqDetail,
   sources: renderSources, source: renderSourceDetail, submit: renderSubmit,
 };
@@ -528,7 +526,7 @@ function renderItemDetail(id){
       <dt>采集模式</dt><dd>${esc(i.mode)}</dd>
       <dt>出处信源</dt><dd>${srcLink(i.provenanceSrc)}</dd>
       <dt>命中情报需求</dt><dd>${i.hits.map(reqLink).join('、') || '—'}</dd>
-      <dt>被引用</dt><dd>${i.citedBy.map(c => `${answerLink(c.claim)}<span class="muted">（${esc(c.as)}）</span>`).join('；') || '—'}</dd>
+      <dt>被引用</dt><dd>${i.citedBy.map(c => `${claimLink(c.claim)}<span class="muted">（${esc(c.as)}）</span>`).join('；') || '—'}</dd>
     </dl>`;
   return `
   <h1 class="page"><a href="#/items">情报条目</a> / 详情</h1>
@@ -574,7 +572,7 @@ function renderItemDetail(id){
   </div>` : ''}
 
   ${i.pipe ? `
-  <div class="box"><h2>管线进度（线索 → 审查 → 核实评级）</h2>
+  <div class="box"><h2>流水线进度（线索 → 审查 → 核实评级）</h2>
     <ul class="pipe">${i.pipe.map(p => `
       <li><span class="st ${p.state}">${p.state==='done'?'✓':p.state==='doing'?'●':'○'}</span>
       <span>${esc(p.name)} ${p.time?`<span class="muted">${esc(p.time)}</span>`:''}${p.since?`<span class="muted">自 ${esc(p.since)}</span>`:''}
@@ -596,7 +594,7 @@ function renderItemDetail(id){
     <div class="err" id="fb-err-${i.id}" hidden>事实错误理由必填。</div>
     <button class="btn primary" onclick="fbSubmit('${i.id}')">提交反馈</button>
   </div>` : `
-  <div class="box"><h2>反馈</h2><div class="muted">当前状态（${esc(i.status)}）不开放反馈——反馈挂载于已分发 / 已消费等消费现场（doc-07 §4）。</div></div>`}
+  <div class="box"><h2>反馈</h2><div class="muted">当前状态（${esc(i.status)}）不开放反馈——反馈挂载于已分发 / 已消费等消费现场（doc-07 §5）。</div></div>`}
 
   <div class="box"><h2>反馈记录</h2>
     ${i.feedbacks.length ? i.feedbacks.map(f => `
@@ -608,147 +606,119 @@ function renderItemDetail(id){
   </div>`;
 }
 
-/* ================= 探究任务 ================= */
+/* ================= 研究课题 ================= */
 function renderTasks(){
   const groups = ['进行中','已结题'];
   return `
-  <h1 class="page">探究任务</h1>
-  <div class="sub">问题的一等容器，可递归分解为子探究任务（问题树 · decision-15）：问题陈述 + 候选答案与判定 + 方法学附件 + 催生的任务型需求/子任务 + 工作台聚合（decision-13/14/15）。子任务在父任务工作台展开，不入顶层列表。</div>
+  <h1 class="page">研究课题</h1>
+  <div class="sub">待回答的问题本身：登记后由系统跟踪求解，可递归分解为子课题（问题树 · decision-15）。问题陈述 + 提示词 + 催生的盯输入需求 + 工作台聚合。子课题在父课题工作台展开，不入顶层列表。</div>
   <div class="box">
     ${groups.map(g => {
       const list = DB.tasks.filter(t => t.status === g && !t.parent);
       if (!list.length) return '';
       return `<h3 style="margin:10px 0 4px">${g} <span class="muted">× ${list.length}</span></h3>
       <table>
-        <tr><th>问题</th><th>答案（命题）</th><th>催生需求</th><th>创建</th><th>登记方</th></tr>
+        <tr><th>问题</th><th>答案命题</th><th>催生需求</th><th>创建</th><th>登记方</th></tr>
         ${list.map(t => `
           <tr><td><a href="#/task/${t.id}">${esc(t.question)}</a></td>
-          <td>${t.claims.map(cid => { const c = claim(cid); return `<a href="#/task/${t.id}" title="${esc(c.stmt)}">${cid.toUpperCase()}·${esc(c.status)}</a>`; }).join('、') || '<span class="muted">—（未设候选答案）</span>'}</td>
+          <td>${t.claims.map(cid => { const c = claim(cid); return `<a href="#/claim/${cid}" title="${esc(c.stmt)}">${cid.toUpperCase()}·${esc(c.status)}</a>`; }).join('、') || '<span class="muted">—（未设候选答案）</span>'}</td>
           <td class="muted">${t.spawnedReqs.length?t.spawnedReqs.map(reqLink).join('、'):'—'}</td>
           <td class="muted">${esc(t.created)}</td>
           <td class="muted">${esc(t.registrant)}</td></tr>`).join('')}
       </table>`;
-    }).join('') || '<div class="empty">暂无探究任务</div>'}
+    }).join('') || '<div class="empty">暂无研究课题</div>'}
   </div>
-  <div class="box"><h2>登记探究任务</h2>
-    <div class="field"><label>问题陈述（问句——候选答案是可判真假的陈述，答案在工作台落成）</label>
+  <div class="box"><h2>登记研究课题</h2>
+    <div class="field"><label>问题陈述（问句——答案命题是可判真假的陈述，在工作台落成）</label>
       <textarea id="task-question" placeholder="例：某细分市场空间有多大？"></textarea></div>
-    <div class="field"><label>转写首个候选答案（可选——判断题是答案形态为「是/否」的问题；估算类可不转写，竞争情形记场景草稿）</label>
-      <input type="text" id="task-hypo" placeholder="例：该市场空间在 A–B 亿元区间（留空则本任务暂不含候选答案）"></div>
-    <div class="field"><label><input type="checkbox" id="task-att" style="width:auto"> 挂载方法学附件（指标清单 / 测算框架 / 信源指引 · decision-12，单轨挂探究任务）</label></div>
+    <div class="field"><label>提示词（可选 · 自由文本：指标清单 / 测算框架 / 信源指引；留空则智能体自行发挥 · decision-15）</label>
+      <input type="text" id="task-prompt" placeholder="例：单元存量法 / 工作量产能法两种测算法，矿卡保有量取大型露天矿"></div>
+    <div class="field"><label>转写首个候选答案命题（可选 · 估算类可不转写，竞争情形先记场景草稿）</label>
+      <input type="text" id="task-hypo" placeholder="例：该市场空间在 A–B 亿元区间（留空则暂不含候选答案）"></div>
     <button class="btn primary" onclick="taskRegister()">登记</button>
-    <div class="muted" style="margin-top:8px">候选答案可选：世界递来的断言顺手包成问题（登记时转写）；自己的问题等测算完成在工作台作答（登记即判定）。</div>
+    <div class="muted" style="margin-top:8px">答案落成命题，可被引用、可翻案；命题独立于研究课题存续（decision-15）。</div>
   </div>`;
 }
 
 function renderTaskDetail(id){
-  const t = task(id); if (!t) return '<div class="empty">探究任务不存在</div>';
+  const t = task(id); if (!t) return '<div class="empty">研究课题不存在</div>';
   const claims = t.claims.map(claim);
-  const hitItems = t.attachment ? [...new Set(t.attachment.metrics.filter(m => m.ev).map(m => m.ev))] : [];
-  const judging = claims.filter(c => c.status === '假设' && c.evidence.length);
-  const diffClaim = claims.find(c => c.diff);
-  const reasoning = claims.flatMap(c => c.reasoning.map(r => ({...r, cid:c.id}))).sort((a,b) => b.time.localeCompare(a.time));
+  const hitItems = t.prompt && t.prompt.metrics ? [...new Set(t.prompt.metrics.filter(m => m.ev).map(m => m.ev))] : [];
   return `
-  <h1 class="page"><a href="#/tasks">探究任务</a> / 工作台</h1>
-  <div class="sub">任务探究期间的工作台停留点（doc-07 §1 项目式节奏）：候选答案与判定、场景草稿、方法学附件、命中条目一屏聚合（decision-14）。</div>
+  <h1 class="page"><a href="#/tasks">研究课题</a> / 工作台</h1>
+  <div class="sub">研究课题探究期间的工作台停留点（doc-07 §1 项目式节奏）：课题树、命中条目聚合、提示词、催生需求一屏可见。判定与推理记录归命题（decision-15）。</div>
 
   <div class="box">
     <h2>${esc(t.question)} &nbsp;${statusPill(t.status)}</h2>
-    <div class="muted">创建 ${esc(t.created)} · 登记方 ${esc(t.registrant)} · 判定机制内聚于此：判定、置信度、推理记录、反馈以单个答案为单位（decision-14）。</div>
-    ${t.status==='进行中'?`<div class="fbrow" style="margin-top:8px"><button class="btn small" onclick="taskClose('${t.id}')">结题（问题已回答或放弃 · 历史保留）</button></div>`:''}
+    <div class="muted">创建 ${esc(t.created)} · 登记方 ${esc(t.registrant)} · 只管问题生命周期（进行中 → 已结题）；结题后命题仍存续、可翻案（decision-15）。</div>
+    ${t.status==='进行中'?`<div class="fbrow" style="margin-top:8px"><button class="btn small" onclick="taskClose('${t.id}')">结题（问题已回答或放弃 · 关催生子需求与子课题，历史保留）</button></div>`:''}
   </div>
 
   ${t.parent || (t.children && t.children.length) ? `
-  <div class="box"><h2>任务树（问题树 · decision-15）</h2>
-    ${t.parent ? `<div class="muted">${taskParentLink(t.parent)}（子任务）</div>` : ''}
+  <div class="box"><h2>课题树（问题树 · decision-15）</h2>
+    ${t.parent ? `<div class="muted">${taskParentLink(t.parent)}（子课题）</div>` : ''}
     ${t.children && t.children.length ? `
-      <h3>子任务（按方法分解）</h3>
+      <h3>子课题（按测算法分解）</h3>
       <table>
-        <tr><th>子任务</th><th>子结论</th><th>状态</th><th>置信度</th></tr>
+        <tr><th>子课题</th><th>子结论命题</th><th>状态</th><th>置信度</th></tr>
         ${t.children.map(cid => { const ct = task(cid); const cc = ct.claims.map(claim)[0] || null; return `
           <tr><td><a href="#/task/${cid}">${esc(ct.question)}</a></td>
-          <td>${cc?esc(cc.stmt):'—'}</td>
+          <td>${cc?`<a href="#/claim/${cc.id}">${esc(cc.stmt)}</a>`:'—'}</td>
           <td>${cc?statusPill(cc.status):'—'}</td>
           <td>${cc&&cc.confidence?esc(cc.confidence):'—'}</td></tr>`; }).join('')}
       </table>
-      <div class="muted" style="margin-top:6px">父结论由分析智能体取子结论按框架合成（非叶子任务从子结论合成 · decision-15）；子结论变 → 父结论级联重估。</div>` : ''}
+      <div class="muted" style="margin-top:6px">父课题取子命题按框架合成答案命题（非叶子 · 逻辑合成 · decision-15）；子命题变 → 父命题级联重估。</div>` : ''}
   </div>` : ''}
 
-  <div class="box"><h2>候选答案与结论（命题 · 可选）</h2>
+  <div class="box"><h2>答案命题（命题 · 可选）</h2>
     ${claims.length ? `<table>
-      <tr><th>答案陈述</th><th>状态</th><th>置信度</th><th>证据</th><th>动作</th></tr>
+      <tr><th>陈述</th><th>状态</th><th>置信度</th></tr>
       ${claims.map(c => `
-        <tr><td>${esc(c.stmt)}</td>
+        <tr><td><a href="#/claim/${c.id}">${esc(c.stmt)}</a></td>
         <td>${statusPill(c.status)}</td>
-        <td>${c.confidence?esc(c.confidence):'—'}</td>
-        <td class="muted">${c.evidence.length} 条</td>
-        <td>${c.status==='结论'?`<button class="btn small" onclick="claimFbError('${c.id}')">事实错误 → 重估</button>`:'<span class="muted">—</span>'}</td></tr>`).join('')}
-    </table>` : '<div class="muted">未设候选答案——估算类可不转写，最终答案作答（登记即判定）落成结论（decision-14）。</div>'}
-    <div class="muted" style="margin:6px 0 0">答案状态机：假设 ⇄ 结论 ⇄ 重估中 ⇄ 已证伪（锚点为探究任务的答案，机制不动 · decision-14）；结论反馈仅作用于结论态，非结论态翻案由系统触发。</div>
+        <td>${c.confidence?esc(c.confidence):'—'}</td></tr>`).join('')}
+    </table>
+    <div class="muted" style="margin-top:6px">判定、置信度、推理记录、结论反馈以命题为单位——详见<a href="#/claims">命题页</a>（decision-15）。</div>` : '<div class="muted">未设候选答案——估算类可不预转写，最终答案作答（登记即判定）落成结论命题。</div>'}
 
-    <h3 style="margin-top:14px">场景草稿（竞争情形 · 判定前不是答案）</h3>
+    <h3 style="margin-top:14px">登记候选答案（假设 · 可选）</h3>
+    <div class="field"><label>陈述（估算类可不预转写；竞争情形先记场景草稿）</label>
+      <input type="text" id="task-hypo" placeholder="例：该市场空间在 A–B 亿元区间"></div>
+    <button class="btn small" onclick="taskAddHypo('${t.id}')">登记候选答案 → 假设命题</button>
+
+    <h3 style="margin-top:14px">场景草稿（竞争情形 · 判定前不是命题）</h3>
     ${(t.scenarios||[]).map(s => `<div style="border-bottom:1px solid #eee;padding:6px 0">${esc(s)}</div>`).join('') || '<div class="muted">暂无</div>'}
     <div class="field" style="margin-top:10px"><label>补记场景草稿</label>
       <input type="text" id="task-scenario" placeholder="例：该市场空间在 C–D 亿元区间（另一情形）"></div>
     <button class="btn small" onclick="taskAddScenario('${t.id}')">补记</button>
-    <div class="muted" style="margin-top:6px">需被证据长期检验的情形可转写为候选答案；最终答案作答即判定（decision-13/14）。</div>
-
-    ${judging.length ? `
-    <h3 style="margin-top:14px">判定（构造性测算 v1 由用户完成）</h3>
-    ${judging.map(c => `
-      <div class="field"><label>${esc(c.stmt)} —— 测算结果（转结论；判定者记人 · decision-12，置信度仍由公式计算）</label>
-        <input type="text" id="judge-val-${c.id}" value="${c.id==='c1'?'128–142 亿元（落在登记区间内 → 证实）':''}"></div>`).join('')}
-    <div class="muted" style="margin-bottom:8px">公式 v1 预览：M=2（引用条目数），W=2（最弱条目内容可信度）→ 置信度 <b>高</b>（doc-04 §2.2）。</div>
-    ${judging.map(c => `<button class="btn small primary" style="margin-right:6px" onclick="claimJudge('${c.id}')">▶ ${c.id.toUpperCase()} 录入测算结果 → 转结论（原型模拟）</button>`).join('')}
-    ` : ''}
+    <div class="muted" style="margin-top:6px">需被证据长期检验情形可转写为候选答案命题；最终答案作答即判定（decision-15）。</div>
 
     <h3 style="margin-top:14px">作答（登记即判定 · 无候选答案路径）</h3>
-    <div class="field"><label>答案陈述（构造性测算 v1 由用户完成 · 判定者记人；登记 + 判定两步并一步，直接落成结论）</label>
+    <div class="field"><label>答案陈述（构造性测算由用户完成 · 判定者记人；登记 + 判定并一步，直接落成结论命题）</label>
       <input type="text" id="task-answer" placeholder="例：该市场空间在 126–140 亿元区间（测算结果）"></div>
-    <button class="btn small" onclick="answerRegister('${t.id}')">作答 → 结论</button>
+    <button class="btn small" onclick="answerRegister('${t.id}')">作答 → 结论命题</button>
   </div>
 
-  ${diffClaim ? `
-  <div class="box"><h2>变化前后对比（${esc(diffClaim.id.toUpperCase())} · 重估中）</h2>
-    <table class="diff">
-      ${diffClaim.diff.map(d => `<tr><td>${esc(d.obj)}</td><td>${esc(d.before)}</td><td class="arrow">→</td><td><b>${esc(d.after)}</b></td></tr>`).join('')}
-    </table>
-    <div class="muted" style="margin-top:6px">${esc(diffClaim.alertNote)}</div>
-    <div style="margin-top:6px">触发源条目：${itemLink('i4')} <span class="muted">（可反馈事实错误 / 评级异议）</span></div>
-  </div>` : ''}
-
-  ${t.attachment ? `
-  <div class="box"><h2>方法学附件（单轨挂探究任务 · decision-12/14）</h2>
+  ${t.prompt ? `
+  <div class="box"><h2>提示词（伴随输入 · 自由文本，可空 · decision-15）</h2>
+    ${typeof t.prompt === 'string' ? `<div class="muted">${esc(t.prompt)}</div>` : `
     <h3>指标清单</h3>
     <table>
-      <tr><th>参数</th><th>任务型需求（催生）</th><th>状态</th><th>命中证据</th></tr>
-      ${t.attachment.metrics.map(m => `
+      <tr><th>参数</th><th>催生需求（盯输入）</th><th>状态</th><th>命中证据</th></tr>
+      ${t.prompt.metrics.map(m => `
         <tr><td>${esc(m.no)} ${esc(m.name)}</td>
         <td>${m.req?reqLink(m.req):'<span class="muted">—</span>'}</td>
         <td>${m.state==='已命中'?`<span class="pill">已命中</span>`:`<span class="muted">${esc(m.state)}</span>`}</td>
         <td>${m.ev?itemLink(m.ev):'—'}</td></tr>`).join('')}
     </table>
-    <h3>测算框架</h3><div class="muted">${esc(t.attachment.framework)}</div>
-    <h3>信源指引</h3><div class="muted">${esc(t.attachment.guide)}</div>
-    <div class="muted" style="margin-top:6px">附件是输入供货非判断主体：由记账层组装注入定向（采集依据）与分析（合成框架）的上下文（decision-12）。</div>
+    <h3>测算框架</h3><div class="muted">${esc(t.prompt.framework)}</div>
+    <h3>信源指引</h3><div class="muted">${esc(t.prompt.guide)}</div>`}
+    <div class="muted" style="margin-top:6px">提示词由记账层组装注入定向（分解与采集依据）与分析（合成框架）的上下文；留空则智能体自行发挥（decision-15）。</div>
   </div>` : ''}
 
-  <div class="box"><h2>催生的任务型需求</h2>
+  <div class="box"><h2>催生的情报需求（盯输入）</h2>
     <div>${t.spawnedReqs.map(reqLink).join('、') || '—'}</div>
-    <div class="muted" style="margin-top:4px">v1 由消费方按指标清单落成（一次性，之后无人值守）；定向智能体自动提案落成列 v2（decision-12/14）。生效窗口至本任务结题。</div>
+    <div class="muted" style="margin-top:4px">系统无人值守；生效窗口至本课题结题（decision-15）。</div>
   </div>
-
-  ${reasoning.length ? `
-  <div class="sketch"><h2 style="font-size:14.5px;margin:0 0 10px;display:flex;gap:8px;align-items:center">推理记录（全部答案 · 每次判定落档） <span class="sketch-tag">草图 · 实现时按真实数据重画</span></h2>
-    <table>
-      <tr><th>时间</th><th>答案</th><th>判定者</th><th>动作</th><th>依据（含公式版本）</th><th>引用</th></tr>
-      ${reasoning.map(r => `
-        <tr><td class="muted" style="white-space:nowrap">${esc(r.time)}</td><td>${esc(r.cid.toUpperCase())}</td><td>${esc(r.judge)}</td>
-        <td>${esc(r.action)}</td><td class="muted">${esc(r.basis)}</td>
-        <td>${r.cites.map(citeLink).join('、')||'—'}</td></tr>`).join('')}
-    </table>
-    <div class="muted" style="margin-top:6px">结论可审计、可级联重估的前提（术语表 · 推理记录）；命题页已撤，记录聚合于工作台（decision-14）。</div>
-  </div>` : ''}
 
   ${hitItems.length ? `
   <div class="box"><h2>命中条目（按指标聚合）</h2>
@@ -759,29 +729,117 @@ function renderTaskDetail(id){
   </div>` : ''}`;
 }
 
+/* ================= 命题 ================= */
+function renderClaims(){
+  const groups = ['假设','结论','重估中','已证伪','存疑'];
+  return `
+  <h1 class="page">命题</h1>
+  <div class="sub">可判真假的陈述——求证/核实线的原子单位，独立状态机（decision-15）。按状态分组；结论一览由此筛。命题独立于研究课题存续，结题后仍可被引用与翻案。</div>
+  <div class="box">
+    ${groups.map(g => {
+      const list = DB.claims.filter(c => c.status === g);
+      if (!list.length) return '';
+      return `<h3 style="margin:10px 0 4px">${g} <span class="muted">× ${list.length}</span></h3>
+      <table>
+        <tr><th>陈述</th><th>状态</th><th>置信度</th><th>归属</th><th>证据</th></tr>
+        ${list.map(c => `
+          <tr><td><a href="#/claim/${c.id}">${esc(c.stmt)}</a></td>
+          <td>${statusPill(c.status)}</td>
+          <td>${c.confidence?esc(c.confidence):'—'}</td>
+          <td class="muted">${c.byTask?taskLink(c.byTask):'独立登记'}</td>
+          <td class="muted">${c.evidence.length} 条</td></tr>`).join('')}
+      </table>`;
+    }).join('') || '<div class="empty">暂无命题</div>'}
+  </div>
+  <div class="box"><h2>登记断言（独立登记 · 世界递来的断言）</h2>
+    <div class="field"><label>陈述（可判真假）</label>
+      <input type="text" id="claim-stmt" placeholder="例：W 公司将与 Z 公司成立合资公司"></div>
+    <button class="btn primary" onclick="claimRegister()">登记（初始态 = 假设）</button>
+    <div class="muted" style="margin-top:8px">独立登记的断言不挂研究课题，直接进命题侧求证；也可被多个研究课题引用（decision-15）。</div>
+  </div>`;
+}
+
+function renderClaimDetail(id){
+  const c = claim(id); if (!c) return '<div class="empty">命题不存在</div>';
+  const judging = c.status === '假设' && c.evidence.length;
+  return `
+  <h1 class="page"><a href="#/claims">命题</a> / 详情</h1>
+  <div class="sub">求证线的交汇点：陈述、状态、置信度、推理记录、引用证据、结论反馈，一屏尽出（doc-07 §3）。</div>
+
+  <div class="box">
+    <h2>${esc(c.stmt)} &nbsp;${statusPill(c.status)} ${c.confidence?`<span class="pill">置信度 ${esc(c.confidence)}</span>`:''}</h2>
+    <div class="muted">登记 ${esc(c.registered)} · 登记方 ${esc(c.registrant)} · 归属 ${c.byTask?taskLink(c.byTask):'独立登记'}。判定、置信度、推理记录以单个命题为单位（decision-15）。</div>
+  </div>
+
+  <div class="box"><h2>引用证据</h2>
+    ${c.evidence.length ? `<table><tr><th>证据</th><th>角色</th></tr>
+      ${c.evidence.map(e => `<tr><td>${citeLink(e.item || e.subclaim)}</td><td class="muted">${esc(e.as)}</td></tr>`).join('')}
+    </table>` : '<div class="muted">暂无证据——叶子命题从已核实情报条目判定，合成命题从子命题合成（判定方式二分 · decision-15）。</div>'}
+  </div>
+
+  ${c.diff ? `
+  <div class="box"><h2>变化前后对比（重估中）</h2>
+    <table class="diff">
+      ${c.diff.map(d => `<tr><td>${esc(d.obj)}</td><td>${esc(d.before)}</td><td class="arrow">→</td><td><b>${esc(d.after)}</b></td></tr>`).join('')}
+    </table>
+    <div class="muted" style="margin-top:6px">${esc(c.alertNote||'')}</div>
+    <div style="margin-top:6px">触发源条目：${itemLink('i4')} <span class="muted">（可反馈事实错误 / 评级异议）</span></div>
+  </div>` : ''}
+
+  ${c.reasoning.length ? `
+  <div class="sketch"><h2 style="font-size:14.5px;margin:0 0 10px;display:flex;gap:8px;align-items:center">推理记录（每次判定落档） <span class="sketch-tag">草图 · 实现时按真实数据重画</span></h2>
+    <table>
+      <tr><th>时间</th><th>判定者</th><th>动作</th><th>依据（含公式版本）</th><th>引用</th></tr>
+      ${c.reasoning.map(r => `
+        <tr><td class="muted" style="white-space:nowrap">${esc(r.time)}</td><td>${esc(r.judge)}</td>
+        <td>${esc(r.action)}</td><td class="muted">${esc(r.basis)}</td>
+        <td>${r.cites.map(citeLink).join('、')||'—'}</td></tr>`).join('')}
+    </table>
+    <div class="muted" style="margin-top:6px">结论可审计、可级联重估的前提（术语表 · 推理记录）。</div>
+  </div>` : ''}
+
+  ${judging ? `
+  <div class="box"><h2>判定（构造性测算由用户完成）</h2>
+    <div class="field"><label>测算结果（转结论；判定者记人 · decision-15，置信度由公式计算）</label>
+      <input type="text" id="judge-val-${c.id}" placeholder="例：128–142 亿元（落在登记区间内 → 证实）"></div>
+    <div class="muted" style="margin-bottom:8px">公式预览：M=引用条目数，W=最弱条目内容可信度 → 置信度 高/中/低（doc-04 §2.2）。</div>
+    <button class="btn small primary" onclick="claimJudge('${c.id}')">录入测算结果 → 转结论命题</button>
+  </div>` : ''}
+
+  ${c.status === '结论' ? `
+  <div class="box"><h2>结论反馈</h2>
+    <div class="muted">对结论态命题提事实错误触发重估中（doc-07 §5）；非结论态不设入口，翻案由系统触发。</div>
+    <div class="fbrow" style="margin-top:8px"><button class="btn small" onclick="claimFbError('${c.id}')">事实错误 → 重估中</button></div>
+  </div>` : ''}
+
+  <div class="box"><h2>催生情报需求（盯证据）</h2>
+    <div>${c.spawnedReqs && c.spawnedReqs.length ? c.spawnedReqs.map(reqLink).join('、') : '—'}</div>
+    <div class="muted" style="margin-top:4px">命题可催生盯证据的情报需求，与研究课题催生（盯输入）并存（decision-15）。</div>
+  </div>`;
+}
+
 /* ================= 情报需求 ================= */
 function renderReqs(){
   return `
   <h1 class="page">情报需求</h1>
-  <div class="sub">订阅（长期）与任务（临时）两类；可由探究任务催生（decision-12/14）。覆盖度量内联，不设独立仪表盘（doc-07 §3）。</div>
+  <div class="sub">消费方声明的兴趣配置，命中即推送条目。两类来历：声明（常驻）与催生（研究课题盯输入 / 命题盯证据，decision-15）。覆盖度量内联，不设独立仪表盘（doc-07 §3）。</div>
   <div class="box">
     <table>
-      <tr><th>需求</th><th>类型</th><th>状态</th><th>覆盖 / 命中</th><th>生效窗口</th><th>催生关系</th></tr>
+      <tr><th>需求</th><th>生效窗口</th><th>状态</th><th>覆盖 / 命中</th><th>催生关系</th></tr>
       ${DB.reqs.map(r => `
         <tr>
           <td><a href="#/requirement/${r.id}">${esc(r.name)}</a></td>
-          <td><span class="pill">${r.type}</span></td>
+          <td class="muted">${esc(r.window)}</td>
           <td>${statusPill(r.status)}</td>
           <td>${r.coverage?`已分发 ${r.coverage.distr} · 已消费 ${r.coverage.cons}`:(r.hits?`命中 ${r.hits.length}`:'—')}</td>
-          <td class="muted">${esc(r.window)}</td>
-          <td class="muted">${r.spawnedBy?parentLink(r.spawnedBy):'—'}</td>
+          <td class="muted">${r.spawnedBy?parentLink(r.spawnedBy):'声明'}</td>
         </tr>`).join('')}
     </table>
   </div>
   <div class="box"><h2>新建情报需求</h2>
     <div class="grid2">
       <div class="field"><label>名称</label><input type="text" id="req-name" placeholder="例：长期跟踪某公司动态"></div>
-      <div class="field"><label>类型</label><select id="req-type"><option>订阅</option><option>任务</option></select></div>
+      <div class="field"><label>生效窗口</label><select id="req-window"><option>常驻</option><option>至某事结题</option></select></div>
     </div>
     <div class="field"><label>内容规格 · 主题</label><input type="text" id="req-topics" placeholder="主题词，以 · 分隔"></div>
     <button class="btn primary" onclick="reqCreate()">创建（初始态 = 草稿）</button>
@@ -790,13 +848,13 @@ function renderReqs(){
 
 function renderReqDetail(id){
   const r = req(id); if (!r) return '<div class="empty">需求不存在</div>';
-  const editable = r.status === '激活' && r.type === '订阅';
+  const editable = r.status === '激活' && !r.spawnedBy;
   return `
   <h1 class="page"><a href="#/reqs">情报需求</a> / 详情</h1>
   <div class="sub">${esc(r.name)}</div>
 
-  <div class="box"><h2>${esc(r.name)} &nbsp;<span class="pill">${r.type}</span> ${statusPill(r.status)}</h2>
-    ${r.spawnedBy?`<div class="muted">${parentLink(r.spawnedBy)}（任务型 · decision-12/14）。</div>`:''}
+  <div class="box"><h2>${esc(r.name)} ${statusPill(r.status)}</h2>
+    <div class="muted">生效窗口：${esc(r.window)} · ${r.spawnedBy?parentLink(r.spawnedBy):'声明'}。</div>
     <div class="fbrow" style="margin-top:8px">
       ${r.status==='激活'?`<button class="btn small" onclick="reqAction('${r.id}','暂停')">暂停</button><button class="btn small" onclick="reqAction('${r.id}','关闭')">关闭</button>`:''}
       ${r.status==='暂停'?`<button class="btn small" onclick="reqAction('${r.id}','激活')">恢复</button><button class="btn small" onclick="reqAction('${r.id}','关闭')">关闭</button>`:''}
@@ -805,7 +863,7 @@ function renderReqDetail(id){
   </div>
 
   ${r.spec ? `
-  <div class="box"><h2>内容规格 ${editable?'<span class="muted">（周频微调 · 旅程 2.1）</span>':''}</h2>
+  <div class="box"><h2>内容规格 ${editable?'<span class="muted">（定期微调 · 旅程 2.1）</span>':''}</h2>
     <div class="field"><label>主题</label><input type="text" id="spec-topics" value="${esc(r.spec.topics)}" ${editable?'':'disabled'}></div>
     <div class="field"><label>关键词</label><input type="text" id="spec-keywords" value="${esc(r.spec.keywords)}" ${editable?'':'disabled'}></div>
     <div class="field"><label>信源偏好</label><input type="text" id="spec-pref" value="${esc(r.spec.pref)}" ${editable?'':'disabled'}></div>
@@ -821,7 +879,7 @@ function renderReqDetail(id){
 
   ${r.hits ? `
   <div class="box"><h2>命中条目</h2>
-    ${r.hits.length ? r.hits.map(itemLink).join('、') : '<div class="empty">待命中——参数不会自己撞上来（decision-12 背景）</div>'}
+    ${r.hits.length ? r.hits.map(itemLink).join('、') : '<div class="empty">待命中——催生的盯输入需求由采集驱动（decision-15）</div>'}
   </div>` : ''}
 
   ${r.recentHits ? `
@@ -969,7 +1027,7 @@ function renderIm(){
       <h3>推送通道 · IM 机器人（模拟）</h3>
       <button class="btn small" onclick="imToggle()">✕ 关闭</button>
     </div>
-    <div class="im-note">IM 机器人为唯一推送通道：主动触达 · 批量摘要 · 消息内反馈（decision-11）；站内收件箱兜底存档，邮件 v1 不做。</div>
+    <div class="im-note">IM 机器人为唯一推送通道：主动触达 · 批量摘要 · 消息内反馈（decision-11）；站内收件箱兜底存档，邮件不做。</div>
 
     <div class="im-time">☀ 晨间分发汇总 · 2026-09-08 08:00 · 批量节奏</div>
     <div class="muted" style="margin-bottom:6px">订阅「长期跟踪 W 公司动态」 · 昨日新核实 ${digest.length} 条</div>
@@ -1122,6 +1180,7 @@ function submitManual(){
 
 function taskRegister(){
   const q = $('#task-question').value.trim();
+  const p = $('#task-prompt').value.trim();
   const h = $('#task-hypo').value.trim();
   if (!q){ toast('请填写问题陈述'); return; }
   const tid = 't' + (DB.tasks.length + 1);
@@ -1130,29 +1189,40 @@ function taskRegister(){
     cid = 'c' + (DB.claims.length + 1);
     DB.claims.push({id:cid, stmt:h, status:'假设', confidence:null, registered:'2026-09-08', registrant:'消费方', byTask:tid,
       spawnedReqs:[], evidence:[],
-      reasoning:[{time:'2026-09-08 08:50', judge:'消费方', action:'登记候选答案（初始态 = 假设，登记时转写）', basis:'decision-14', cites:[]}]});
+      reasoning:[{time:'2026-09-08 08:50', judge:'消费方', action:'登记候选答案命题（初始态 = 假设）', basis:'decision-15', cites:[]}]});
   }
   DB.tasks.push({id:tid, question:q, status:'进行中', created:'2026-09-08', registrant:'消费方',
-    attachment:$('#task-att').checked?{metrics:[], framework:'（示例附件占位）', guide:'（示例附件占位）'}:null,
-    claims:cid?[cid]:[], scenarios:[], spawnedReqs:[]});
-  toast('已登记探究任务' + (h?' + 转写首个候选答案':'（未转写——答案可作答即判定）'));
+    prompt:p||null, claims:cid?[cid]:[], scenarios:[], spawnedReqs:[]});
+  toast('已登记研究课题' + (h?' + 转写首个候选答案命题':'（未转写——答案可作答即判定）'));
   location.hash = '#/task/' + tid;
+}
+function taskAddHypo(tid){
+  const t = task(tid); if (!t) return;
+  const h = $('#task-hypo').value.trim();
+  if (!h){ toast('请填写候选答案陈述'); return; }
+  const cid = 'c' + (DB.claims.length + 1);
+  DB.claims.push({id:cid, stmt:h, status:'假设', confidence:null, registered:'2026-09-08', registrant:'消费方', byTask:tid,
+    spawnedReqs:[], evidence:[],
+    reasoning:[{time:'2026-09-08 08:51', judge:'消费方', action:'登记候选答案命题（初始态 = 假设）', basis:'decision-15', cites:[]}]});
+  t.claims.push(cid);
+  toast('已登记候选答案命题 → 假设（详见命题页）');
+  refresh();
 }
 function taskAddScenario(tid){
   const t = task(tid); if (!t) return;
   const s = $('#task-scenario').value.trim();
   if (!s){ toast('请填写场景草稿内容'); return; }
   (t.scenarios = t.scenarios || []).push(s);
-  toast('已补记场景草稿（判定前不是答案）');
+  toast('已补记场景草稿（判定前不是命题）');
   refresh();
 }
 function taskClose(tid){
   const t = task(tid); if (!t) return;
   t.status = '已结题';
   const closed = [];
-  (t.children||[]).forEach(cid => { const ct = task(cid); if (ct && ct.status === '进行中'){ ct.status = '已结题'; closed.push(cid.toUpperCase() + '·子任务'); } });
+  (t.children||[]).forEach(cid => { const ct = task(cid); if (ct && ct.status === '进行中'){ ct.status = '已结题'; closed.push(cid.toUpperCase() + '·子课题'); } });
   t.spawnedReqs.forEach(rid => { const r = req(rid); if (r && r.status === '激活'){ r.status = '关闭'; closed.push(rid.toUpperCase()); } });
-  toast('探究任务已结题 · 历史保留' + (closed.length?' · 关闭：' + closed.join('、'):'') + '（decision-13/15）');
+  toast('研究课题已结题 · 历史保留' + (closed.length?' · 关闭：' + closed.join('、'):'') + '（decision-15）');
   refresh();
 }
 
@@ -1161,14 +1231,14 @@ function answerRegister(tid){
   const stmt = $('#task-answer').value.trim();
   if (!stmt){ toast('请填写答案陈述'); return; }
   const cid = 'c' + (DB.claims.length + 1);
-  const ev = (t.attachment ? t.attachment.metrics.filter(m => m.ev).map(m => m.ev) : [])
+  const ev = (t.prompt && t.prompt.metrics ? t.prompt.metrics.filter(m => m.ev).map(m => m.ev) : [])
     .map(iid => ({item:iid, as:'判定证据（工作台聚合）'}));
   DB.claims.push({id:cid, stmt, status:'结论', confidence:'高', registered:'2026-09-08', registrant:'消费方', byTask:tid,
     spawnedReqs:[], evidence:ev,
-    reasoning:[{time:'2026-09-08 08:52', judge:'消费方（构造性测算 v1 · 判定者记人）',
-      action:'作答（登记即判定）→ 结论', basis:'置信度由公式从账本变量计算（decision-12/14）', cites:ev.map(e => e.item)}]});
+    reasoning:[{time:'2026-09-08 08:52', judge:'消费方（构造性测算 · 判定者记人）',
+      action:'作答（登记即判定）→ 结论命题', basis:'置信度由公式从账本变量计算（decision-15）', cites:ev.map(e => e.item)}]});
   t.claims.push(cid);
-  toast('已作答 · 结论（登记即判定）· 置信度由公式计算 · 结论可被引用（间接消费）');
+  toast('已作答 · 结论命题（登记即判定）· 详见命题页');
   refresh();
 }
 function claimJudge(id){
@@ -1177,17 +1247,27 @@ function claimJudge(id){
   const val = (el && el.value.trim()) || '（构造性测算结果）';
   c.status = '结论';
   c.confidence = '高';
-  c.reasoning.push({time:'2026-09-08 08:47', judge:'消费方（构造性测算 v1 · 判定者记人 · decision-12）',
-    action:'判定：证实 → 结论（' + val + '）', basis:'公式 v1：M=2，W=2 → 置信度 高', cites:c.evidence.map(e => e.item)});
-  toast('已转结论 · 置信度 高（公式从账本变量计算）· 结论可被引用（间接消费）');
+  c.reasoning.push({time:'2026-09-08 08:47', judge:'消费方（构造性测算 · 判定者记人 · decision-15）',
+    action:'判定：证实 → 结论命题（' + val + '）', basis:'公式 v1：M=引用条目数，W=最弱条目内容可信度 → 置信度 高', cites:c.evidence.map(e => e.item || e.subclaim)});
+  toast('已转结论命题 · 置信度由公式计算');
   refresh();
 }
 function claimFbError(id){
   const c = claim(id); if (!c) return;
   c.status = '重估中';
-  c.reasoning.push({time:'2026-09-08 08:48', judge:'记账层（反馈路由）', action:'事实错误反馈 → 进入重估中', basis:'结论反馈仅作用于结论态答案（探究任务工作台入口）；理由必填（示例：测算参数引用失效）', cites:[]});
-  toast('结论 → 重估中（对结论态答案提事实错误触发重估）');
+  c.reasoning.push({time:'2026-09-08 08:48', judge:'记账层（反馈路由）', action:'事实错误反馈 → 进入重估中', basis:'结论反馈仅作用于结论态命题（命题页入口 · doc-07 §5）', cites:[]});
+  toast('结论命题 → 重估中');
   refresh();
+}
+function claimRegister(){
+  const stmt = $('#claim-stmt').value.trim();
+  if (!stmt){ toast('请填写陈述'); return; }
+  const cid = 'c' + (DB.claims.length + 1);
+  DB.claims.push({id:cid, stmt, status:'假设', confidence:null, registered:'2026-09-08', registrant:'消费方', byTask:null,
+    spawnedReqs:[], evidence:[],
+    reasoning:[{time:'2026-09-08 08:53', judge:'消费方', action:'独立登记断言（初始态 = 假设）', basis:'世界递来的断言（decision-15）', cites:[]}]});
+  toast('已登记断言 → 假设命题（独立登记，不挂研究课题）');
+  location.hash = '#/claim/' + cid;
 }
 
 function reqAction(id, to){
@@ -1209,7 +1289,7 @@ function reqCreate(){
   const name = $('#req-name').value.trim();
   if (!name){ toast('请填写需求名称'); return; }
   const id = 'r' + (DB.reqs.length + 1);
-  DB.reqs.push({id, name, type:$('#req-type').value, status:'草稿', window:'长期',
+  DB.reqs.push({id, name, status:'草稿', window:$('#req-window').value,
     spec:{topics:$('#req-topics').value, keywords:'', pref:'', timing:'晨间分发汇总（批量）'}});
   toast('已创建 · 初始态 = 草稿');
   location.hash = '#/requirement/' + id;
