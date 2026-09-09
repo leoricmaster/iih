@@ -108,7 +108,7 @@ flowchart TB
     SC -.->|任务分派| JL
 ```
 
-判断层五类智能体见领域模型 §2.1，无状态调用、输出提案、智能体间不直接通信，全部经记账层中转。工具层为无状态功能，作为智能体工具被调用，清单随实现另行沉淀。English 命名：判断层 Judgment Layer｜记账层 Ledger Layer｜工具层 Tool Layer｜提案 Proposal（契约 §5）。
+判断层五类智能体见智能体规约（doc-06），无状态调用、输出提案、智能体间不直接通信，全部经记账层中转。工具层为无状态功能，作为智能体工具被调用，清单随实现另行沉淀。English 命名：判断层 Judgment Layer｜记账层 Ledger Layer｜工具层 Tool Layer｜提案 Proposal（契约 §5）。
 
 记账层六个模块：
 
