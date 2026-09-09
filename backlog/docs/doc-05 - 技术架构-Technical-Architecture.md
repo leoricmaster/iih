@@ -32,7 +32,7 @@ flowchart LR
     LLM[LLM API]
     PUSH[IM 机器人]
 
-    U -->|声明需求 · 登记探究任务 · 人工录入 · 反馈| IIH
+    U -->|声明需求 · 登记课题 · 人工录入 · 反馈| IIH
     IIH -->|分发（条目 / 结论）| U
     IIH -->|抓取素材 · 佐证检索| WEB
     IIH -->|语义判断| LLM
