@@ -141,28 +141,39 @@ textarea{min-height:64px;resize:vertical}
 
 const DB = {
   sources: [
-    {id:'s1', name:'华矿装备观察', type:'行业自媒体', credit:'B', status:'已确认',
-     profile:{domain:'矿山装备 · 整机与配套', freq:'日更', stance:'中立偏业内', indep:'通常独立报道；偶转载 W 公司官网公告'},
+    {id:'s1', name:'华矿装备观察', type:'自媒体', credit:'B', status:'已确认',
+     outlets:[
+       {id:'o1', name:'公众号', medium:'互联网', entry:'公众号 ID：huakuang-eq', carriers:'网页 / 文字', freq:'日更', domain:'矿山装备 · 整机与配套'}],
+     profile:{stance:'中立偏业内', indep:'通常独立报道；偶转载 W 公司官网公告'},
      fb:{valid:32, factual:1, last:'2026-08-15 有效'},
      creditNote:'半衰期内累计 +30 → 档 B'},
-    {id:'s2', name:'W 公司', type:'机构（官网 / 官方口径）', credit:'A', status:'已确认',
-     profile:{domain:'W 公司官方动态（公告 · 大会发言）', freq:'事件驱动', stance:'官方口径', indep:'一次信源'},
+    {id:'s2', name:'W 公司', type:'公司', credit:'A', status:'已确认', entity:'e1',
+     outlets:[
+       {id:'o2', name:'官网', medium:'互联网', entry:'https://w-mining.example/news', carriers:'网页', freq:'事件驱动', domain:'公司公告 · 投资者问答'},
+       {id:'o3', name:'渠道大会 · 现场', medium:'行业展会', entry:'年度渠道大会（线下场景）', carriers:'录音 / 文字', freq:'每年 9 月', domain:'渠道政策 · 产品规划口径'}],
+     profile:{stance:'官方口径', indep:'一次信源'},
      fb:{valid:41, factual:0, last:'2026-09-01 有效'},
      creditNote:'半衰期内累计 +41 → 档 A'},
-    {id:'s3', name:'北方工程机械网', type:'行业媒体', credit:'B', status:'已确认',
-     profile:{domain:'工程机械 · 矿卡', freq:'日更', stance:'中立', indep:'以转载为主，偶发原创'},
+    {id:'s3', name:'北方工程机械网', type:'媒体', credit:'B', status:'已确认',
+     outlets:[
+       {id:'o4', name:'网站', medium:'互联网', entry:'https://north-cm.example', carriers:'网页', freq:'日更', domain:'工程机械 · 矿卡'}],
+     profile:{stance:'中立', indep:'以转载为主，偶发原创'},
      fb:{valid:18, factual:0, last:'2026-08-20 有效'},
      creditNote:'半衰期内累计 +18 → 档 B'},
-    {id:'s4', name:'第一矿机周刊', type:'行业媒体', credit:'C', status:'已确认',
-     profile:{domain:'矿山机械', freq:'周更', stance:'中立', indep:'消息面混杂，需穿透'},
+    {id:'s4', name:'第一矿机周刊', type:'媒体', credit:'C', status:'已确认',
+     outlets:[
+       {id:'o5', name:'网站', medium:'互联网', entry:'https://mp-weekly.example', carriers:'网页', freq:'周更', domain:'矿山机械'}],
+     profile:{stance:'中立', indep:'消息面混杂，需穿透'},
      fb:{valid:9, factual:1, last:'2026-07-30 有效'},
      creditNote:'半衰期内累计 +7 → 档 C'},
-    {id:'s5', name:'矿山圈快报', type:'行业自媒体', credit:'D', status:'已确认',
-     profile:{domain:'矿山圈内消息', freq:'日更', stance:'猎奇倾向', indep:'独立性存疑'},
+    {id:'s5', name:'矿山圈快报', type:'自媒体', credit:'D', status:'已确认',
+     outlets:[
+       {id:'o6', name:'公众号', medium:'互联网', entry:'公众号 ID：ksquan-daily', carriers:'网页', freq:'日更', domain:'矿山圈内消息'}],
+     profile:{stance:'猎奇倾向', indep:'独立性存疑'},
      fb:{valid:4, factual:2, last:'2026-09-04 事实错误'},
      creditNote:'半衰期内累计 0 → 档 D（事实错误 −2 × 2）'},
-    {id:'s6', name:'矿业装备出口观察', type:'行业自媒体', credit:'—', status:'待确认',
-     found:{channel:'采集发现（R1 采集任务 · 池外自由探索上报）', time:'2026-09-06'},
+    {id:'s6', name:'矿业装备出口观察', type:'自媒体', credit:'—', status:'待确认',
+     found:{channel:'采集发现（R1 采集任务 · 池外自由探索上报）', time:'2026-09-06', entry:'公众号：矿业装备出口观察'},
      note:'未确认的发现不入信源库、不建画像、不参与信用记账（decision-09）'},
   ],
 
@@ -170,10 +181,10 @@ const DB = {
     {id:'i1', stmt:'W 公司 2026 上半年矿卡交付量同比增长约 40%', status:'已分发', rating:'B1', indepCount:2,
      indep:['s1','s2'], provenanceSrc:'s1',
      provenance:[
-       {src:'s1', role:'首发 · 一次信源 · 本链最早引入', time:'2026-09-05 20:14', carrier:'网页', chain:'A'},
-       {src:'s3', role:'转载 S1（二次信源）', time:'2026-09-06 09:20', carrier:'网页', chain:'A'},
-       {src:'s2', role:'公告确认 · 一次信源 · 独立', time:'2026-09-07 18:00', carrier:'网页', chain:'B'},
-       {src:'s4', role:'转载 S2（二次信源）', time:'2026-09-07 19:40', carrier:'网页', chain:'B'}],
+       {src:'s1', outlet:'公众号', role:'首发 · 一次信源 · 本链最早引入', time:'2026-09-05 20:14', carrier:'网页', chain:'A'},
+       {src:'s3', outlet:'网站', role:'转载 S1（二次信源）', time:'2026-09-06 09:20', carrier:'网页', chain:'A'},
+       {src:'s2', outlet:'官网', role:'公告确认 · 一次信源 · 独立', time:'2026-09-07 18:00', carrier:'网页', chain:'B'},
+       {src:'s4', outlet:'网站', role:'转载 S2（二次信源）', time:'2026-09-07 19:40', carrier:'网页', chain:'B'}],
      ratingHistory:[
        {v:1, time:'2026-09-07 10:12', rating:'B2', basis:'公式 v1：N=1（S1 独立），R=B → 内容可信度 2'},
        {v:2, time:'2026-09-07 21:03', rating:'B1', basis:'新印证合并：S2 独立印证，N=2 → 内容可信度 1（触发器：新印证合并 · decision-07）', current:true}],
@@ -184,7 +195,7 @@ const DB = {
 
     {id:'i6', stmt:'W 公司入选国家矿山装备供应商名录（首批）', status:'已分发', rating:'A2', indepCount:1,
      indep:['s2'], provenanceSrc:'s2',
-     provenance:[{src:'s2', role:'公示 · 一次信源', time:'2026-09-07 10:00', carrier:'网页', chain:'A'}],
+     provenance:[{src:'s2', outlet:'官网', role:'公示 · 一次信源', time:'2026-09-07 10:00', carrier:'网页', chain:'A'}],
      ratingHistory:[{v:1, time:'2026-09-07 11:40', rating:'A2', basis:'公式 v1：N=1，R=A → 内容可信度 2', current:true}],
      eventTime:'2026-09-06', collectTime:'2026-09-07 10:30', medium:'互联网', carrier:'网页', mode:'自动拉取',
      hits:['r1'], citedBy:[], feedbacks:[],
@@ -193,7 +204,7 @@ const DB = {
 
     {id:'i3', stmt:'W 公司渠道大会：下一代电驱矿卡计划 2027Q2 量产', status:'候选情报', rating:null, indepCount:null,
      indep:[], provenanceSrc:'s2',
-     provenance:[{src:'s2', role:'渠道大会发言 · 一次信源（经录音）', time:'2026-09-05 13:20', carrier:'录音', chain:'A'}],
+     provenance:[{src:'s2', outlet:'渠道大会 · 现场', role:'渠道大会发言 · 一次信源（经录音）', time:'2026-09-05 13:20', carrier:'录音', chain:'A'}],
      ratingHistory:[],
      eventTime:'2026-09-05', collectTime:'2026-09-05 14:00', medium:'行业展会', carrier:'录音', mode:'人工提交',
      hits:['r1'], citedBy:[], feedbacks:[],
@@ -206,8 +217,8 @@ const DB = {
 
     {id:'i2', stmt:'W 公司中标北方露天矿 12 台百吨级矿卡订单', status:'已消费', rating:'A2', indepCount:1,
      indep:['s2'], provenanceSrc:'s2',
-     provenance:[{src:'s2', role:'中标公告 · 一次信源', time:'2026-08-28 09:00', carrier:'网页', chain:'A'},
-                 {src:'s4', role:'转载 S2（二次信源）', time:'2026-08-29 10:00', carrier:'网页', chain:'A'}],
+     provenance:[{src:'s2', outlet:'官网', role:'中标公告 · 一次信源', time:'2026-08-28 09:00', carrier:'网页', chain:'A'},
+                 {src:'s4', outlet:'网站', role:'转载 S2（二次信源）', time:'2026-08-29 10:00', carrier:'网页', chain:'A'}],
      ratingHistory:[{v:1, time:'2026-08-29 14:00', rating:'A2', basis:'公式 v1：N=1，R=A → 内容可信度 2', current:true}],
      eventTime:'2026-08-28', collectTime:'2026-08-28 10:00', medium:'互联网', carrier:'网页', mode:'自动拉取',
      hits:['r1'], citedBy:[{claim:'c2', as:'判定证据'}],
@@ -217,8 +228,8 @@ const DB = {
 
     {id:'i5', stmt:'西部某省拟出台矿卡新能源置换补贴政策（征求意见稿）', status:'候选情报', rating:null, indepCount:null,
      indep:[], provenanceSrc:'s4',
-     provenance:[{src:'s4', role:'首发报道', time:'2026-08-20 16:00', carrier:'网页', chain:'A'},
-                 {src:'s3', role:'跟进报道 · 疑似同源', time:'2026-09-07 09:00', carrier:'网页', chain:'A'}],
+     provenance:[{src:'s4', outlet:'网站', role:'首发报道', time:'2026-08-20 16:00', carrier:'网页', chain:'A'},
+                 {src:'s3', outlet:'网站', role:'跟进报道 · 疑似同源', time:'2026-09-07 09:00', carrier:'网页', chain:'A'}],
      ratingHistory:[],
      eventTime:'2026-08-20', collectTime:'2026-08-20 16:10', medium:'互联网', carrier:'网页', mode:'自动拉取',
      hits:['r1'], citedBy:[], feedbacks:[],
@@ -232,7 +243,7 @@ const DB = {
 
     {id:'i4', stmt:'W 公司收购 J 矿电驱动部件厂', status:'作废', rating:null, indepCount:1,
      indep:['s5'], provenanceSrc:'s5',
-     provenance:[{src:'s5', role:'爆料 · 唯一信源', time:'2026-08-20 08:00', carrier:'网页', chain:'A'}],
+     provenance:[{src:'s5', outlet:'公众号', role:'爆料 · 唯一信源', time:'2026-08-20 08:00', carrier:'网页', chain:'A'}],
      ratingHistory:[{v:1, time:'2026-08-21 09:00', rating:'D4', basis:'公式 v1：N=1，R=D → 内容可信度 4'},
                     {time:'2026-09-04 09:10', rating:'作废', basis:'事实错误反馈（理由必填）：公告已辟谣——收购主体为其控股股东，非 W 公司。触发级联重估：C2 → 重估中'}],
      eventTime:'2026-08-19', collectTime:'2026-08-20 08:05', medium:'互联网', carrier:'网页', mode:'自动拉取',
@@ -243,7 +254,7 @@ const DB = {
 
     {id:'i7', stmt:'W 公司向东南亚矿业公司交付 20 台电动矿卡', status:'已消费', rating:'A2', indepCount:1,
      indep:['s2'], provenanceSrc:'s2',
-     provenance:[{src:'s2', role:'交付公告 · 一次信源', time:'2026-05-10 09:00', carrier:'网页', chain:'A'}],
+     provenance:[{src:'s2', outlet:'官网', role:'交付公告 · 一次信源', time:'2026-05-10 09:00', carrier:'网页', chain:'A'}],
      ratingHistory:[{v:1, time:'2026-05-11 10:00', rating:'A2', basis:'公式 v1：N=1，R=A → 内容可信度 2', current:true}],
      eventTime:'2026-05-09', collectTime:'2026-05-10 09:05', medium:'互联网', carrier:'网页', mode:'自动拉取',
      hits:['r1'], citedBy:[{claim:'c3', as:'证伪依据'}],
@@ -253,7 +264,7 @@ const DB = {
 
     {id:'i8', stmt:'L 矿业展示无人装载机器人园区作业视频', status:'已核实', rating:'B3', indepCount:1,
      indep:['s1'], provenanceSrc:'s1',
-     provenance:[{src:'s1', role:'首发 · 一次信源', time:'2026-09-08 20:00', carrier:'网页', chain:'A'}],
+     provenance:[{src:'s1', outlet:'公众号', role:'首发 · 一次信源', time:'2026-09-08 20:00', carrier:'网页', chain:'A'}],
      ratingHistory:[{v:1, time:'2026-09-09 09:00', rating:'B3', basis:'公式 v1：N=1，R=B → 内容可信度 3', current:true}],
      eventTime:'2026-09-08', collectTime:'2026-09-08 20:10', medium:'互联网', carrier:'网页', mode:'自动拉取',
      hits:[], citedBy:[], feedbacks:[],
@@ -330,7 +341,7 @@ const DB = {
 
   reqs: [
     {id:'r1', name:'长期跟踪 W 公司动态', status:'激活', window:'常驻',
-     spec:{topics:'矿卡 · 订单 · 业绩 · 战略动向', keywords:'W 公司；矿卡；交付量；订单；电驱', pref:'一次信源优先，行业媒体次之', timing:'晨间分发汇总（批量）'},
+     spec:{topics:'矿卡 · 订单 · 业绩 · 战略动向', keywords:'W 公司；矿卡；交付量；订单；电驱', pref:'一次信源优先，媒体次之', timing:'晨间分发汇总（批量）'},
      coverage:{distr:86, cons:74}, recentHits:['i1','i6','i3','i2']},
     {id:'r2', name:'盯输入：国内露天矿数量与分布', status:'激活', window:'至 T1 结题', spawnedBy:'t1', hits:[]},
     {id:'r3', name:'盯输入：在役矿卡保有量 / 车龄与更换率', status:'激活', window:'至 T1 结题', spawnedBy:'t1', hits:['i1']},
@@ -582,7 +593,7 @@ function renderItemDetail(id){
   <div class="box"><h2>独立信源计数</h2>
     <div>穿透转引链后：<b>${i.indepCount!=null?`×${i.indepCount}`:'—'}</b>
       ${i.indep.length?`（${i.indep.map(srcLink).join('、')}）`:''}</div>
-    <div class="muted" style="margin-top:4px">N 家转载同一通稿 = 1 个独立信源（术语表 · 独立信源）。</div>
+    <div class="muted" style="margin-top:4px">N 家转载同一通稿 = 1 个独立信源；同主体多途径（如官网 + 公众号）= 1——按发布主体计数（decision-17）。</div>
   </div>
 
   ${mentionGraphSVG('item', id)}
@@ -592,12 +603,12 @@ function renderItemDetail(id){
       <div style="margin-bottom:8px"><span class="muted">链 ${esc(c)}</span>
       <ul class="chain">${nodes.map((p, n) => `
         <li class="${n===0?'first':''}">
-          ${srcLink(p.src)} <span class="pill">${esc(p.role)}</span>
+          ${srcLink(p.src)}<span class="muted"> · ${esc(p.outlet || '途径未记')}</span> <span class="pill">${esc(p.role)}</span>
           <span class="muted">${esc(p.time)} · 载体 ${esc(p.carrier)}
           ${p.src===i.provenanceSrc?' · <b>信用归因对象（最早引入方 · decision-08）</b>':''}</span>
           <span class="stub" title="原文快照仅内部留存用于溯源（立项 §8），分发携带链接而非快照本体">原文快照</span>
         </li>`).join('')}</ul></div>`).join('')}
-    <div class="muted">转引链 = 载体 → … → 原始信源；核实与独立性判断的依据（术语表）。</div>
+    <div class="muted">转引链 = 载体 → … → 原始信源；节点记信源 × 途径 × 载体 × 时间（decision-17）——核实与独立性判断的依据（术语表）。</div>
   </div>
 
   ${i.ratingHistory.length ? `
@@ -985,14 +996,14 @@ function renderSources(){
   const pend = DB.sources.filter(s => s.status === '待确认');
   return `
   <h1 class="page">信源库</h1>
-  <div class="sub">已准入信源的全集；新信源经双通道确认制准入（decision-09）。</div>
+  <div class="sub">已准入信源（发布主体）及其途径的全集（decision-17）；新信源经双通道确认制准入（decision-09）。</div>
 
   ${pend.length ? `
   <div class="box"><h2>待确认（不入库 · 不建画像 · 不记账）</h2>
     ${pend.map(s => `
       <div style="border-bottom:1px solid #eee;padding:9px 0">
         <b>${esc(s.name)}</b> <span class="pill">${esc(s.type)}</span>
-        <span class="muted"> · ${esc(s.found.channel)} · ${esc(s.found.time)}</span>
+        <span class="muted"> · ${esc(s.found.channel)} · ${esc(s.found.time)} · ${esc(s.found.entry)}</span>
         <div class="fbrow">
           <button class="btn small primary" onclick="confirmSource('${s.id}')">确认入信源库</button>
           <button class="btn small" onclick="ignoreSource('${s.id}')">忽略</button>
@@ -1002,54 +1013,80 @@ function renderSources(){
 
   <div class="box">
     <table>
-      <tr><th>信源</th><th>类型</th><th>信源信用</th><th>领域覆盖</th><th>历史反馈</th><th>状态</th></tr>
+      <tr><th>信源（主体）</th><th>类型</th><th>途径</th><th>信源信用</th><th>历史反馈</th><th>状态</th></tr>
       ${ok.map(s => `
         <tr>
-          <td><a href="#/source/${s.id}">${esc(s.name)}</a></td>
+          <td><a href="#/source/${s.id}">${esc(s.name)}</a>${s.entity?' <span class="pill">挂实体</span>':''}</td>
           <td class="muted">${esc(s.type)}</td>
+          <td class="muted">${(s.outlets||[]).map(o => esc(o.name)).join('、') || '—'}</td>
           <td><span class="pill rating">${s.credit}</span></td>
-          <td class="muted">${esc(s.profile.domain)}</td>
           <td class="muted">有效 ×${s.fb.valid} · 事实错误 ×${s.fb.factual}</td>
           <td>${statusPill(s.status)}</td>
         </tr>`).join('')}
     </table>
+    <div class="muted" style="margin-top:6px">独立信源按主体计数：同主体多途径 = 1（如 W 公司 · 官网 + 渠道大会，decision-17）。</div>
   </div>
 
   <div class="box"><h2>登记信源（双通道 · 通道一 · 人工登记）</h2>
-    <div class="muted" style="margin-bottom:8px">冷启动入口：信源库为空时先登记种子信源（doc-07 §2.1）；运行期补充信源同此通道，经确认入信源库（decision-09）。</div>
+    <div class="muted" style="margin-bottom:8px">冷启动入口：信源库为空时先登记种子信源（doc-07 §2.1）；运行期补充信源同此通道，经确认入信源库（decision-09）。信源 = 发布主体，途径 = 其出口——主体一登记、途径随手添（decision-17）。</div>
     <div class="grid2">
-      <div class="field"><label>名称</label><input type="text" id="src-name" placeholder="例：某行业协会官网"></div>
-      <div class="field"><label>类型（预设，可自定义）</label><select id="src-type"><option>机构官网</option><option>行业媒体</option><option>行业自媒体</option><option>人物 / 专家</option><option>政府 / 协会 / 统计</option><option>其他</option></select></div>
+      <div class="field"><label>名称（发布主体）</label><input type="text" id="src-name" placeholder="例：W 公司、新华社、张三"></div>
+      <div class="field"><label>类型（主体维度）</label><select id="src-type"><option>公司</option><option>政府</option><option>组织</option><option>媒体</option><option>自媒体</option><option>人物</option><option>其他</option></select></div>
     </div>
-    <div class="field"><label>采集入口（网址 / RSS / 账号 ID——定向智能体派任务的抓手）</label>
+    <h3>首条途径（可后补）</h3>
+    <div class="grid2">
+      <div class="field"><label>途径名</label><input type="text" id="src-outlet" placeholder="例：官网 / 公众号 / 现场"></div>
+      <div class="field"><label>媒介（获取场景）</label><select id="src-outlet-medium"><option>互联网</option><option>用户访谈</option><option>行业展会</option><option>行业交流</option><option>内部会议</option><option>文档</option></select></div>
+    </div>
+    <div class="field"><label>采集入口（网址 / RSS / 账号 / 线下场景——定向智能体对途径派采集任务的抓手）</label>
       <input type="text" id="src-entry" placeholder="例：https://… 或 RSS 地址或公众号 ID"></div>
     <button class="btn primary" onclick="srcRegister()">登记（经确认入信源库）</button>
+    <div class="muted" style="margin-top:8px">同主体多途径 = 1 个独立信源；信用记在主体上，不按途径拆分（decision-17）。</div>
   </div>`;
 }
 
 function renderSourceDetail(id){
   const s = src(id); if (!s) return '<div class="empty">信源不存在</div>';
+  if (s.status === '待确认') return `
+  <h1 class="page"><a href="#/sources">信源库</a> / 信源画像</h1>
+  <div class="sub">${esc(s.name)} · ${esc(s.type)}（发布主体 · decision-17） ${statusPill(s.status)}</div>
+  <div class="box"><div class="empty">待确认——不入库、不建画像、不记账（decision-09）；确认后建主体画像并按发现上报补记首条途径。</div></div>`;
   const inItems = DB.items.filter(i => i.provenance.some(p => p.src === id) || i.provenanceSrc === id);
+  const ent = s.entity ? entOf(s.entity) : null;
   return `
   <h1 class="page"><a href="#/sources">信源库</a> / 信源画像</h1>
-  <div class="sub">${esc(s.name)} · ${esc(s.type)} ${statusPill(s.status)}</div>
+  <div class="sub">${esc(s.name)} · ${esc(s.type)}（发布主体 · decision-17） ${statusPill(s.status)}</div>
 
-  <div class="box"><h2>信源信用 <span class="pill rating">${s.credit}</span></h2>
+  <div class="box"><h2>信源信用（记在主体上） <span class="pill rating">${s.credit}</span></h2>
     <div class="muted">${esc(s.creditNote)}</div>
-    <div class="muted" style="margin-top:4px">公式 v1：有效 +1 · 事实错误 −2 · 180 天半衰期 · 累计分分档映射 A–F（decision-04）；更新过程可重放。信用只能记在信源上。</div>
-    <div class="muted" style="margin-top:4px">信用归因：反馈定位到转引链上最早引入该陈述的信源，如实转述者不受奖惩（decision-08）。</div>
+    <div class="muted" style="margin-top:4px">公式 v1：有效 +1 · 事实错误 −2 · 180 天半衰期 · 累计分分档映射 A–F（decision-04）；更新过程可重放。信用归主体，不按途径拆分（decision-17）。</div>
+    <div class="muted" style="margin-top:4px">信用归因：反馈定位到转引链上最早引入该陈述的信源（主体），如实转述者不受奖惩（decision-08）。</div>
   </div>
 
-  <div class="box"><h2>信源画像</h2>
+  <div class="box"><h2>主体画像</h2>
     <dl class="kv">
-      <dt>采集入口</dt><dd>${esc(s.entry || '—')}</dd>
-      <dt>领域覆盖</dt><dd>${esc(s.profile.domain)}</dd>
-      <dt>更新频率</dt><dd>${esc(s.profile.freq)}</dd>
+      <dt>类型</dt><dd>${esc(s.type)}</dd>
+      <dt>挂接实体</dt><dd>${ent ? `<a href="#/graph" onclick="selectEnt('${ent.id}')">${esc(ent.name)}</a><span class="muted">（经实体 ID 打通 · decision-17：主体管信用与立场，实体管被谁提及）</span>` : '—'}</dd>
       <dt>立场偏差</dt><dd>${esc(s.profile.stance)}</dd>
       <dt>独立性关联</dt><dd>${esc(s.profile.indep)}</dd>
       <dt>历史反馈</dt><dd>有效 ×${s.fb.valid} · 事实错误 ×${s.fb.factual} · 最近 ${esc(s.fb.last)}</dd>
     </dl>
-    <div class="muted" style="margin-top:6px">画像 ≠ 信用：信用只是画像中的一个动态字段（术语表）。</div>
+    <div class="muted" style="margin-top:6px">画像 ≠ 信用：信用只是画像中的动态字段（术语表）；立场与独立性归主体，节奏与领域归途径（decision-17）。</div>
+  </div>
+
+  <div class="box"><h2>途径（发布出口 · ${(s.outlets||[]).length}）</h2>
+    ${(s.outlets||[]).length ? `<table>
+      <tr><th>途径</th><th>媒介</th><th>采集入口</th><th>载体能力</th><th>更新节奏</th><th>领域侧重</th></tr>
+      ${s.outlets.map(o => `
+        <tr><td><b>${esc(o.name)}</b></td>
+        <td class="muted">${esc(o.medium)}</td>
+        <td class="muted">${esc(o.entry)}</td>
+        <td class="muted">${esc(o.carriers)}</td>
+        <td class="muted">${esc(o.freq)}</td>
+        <td class="muted">${esc(o.domain)}</td></tr>`).join('')}
+    </table>
+    <div class="muted" style="margin-top:6px">采集任务对途径派发（doc-06 §2）；同主体多途径 = 1 个独立信源（decision-17）——${esc(s.name)} 的 ${(s.outlets||[]).map(o => esc(o.name)).join('、')} 只计 1 个。</div>`
+    : '<div class="muted">暂无途径——确认后补记（decision-09）。</div>'}
   </div>
 
   <div class="box"><h2>参与条目（转引链出现即计）</h2>
@@ -1193,13 +1230,19 @@ function fbSubmit(id){
   refresh();
 }
 
+function nextOutletId(){
+  let max = 0;
+  DB.sources.forEach(s => (s.outlets || []).forEach(o => { const n = +String(o.id).slice(1); if (n > max) max = n; }));
+  return 'o' + (max + 1);
+}
 function confirmSource(id){
   const s = src(id);
   s.status = '已确认';
-  s.profile = {domain:'（待积累画像）', freq:'—', stance:'—', indep:'—'};
+  s.outlets = [{id:nextOutletId(), name:'公众号', medium:'互联网', entry:s.found.entry || '（待补）', carriers:'网页', freq:'—', domain:'—'}];
+  s.profile = {stance:'—', indep:'—'};
   s.fb = {valid:0, factual:0, last:'—'};
   s.credit = 'F'; s.creditNote = '新准入 · 无半衰期内记录 → 档 F（无法判断）';
-  toast('已确认入信源库 · 开始建画像与记账');
+  toast('已确认入信源库 · 开始建画像与记账（途径按发现上报补记）');
   refresh();
 }
 function ignoreSource(id){
@@ -1209,12 +1252,14 @@ function ignoreSource(id){
 }
 function srcRegister(){
   const name = $('#src-name').value.trim();
+  const outletName = $('#src-outlet').value.trim();
   const entry = $('#src-entry').value.trim();
-  if (!name || !entry){ toast('请填写名称与采集入口'); return; }
-  DB.sources.push({id:'s' + (DB.sources.length + 1), name, type:$('#src-type').value, entry, credit:'F', status:'已确认',
-    profile:{domain:'（待积累画像）', freq:'—', stance:'—', indep:'—'}, fb:{valid:0, factual:0, last:'—'},
+  if (!name || !outletName || !entry){ toast('请填写主体名称与首条途径（途径名 + 采集入口）'); return; }
+  DB.sources.push({id:'s' + (DB.sources.length + 1), name, type:$('#src-type').value, credit:'F', status:'已确认',
+    outlets:[{id:nextOutletId(), name:outletName, medium:$('#src-outlet-medium').value, entry, carriers:'—', freq:'—', domain:'—'}],
+    profile:{stance:'—', indep:'—'}, fb:{valid:0, factual:0, last:'—'},
     creditNote:'人工登记（通道一 · decision-09）· 新准入 → 档 F'});
-  toast('已登记入信源库（人工登记通道）');
+  toast('已登记入信源库（主体 + 首条途径 · 人工登记通道）');
   refresh();
 }
 
@@ -1514,6 +1559,7 @@ function orphanNewReq(id){
   render();
 }
 function entPanel(e){
+  const srcs = DB.sources.filter(s => s.entity === e.id);
   return `
   <div class="box"><h2>${esc(e.name)} <span class="pill">${esc(e.type)}</span>${e.orphan ? ' <span class="pill dashed">断连孤岛</span>' : ''}</h2>
     <dl class="kv">
@@ -1521,6 +1567,7 @@ function entPanel(e){
       <dt>归并历史</dt><dd>${e.merges.map(m => `${esc(m.from)} → 本体（${esc(m.time)} · ${esc(m.note)}）`).join('；') || '—'}</dd>
       <dt>提及条目</dt><dd>${e.mentions.items.map(itemLink).join('、') || '—'}</dd>
       <dt>提及命题</dt><dd>${e.mentions.claims.map(claimLink).join('、') || '—'}</dd>
+      <dt>挂接信源</dt><dd>${srcs.length ? srcs.map(s => `<a href="#/source/${s.id}">${esc(s.name)}</a><span class="muted">（信源侧 · decision-17）</span>`).join('、') : '—'}</dd>
     </dl>
     ${e.orphan ? `
     <div class="muted" style="margin-top:8px">断连孤岛（新话题探测器 · decision-16）：不命中任何激活情报需求、不与课题邻域连通——新话题或噪音，由消费方裁决。</div>
@@ -1579,9 +1626,9 @@ function onboardOverlay(){
   <div style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:80;display:flex;align-items:center;justify-content:center;padding:20px">
     <div style="background:#fff;border-radius:10px;max-width:580px;width:100%;padding:22px 26px;box-shadow:0 10px 40px rgba(0,0,0,.3);max-height:90vh;overflow-y:auto">
       <h2 style="margin:0 0 4px;font-size:17px">欢迎使用 IIH <span class="muted" style="font-weight:400;font-size:12px">冷启动引导 · 首次启用一次性</span></h2>
-      <div class="muted" style="margin-bottom:12px">信源库为空时，定向智能体无信源可派采集任务（依赖信源画像选信源，doc-06 §2）——先喂种子：</div>
+      <div class="muted" style="margin-bottom:12px">信源库为空时，定向智能体无途径可派采集任务（依赖信源与途径画像选途径，doc-06 §2）——先喂种子：</div>
       <ol style="margin:0 0 12px;padding-left:20px;line-height:2">
-        <li><b>登记种子信源</b>——一两个源头即可（如 W 公司官网、新华社）<a href="#/sources" onclick="dismissOnboard()">去登记 →</a></li>
+        <li><b>登记种子信源及途径</b>——一两个源头即可（如 W 公司 · 官网与公众号，新华社 · 官网；主体一登记、途径随手添，decision-17）<a href="#/sources" onclick="dismissOnboard()">去登记 →</a></li>
         <li><b>声明首个情报需求并激活</b>——定向智能体开始按画像派采集任务 <a href="#/reqs" onclick="dismissOnboard()">去声明 →</a></li>
         <li><b>采集启动</b>——线索 → 审查 → 核实评级，核实后按命中需求分发</li>
         <li><b>滚雪球</b>——采集的池外自由探索（decision-09）发现关联信源，经确认扩大信源池</li>
