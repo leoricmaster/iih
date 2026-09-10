@@ -249,6 +249,16 @@ const DB = {
      feedbacks:[{type:'有效', reason:'快捷 · 有效', time:'2026-05-12 08:30', routing:'信用 ↑（归因：S2 W 公司）'}],
      trail:[{t:'已核实（A2）', time:'2026-05-11 10:00'},{t:'已分发', time:'2026-05-12 08:00'},{t:'已消费（反馈：有效）', time:'2026-05-12 08:30'}],
      attribution:'最早引入方 S2 W 公司（decision-08）'},
+
+    {id:'i8', stmt:'L 矿业展示无人装载机器人园区作业视频', status:'已核实', rating:'B3', indepCount:1,
+     indep:['s1'], provenanceSrc:'s1',
+     provenance:[{src:'s1', role:'首发 · 一次信源', time:'2026-09-08 20:00', carrier:'网页', chain:'A'}],
+     ratingHistory:[{v:1, time:'2026-09-09 09:00', rating:'B3', basis:'公式 v1：N=1，R=B → 内容可信度 3', current:true}],
+     eventTime:'2026-09-08', collectTime:'2026-09-08 20:10', medium:'互联网', carrier:'网页', mode:'自动拉取',
+     hits:[], citedBy:[], feedbacks:[],
+     trail:[{t:'已核实（B3）', time:'2026-09-09 09:00'}],
+     attribution:'最早引入方 S1 华矿装备观察（decision-08）',
+     note:'断连孤岛演示：不命中任何激活需求、实体不与课题邻域连通——图谱页提示新话题（decision-16）'},
   ],
 
   tasks: [
@@ -335,6 +345,22 @@ const DB = {
     {id:'al3', kind:'存疑复核', level:'中', time:'2026-09-07 09:05', read:false,
      title:'I5 已回候选情报，重新核实', body:'新证据命中事件级合并键（decision-03 事件驱动）——多数情形无需操作。', to:'item/i5', toLabel:'查看条目'},
   ],
+
+  entities: [
+    {id:'e1', name:'W 公司', type:'机构', aliases:['W 集团', 'W 股份'],
+     merges:[{from:'W 集团', time:'2026-09-06', note:'实体归一提案 · 消费方确认（decision-16）'}],
+     mentions:{items:['i1','i2','i3','i4','i6','i7'], claims:['c2','c3']}},
+    {id:'e2', name:'矿卡', type:'产品', aliases:[], merges:[],
+     mentions:{items:['i1','i2','i3','i5','i7'], claims:['c1','c2']}},
+    {id:'e3', name:'电驱', type:'技术', aliases:['电驱动'], merges:[],
+     mentions:{items:['i3'], claims:['c2']}},
+    {id:'e4', name:'北方露天矿', type:'矿场', aliases:[], merges:[],
+     mentions:{items:['i2'], claims:[]}},
+    {id:'e5', name:'东南亚矿业公司', type:'机构', aliases:[], merges:[],
+     mentions:{items:['i7'], claims:[]}},
+    {id:'e6', name:'L 矿业', type:'机构', aliases:[], merges:[], orphan:true,
+     mentions:{items:['i8'], claims:[]}},
+  ],
 };
 
 const FB_TYPES = ['有效','不相关','过期','重复/噪音','评级异议','事实错误'];
@@ -383,10 +409,10 @@ function refresh(){ render(); renderIm(); }
 
 /* ================= 路由 ================= */
 const NAV_MAP = {inbox:'inbox', items:'items', item:'items', tasks:'tasks', task:'tasks',
-                 claims:'claims', claim:'claims',
+                 claims:'claims', claim:'claims', graph:'graph',
                  reqs:'reqs', requirement:'reqs', sources:'sources', source:'sources', submit:null, onboard:null};
 let PENDING_FB = null;   // 待补理由的事实错误反馈（跳详情）
-let UI = {itemStatus:'已核实起', itemMode:'全部', subCarriers:['录音']};
+let UI = {itemStatus:'已核实起', itemMode:'全部', subCarriers:['录音'], graphView:'实体视图', graphSel:null};
 
 function route(){
   const h = location.hash.replace(/^#\/?/, '') || 'inbox';
@@ -394,7 +420,7 @@ function route(){
   return {page, id};
 }
 function renderNav(active){
-  const links = [['inbox','收件箱'],['items','情报条目'],['tasks','研究课题'],['claims','命题'],['reqs','情报需求'],['sources','信源库']];
+  const links = [['inbox','收件箱'],['items','情报条目'],['tasks','研究课题'],['claims','命题'],['graph','图谱'],['reqs','情报需求'],['sources','信源库']];
   $('#nav').innerHTML = links.map(([p, label]) =>
     `<a href="#/${p}" class="${active===p?'active':''}">${label}${p==='inbox'?`<span class="cnt">${inboxCount()}</span>`:''}</a>`
   ).join('');
@@ -402,7 +428,7 @@ function renderNav(active){
 const PAGES = {
   inbox: renderInbox, items: renderItems, item: renderItemDetail,
   tasks: renderTasks, task: renderTaskDetail,
-  claims: renderClaims, claim: renderClaimDetail,
+  claims: renderClaims, claim: renderClaimDetail, graph: renderGraph,
   reqs: renderReqs, requirement: renderReqDetail,
   sources: renderSources, source: renderSourceDetail, submit: renderSubmit, onboard: renderOnboard,
 };
@@ -527,6 +553,7 @@ function renderItemDetail(id){
       <dt>采集模式</dt><dd>${esc(i.mode)}</dd>
       <dt>出处信源</dt><dd>${srcLink(i.provenanceSrc)}</dd>
       <dt>命中情报需求</dt><dd>${i.hits.map(reqLink).join('、') || '—'}</dd>
+      <dt>实体提及</dt><dd>${itemEntities(id).map(e => `<a href="#/graph" onclick="selectEnt('${e.id}')">${esc(e.name)}</a>`).join('、') || '—'}</dd>
       <dt>被引用</dt><dd>${i.citedBy.map(c => `${claimLink(c.claim)}<span class="muted">（${esc(c.as)}）</span>`).join('；') || '—'}</dd>
     </dl>`;
   return `
@@ -546,6 +573,8 @@ function renderItemDetail(id){
       ${i.indep.length?`（${i.indep.map(srcLink).join('、')}）`:''}</div>
     <div class="muted" style="margin-top:4px">N 家转载同一通稿 = 1 个独立信源（术语表 · 独立信源）。</div>
   </div>
+
+  ${mentionGraphSVG('item', id)}
 
   <div class="sketch"><h2 style="font-size:14.5px;margin:0 0 10px;display:flex;gap:8px;align-items:center">转引链穿透视图 <span class="sketch-tag">草图 · 实现时按真实数据重画</span></h2>
     ${Object.entries(chainGroups).map(([c, nodes]) => `
@@ -777,6 +806,8 @@ function renderClaimDetail(id){
       ${c.evidence.map(e => `<tr><td>${citeLink(e.item || e.subclaim)}</td><td class="muted">${esc(e.as)}</td></tr>`).join('')}
     </table>` : '<div class="muted">暂无证据——叶子命题从已核实情报条目判定，合成命题从子命题合成（判定方式二分 · decision-15）。</div>'}
   </div>
+
+  ${mentionGraphSVG('claim', id)}
 
   ${c.diff ? `
   <div class="box"><h2>变化前后对比（重估中）</h2>
@@ -1295,6 +1326,129 @@ function reqCreate(){
     spec:{topics:$('#req-topics').value, keywords:'', pref:'', timing:'晨间分发汇总（批量）'}});
   toast('已创建 · 初始态 = 草稿');
   location.hash = '#/requirement/' + id;
+}
+
+/* ================= 图谱（实体底座 · decision-16） ================= */
+const EPOS = {e1:[430,205],e2:[665,125],e3:[665,290],e4:[875,60],e5:[875,215],e6:[160,360]};
+const G_ENT_W = 126, G_ENT_H = 46;
+
+const entOf = id => DB.entities.find(e => e.id === id);
+const itemEntities = iid => DB.entities.filter(e => e.mentions.items.includes(iid));
+const claimEntities = cid => DB.entities.filter(e => e.mentions.claims.includes(cid));
+function entEdges(){
+  const out = [];
+  for (let a = 0; a < DB.entities.length; a++) for (let b = a + 1; b < DB.entities.length; b++){
+    const A = DB.entities[a], B = DB.entities[b];
+    const co = [...A.mentions.items.filter(x => B.mentions.items.includes(x)),
+                ...A.mentions.claims.filter(x => B.mentions.claims.includes(x))];
+    if (co.length) out.push([A.id, B.id, co]);
+  }
+  return out;
+}
+function entNodeSVG(e){
+  const [x, y] = EPOS[e.id];
+  return `<g style="cursor:pointer" onclick="selectEnt('${e.id}')">
+    <rect x="${x - G_ENT_W/2}" y="${y - G_ENT_H/2}" width="${G_ENT_W}" height="${G_ENT_H}" rx="8" fill="#fff"
+      stroke="${e.orphan ? '#c9a95c' : '#2b5bd7'}" ${e.orphan ? 'stroke-dasharray="5 3"' : ''}/>
+    <text x="${x}" y="${y - 2}" text-anchor="middle" font-size="12.5" font-weight="600" fill="#222">${esc(e.name)}</text>
+    <text x="${x}" y="${y + 15}" text-anchor="middle" font-size="9.5" fill="#888">${esc(e.type)} · 条目×${e.mentions.items.length} · 命题×${e.mentions.claims.length}</text>
+  </g>`;
+}
+function graphSVG(){
+  let s = '';
+  entEdges().forEach(([a, b, co]) => {
+    const [ax, ay] = EPOS[a], [bx, by] = EPOS[b];
+    s += `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="#cfcfcf" stroke-width="1.2"/>
+          <text x="${(ax + bx)/2}" y="${(ay + by)/2 - 4}" text-anchor="middle" font-size="9.5" fill="#aaa">×${co.length}</text>`;
+  });
+  s += `<rect x="72" y="305" width="240" height="115" rx="10" fill="none" stroke="#c9a95c" stroke-dasharray="6 4"/>
+        <text x="192" y="322" text-anchor="middle" font-size="10.5" fill="#8a6d1a">断连孤岛（不与激活需求 / 课题邻域连通）</text>`;
+  DB.entities.forEach(e => { s += entNodeSVG(e); });
+  return `<svg viewBox="0 0 990 440" style="width:100%;max-width:990px;display:block">${s}</svg>`;
+}
+function objectGraphSVG(){
+  const N = (x, y, w, label, sub, color, href) => `
+    <a href="${href}"><rect x="${x - w/2}" y="${y - 20}" width="${w}" height="40" rx="8" fill="#fff" stroke="${color}"/>
+    <text x="${x}" y="${y - 3}" text-anchor="middle" font-size="12" font-weight="600" fill="#222">${esc(label)}</text>
+    <text x="${x}" y="${y + 12}" text-anchor="middle" font-size="9.5" fill="#888">${esc(sub)}</text></a>`;
+  const E = (x1, y1, x2, y2, label) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#cfcfcf" stroke-width="1.2"/>
+    <text x="${(x1 + x2)/2 + 4}" y="${(y1 + y2)/2 - 4}" font-size="9.5" fill="#999">${label}</text>`;
+  return `<svg viewBox="0 0 990 440" style="width:100%;max-width:990px;display:block">
+    ${E(140,220,330,100,'分解')}${E(140,220,330,340,'分解')}
+    ${E(330,100,520,100,'答案落成')}${E(330,340,520,340,'答案落成')}
+    ${E(520,100,700,220,'合成证据')}${E(520,340,700,220,'合成证据')}
+    ${E(520,100,865,100,'证据引用')}${E(520,340,865,340,'证据引用')}
+    ${N(140,220,158,'T1 露天矿装车市场空间','研究课题 · 进行中','#2b5bd7','#/task/t1')}
+    ${N(330,100,140,'T1a 单元存量法','子课题','#999','#/task/t1a')}
+    ${N(330,340,140,'T1b 工作量产能法','子课题','#999','#/task/t1b')}
+    ${N(520,100,150,'C1a 80–110 亿元','子结论 · 中','#2b5bd7','#/claim/c1a')}
+    ${N(520,340,150,'C1b 95–125 亿元','假设','#999','#/claim/c1b')}
+    ${N(700,220,158,'C1 装车市场空间','假设（待合成）','#2b5bd7','#/claim/c1')}
+    ${N(865,100,140,'I1 交付量 +40%','已核实 B1','#999','#/item/i1')}
+    ${N(865,340,140,'I2 中标 12 台','已消费 A2','#999','#/item/i2')}
+  </svg>`;
+}
+function setGraphView(v){ UI.graphView = v; render(); }
+function selectEnt(id){
+  UI.graphSel = id;
+  if (route().page !== 'graph') location.hash = '#/graph';
+  render();
+}
+function entPanel(e){
+  return `
+  <div class="box"><h2>${esc(e.name)} <span class="pill">${esc(e.type)}</span>${e.orphan ? ' <span class="pill dashed">断连孤岛</span>' : ''}</h2>
+    <dl class="kv">
+      <dt>别名</dt><dd>${e.aliases.join('、') || '—'}</dd>
+      <dt>归并历史</dt><dd>${e.merges.map(m => `${esc(m.from)} → 本体（${esc(m.time)} · ${esc(m.note)}）`).join('；') || '—'}</dd>
+      <dt>提及条目</dt><dd>${e.mentions.items.map(itemLink).join('、') || '—'}</dd>
+      <dt>提及命题</dt><dd>${e.mentions.claims.map(claimLink).join('、') || '—'}</dd>
+    </dl>
+    ${e.orphan ? `
+    <div class="muted" style="margin-top:8px">断连孤岛（新话题探测器 · decision-16）：不命中任何激活情报需求、不与课题邻域连通——新话题或噪音，由消费方裁决。</div>
+    <div class="fbrow"><button class="btn small primary" onclick="toast('原型占位：按孤岛提示进入新情报需求登记（关联实体：${esc(e.name)}）')">声明新情报需求</button></div>` : ''}
+  </div>`;
+}
+function renderGraph(){
+  const sel = UI.graphSel ? entOf(UI.graphSel) : null;
+  return `
+  <h1 class="page">图谱</h1>
+  <div class="sub">跨对象视图（decision-16）：实体不设独立列表 / 详情页，由本页一页承载——节点点选看提及清单与归并历史。</div>
+  <div class="box">
+    <div class="chips"><span class="lbl">视图</span>${['实体视图','对象视图'].map(v =>
+      `<span class="chip ${UI.graphView===v?'on':''}" onclick="setGraphView('${v}')">${v}</span>`).join('')}</div>
+    ${UI.graphView === '实体视图' ? graphSVG() : objectGraphSVG()}
+    <div class="muted" style="margin-top:6px">${UI.graphView === '实体视图'
+      ? '点 = 实体（世界对象）；线 = 提及共现派生的关系边（投影，不落账）；实体不进判定链，归并不触发级联重估（decision-16）。'
+      : '系统对象图：问题树 · 命题合成 DAG · 证据引用——账本既有结构的图谱呈现。'}</div>
+  </div>
+  ${sel ? entPanel(sel) : '<div class="box"><div class="empty">点选实体节点，看提及清单与归并历史</div></div>'}`;
+}
+function mentionGraphSVG(kind, id){
+  const ents = kind === 'item' ? itemEntities(id) : claimEntities(id);
+  if (!ents.length) return '';
+  const W = 740, rowH = 74, H = Math.max(190, 60 + ents.length * rowH);
+  const pos = ents.map((e, i) => [W - 150, 56 + i * rowH]);
+  const cx = 150, cy = H / 2;
+  let s = `<rect x="${cx - 55}" y="${cy - 18}" width="110" height="36" rx="8" fill="#f0f3fb" stroke="#2b5bd7"/>
+           <text x="${cx}" y="${cy + 4}" text-anchor="middle" font-size="12" font-weight="600" fill="#2b5bd7">${id.toUpperCase()}</text>`;
+  const idx = Object.fromEntries(ents.map((e, i) => [e.id, i]));
+  entEdges().forEach(([a, b]) => {
+    if (idx[a] == null || idx[b] == null) return;
+    const [ax, ay] = pos[idx[a]], [bx, by] = pos[idx[b]];
+    s += `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="#cfcfcf" stroke-width="1"/>`;
+  });
+  ents.forEach((e, i) => {
+    const [x, y] = pos[i];
+    s += `<line x1="${cx + 55}" y1="${cy}" x2="${x - 64}" y2="${y}" stroke="#2b5bd7" stroke-opacity=".45" stroke-dasharray="3 3"/>
+          <g style="cursor:pointer" onclick="selectEnt('${e.id}')">
+          <rect x="${x - 64}" y="${y - 19}" width="128" height="38" rx="8" fill="#fff" stroke="#2b5bd7"/>
+          <text x="${x}" y="${y + 4}" text-anchor="middle" font-size="12" font-weight="600" fill="#222">${esc(e.name)}</text></g>`;
+  });
+  return `
+  <div class="sketch"><h2 style="font-size:14.5px;margin:0 0 10px;display:flex;gap:8px;align-items:center">关联图（实体提及 · 派生共现） <span class="sketch-tag">草图 · 实现时按真实数据重画</span></h2>
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;display:block">${s}</svg>
+    <div class="muted">虚线 = 本${kind === 'item' ? '条目' : '命题'}挂载的实体提及；实体间连线 = 提及共现派生（投影，不落账）。点实体入<a href="#/graph">图谱页</a>（decision-16）。</div>
+  </div>`;
 }
 
 /* ================= 冷启动引导 ================= */
