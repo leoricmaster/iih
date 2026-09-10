@@ -104,6 +104,7 @@ textarea{min-height:64px;resize:vertical}
   <a class="btn primary side-submit" href="#/submit">＋ 人工录入</a>
   <nav id="nav"></nav>
   <div class="side-note">全局动作，不占导航位（doc-07 §3）</div>
+  <div class="side-note"><a href="#/onboard">▶ 冷启动引导</a>（首次启用 · doc-07 §2.1）</div>
 </aside>
 <div id="right">
 <header id="topbar">
@@ -383,7 +384,7 @@ function refresh(){ render(); renderIm(); }
 /* ================= 路由 ================= */
 const NAV_MAP = {inbox:'inbox', items:'items', item:'items', tasks:'tasks', task:'tasks',
                  claims:'claims', claim:'claims',
-                 reqs:'reqs', requirement:'reqs', sources:'sources', source:'sources', submit:null};
+                 reqs:'reqs', requirement:'reqs', sources:'sources', source:'sources', submit:null, onboard:null};
 let PENDING_FB = null;   // 待补理由的事实错误反馈（跳详情）
 let UI = {itemStatus:'已核实起', itemMode:'全部', subCarriers:['录音']};
 
@@ -403,7 +404,7 @@ const PAGES = {
   tasks: renderTasks, task: renderTaskDetail,
   claims: renderClaims, claim: renderClaimDetail,
   reqs: renderReqs, requirement: renderReqDetail,
-  sources: renderSources, source: renderSourceDetail, submit: renderSubmit,
+  sources: renderSources, source: renderSourceDetail, submit: renderSubmit, onboard: renderOnboard,
 };
 function render(){
   const {page, id} = route();
@@ -444,7 +445,7 @@ function renderInbox(){
         <span class="muted" style="white-space:nowrap;">${esc(a.time)}</span>
         <a class="btn small" href="#/${a.to}" onclick="alertRead(${n})">${esc(a.toLabel)}</a>
       </div>`).join('')}
-    <div class="muted" style="margin-top:8px">警报与日常分发区分级别，经推送通道即时送达（doc-07 §2.4）。</div>
+    <div class="muted" style="margin-top:8px">警报与日常分发区分级别，经推送通道即时送达（doc-07 §2.5）。</div>
   </div>
 
   <div class="box"><h2>待确认信源（新信源确认队列）</h2>
@@ -863,7 +864,7 @@ function renderReqDetail(id){
   </div>
 
   ${r.spec ? `
-  <div class="box"><h2>内容规格 ${editable?'<span class="muted">（定期微调 · 旅程 2.1）</span>':''}</h2>
+  <div class="box"><h2>内容规格 ${editable?'<span class="muted">（定期微调 · doc-07 §2.2）</span>':''}</h2>
     <div class="field"><label>主题</label><input type="text" id="spec-topics" value="${esc(r.spec.topics)}" ${editable?'':'disabled'}></div>
     <div class="field"><label>关键词</label><input type="text" id="spec-keywords" value="${esc(r.spec.keywords)}" ${editable?'':'disabled'}></div>
     <div class="field"><label>信源偏好</label><input type="text" id="spec-pref" value="${esc(r.spec.pref)}" ${editable?'':'disabled'}></div>
@@ -927,7 +928,8 @@ function renderSources(){
     </table>
   </div>
 
-  <div class="box"><h2>人工登记信源（双通道 · 通道一）</h2>
+  <div class="box"><h2>登记信源（双通道 · 通道一 · 人工登记）</h2>
+    <div class="muted" style="margin-bottom:8px">冷启动入口：信源库为空时先登记种子信源（doc-07 §2.1）；运行期补充信源同此通道，经确认入信源库（decision-09）。</div>
     <div class="grid2">
       <div class="field"><label>名称</label><input type="text" id="src-name" placeholder="例：某行业协会官网"></div>
       <div class="field"><label>类型</label><select id="src-type"><option>机构官网</option><option>行业媒体</option><option>行业自媒体</option><option>人物</option></select></div>
@@ -1293,6 +1295,30 @@ function reqCreate(){
     spec:{topics:$('#req-topics').value, keywords:'', pref:'', timing:'晨间分发汇总（批量）'}});
   toast('已创建 · 初始态 = 草稿');
   location.hash = '#/requirement/' + id;
+}
+
+/* ================= 冷启动引导 ================= */
+function renderOnboard(){
+  const confirmed = DB.sources.filter(s => s.status === '已确认').length;
+  return `
+  <h1 class="page">冷启动引导</h1>
+  <div class="sub">首次启用 · 一次性（doc-07 §2.1）：信源库为空时，定向智能体无信源可派采集任务（依赖信源画像选信源），需用户先喂种子。</div>
+
+  <div class="sketch">
+    <h2 style="font-size:14.5px;margin:0 0 10px;display:flex;gap:8px;align-items:center">冷启动动线 <span class="sketch-tag">草图 · 一次性引导，非常驻功能</span></h2>
+    <ol style="margin:0;padding-left:20px;line-height:1.9">
+      <li><b>登记种子信源</b>——在信源库登记若干源头（如 W 公司官网、新华社），定向智能体才有信源产出采集任务。<a href="#/sources">去信源库登记 →</a></li>
+      <li><b>声明首个情报需求并激活</b>——确认后定向智能体按信源画像派采集任务。<a href="#/reqs">去声明需求 →</a></li>
+      <li><b>采集启动</b>——采集智能体执行任务，产出线索 → 审查 → 核实评级。</li>
+      <li><b>滚雪球</b>——采集执行时的池外自由探索（decision-09）发现关联信源，经确认后扩大信源池。种子只需极少量（每个需求一两处源头），后续信源增长主要靠系统发现、用户确认。</li>
+    </ol>
+    <div class="muted" style="margin-top:8px">出口：需求激活、采集启动，进入常驻监控（doc-07 §2.2）。</div>
+  </div>
+
+  <div class="box"><h2>当前状态</h2>
+    <div>信源库已确认信源 <b>${confirmed}</b> 个${confirmed?'——已完成冷启动，下方为运行态演示':'——尚需登记种子信源'}。</div>
+    <div class="muted" style="margin-top:6px">本原型以运行态（已完成冷启动）的假数据演示；冷启动引导为补充说明，实际首次启用时引导登记种子信源。</div>
+  </div>`;
 }
 
 /* ================= 启动 ================= */
