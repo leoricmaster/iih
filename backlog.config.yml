@@ -1,7 +1,7 @@
 project_name: "IIH"
 default_status: "To Do"
 statuses: ["To Do", "In Progress", "Done"]
-labels: []
+labels: [product, tech, ui, ledger, pipeline]
 definition_of_done: ["符合 doc-08 通用 DoD（完成定义与豁免规则）"]
 date_format: yyyy-mm-dd
 max_column_width: 20
