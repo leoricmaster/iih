@@ -17,12 +17,14 @@
 ## 工作方式
 
 - 单人开发 + AI 辅助，中长期。设计决策经讨论后由用户裁决，以 `backlog decision` 落账（标题不含序号，ID 由工具分配）。涉及已决事项时先 `backlog decision list` 查读，不重复讨论。
+- 最小改动纪律：只改与当前任务相关的代码；不顺手重构、不重排无关代码、不改无关格式（通用 DoD #1，见 doc-08）。
 - 文档风格：简洁精练，能删则删。
 - 语言：文档用中文；代码标识符用英文（对应术语表 English 列）。
 
 ## 需求与任务管理
 
-- 用 Backlog.md 管理需求与任务（`backlog/` 目录，任务 ID 前缀 `IIH-`）。
+- 用 Backlog.md 管理需求与任务（`backlog/` 目录，任务 ID 前缀 `IIH-`）。Backlog 只承载用户视角需求轮廓：Feature 标题写能力名，US 标题用短名词短语、完整故事句置于描述首行；白盒实现计划写在任务 plan（`task edit --plan`），不另立任务。
+- 任务 DoD 引用 doc-08 通用 DoD（完成定义与豁免规则）+ 任务特有项；豁免须在任务 comment 留痕并经用户批准。
 - 每次会话开始先运行 `backlog instructions overview` 获取工作流；创建任务前先 `backlog search` 查重。
 - 任务描述、验收标准一律用术语表内术语；涉及架构决策的任务须在描述中关联对应 decision。
 - 不手建/手改 `backlog/` 下的文件结构与元数据（ID、状态、日期），一律走 `backlog` CLI；正文内容在 CLI 创建的文件内编辑。
