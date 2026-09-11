@@ -1,11 +1,11 @@
 ---
 id: IIH-01.01
 title: 素材人工录入
-status: In Progress
+status: Done
 assignee:
   - '@lancer'
 created_date: '2026-09-10 12:50'
-updated_date: '2026-09-11 11:34'
+updated_date: '2026-09-11 11:44'
 labels:
   - product
   - ui
@@ -38,13 +38,13 @@ ordinal: 2000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Given 运维方打开录入素材页 When 选媒介「会议讨论」、填写陈述「W 公司渠道大会：下一代电驱矿卡计划 2027Q2 量产」、提交 Then 生成线索提案，落账为「线索」态；信源（W 公司）与途径（渠道大会现场）由采集智能体归因补记（非互联网途径不经登记，doc-06 §3），溯源五要素齐备（载体+媒介+采集时间+原文快照+信源/途径归因）（对照原型录入素材页走查）
-- [ ] #2 Given 运维方录入时必填字段缺失 When 提交 Then 表单校验拦截，不生成提案
+- [x] #1 Given 运维方打开录入素材页 When 选媒介「会议讨论」、填写陈述「W 公司渠道大会：下一代电驱矿卡计划 2027Q2 量产」、提交 Then 生成线索提案，落账为「线索」态；信源（W 公司）与途径（渠道大会现场）由采集智能体归因补记（非互联网途径不经登记，doc-06 §3），溯源五要素齐备（载体+媒介+采集时间+原文快照+信源/途径归因）（对照原型录入素材页走查）
+- [x] #2 Given 运维方录入时必填字段缺失 When 提交 Then 表单校验拦截，不生成提案
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 符合 doc-08 通用 DoD（完成定义与豁免规则）
+- [x] #1 符合 doc-08 通用 DoD（完成定义与豁免规则）
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -110,4 +110,12 @@ ordinal: 2000
 阶段 6 部分完成：干净环境一条命令重建已验证（down -v → build → up：启动即迁移、媒介/载体 seed 就位、healthz 200、录入素材页渲染、内部会议在下拉中）。待办：CI 实跑（需 push）、AC#1 真实 LLM 走查（需 LLM_API_KEY）、AC 措辞裁决（会议讨论 vs 术语表内部会议）。
 
 裁决落账：媒介定名「会议讨论」（术语表 §六已同步，seed/code 改 meeting_discussion，AC 措辞无需再改）。AC#1 真实 LLM 走查通过（DeepSeek 归因信源 W 公司+途径渠道大会现场，落账 lead 待确认，计量 608+120 tokens）；AC#2 走查通过（双缺失拦截、无提案）。覆盖率可见性：本地 pytest 即生成 htmlcov/，CI 上传 coverage artifact。
+
+阶段 6 完成：commit 7de2bc3 已推送 main，CI run #1 全量绿（ruff/format/mypy/pytest-cov≥80，conclusion=success，coverage artifact 已上传）。DoD 逐项核对有据：干净环境重建已验、术语裁决已沉淀 doc-03、计量设计 doc-05 §1/§4 承载、无已知静默遗留。
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+实现：工程骨架（uv+FastAPI+SQLAlchemy 2.0+Alembic，三层分包 ledger/agents/tools/web）→ 最简 schema（六表+种子）→ CI 门禁 → 提案契约与状态机执行器（无溯源不落账，驳回状态不变）→ Collector LLM 归因（instructor 结构化输出，计量入 llm_call）→ 录入素材页（媒介下拉排除互联网、表单拦截、驳回原因回显）。AC#1/AC#2 均以真实 LLM 走查（DeepSeek 归因 W 公司/渠道大会现场，落账 lead 待确认，608+120 tokens 计量；双缺失拦截无提案）+ 自动化测试双向验证，22 tests 全绿；CI run #1 success（commit 7de2bc3）；干净环境 docker compose 重建可用。AC↔测试映射：AC#1↔test_web::test_submit_lands_lead_end_to_end（对应）+test_state_machine::test_commit_lands_lead_with_full_provenance、test_collector::test_manual_submission_builds_lead_proposal_with_metering（支撑）；AC#2↔test_web::test_submit_with_missing_fields_is_blocked（对应）。测试 docstring 已标 AC 引用，分「对应/支撑」两档；其余用例为架构契约回归（驳回分支、seed、schema），不挂 AC。
+<!-- SECTION:FINAL_SUMMARY:END -->
