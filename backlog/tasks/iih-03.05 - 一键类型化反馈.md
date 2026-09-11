@@ -4,13 +4,17 @@ title: 一键类型化反馈
 status: To Do
 assignee: []
 created_date: '2026-09-11 01:41'
-updated_date: '2026-09-11 01:42'
+updated_date: '2026-09-11 03:11'
 labels:
   - product
   - ui
 dependencies:
   - IIH-03.04
+references:
+  - doc-02 §6
+  - decision-11
 parent_task_id: IIH-03
+type: feature
 ordinal: 9000
 ---
 
@@ -19,7 +23,7 @@ ordinal: 9000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 作为消费方，我想要对条目一键给出类型化反馈，以便表达情报质量并驱动系统学习。
 
-反馈入口（doc-07 §5、原型反馈交互）：收件箱或详情页对条目给六类型反馈，一步可达；快捷反馈默认理由「快捷 · {类型}」，Web 可补写，事实错误理由必填（decision-11）；反馈经反馈路由按六类型分流（领域模型 §6）。关联 doc-02 §6、decision-11。
+反馈入口（doc-07 §5、原型反馈交互）：收件箱或详情页对条目给六类型反馈，一步可达；快捷反馈默认理由「快捷 · {类型}」，Web 可补写，事实错误理由必填（decision-11）；反馈经反馈路由按六类型分流（领域模型 §6）。
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -4,13 +4,21 @@ title: 单信源监控闭环
 status: To Do
 assignee: []
 created_date: '2026-09-10 12:49'
-updated_date: '2026-09-11 01:39'
+updated_date: '2026-09-11 03:10'
 labels:
   - product
   - pipeline
 milestone: m-0
-dependencies:
-  - IIH-01
+dependencies: []
+references:
+  - doc-07
+  - doc-06 §3/§4/§5
+  - doc-02 §4.3/§6
+  - decision-04
+  - decision-08
+  - decision-11
+  - prototype/index.html
+type: feature
 ordinal: 3000
 ---
 
@@ -19,13 +27,11 @@ ordinal: 3000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 作为消费方与运维方，我想要对已登记的单个种子信源跑通完整的情报生产与反馈闭环，以便 day-1 验证产品主线——外部素材变成可溯源、带二维评级的情报，反馈驱动信源信用进化。
 
-范围（价值流）：素材人工录入产出线索（溯源五要素齐备）→ 审查智能体过滤（通过为候选、否决为噪音）→ 核实智能体评级（二维评级，落「已核实」）→ 收件箱浏览 → 一键类型化反馈 → 信用归因与信源信用更新。每步经状态机执行器提案落账，无溯源不落账。
+范围（价值流）：种子信源登记（信源=发布主体，途径=采集入口，decision-17）→ 素材人工录入产出线索（溯源五要素齐备）→ 审查智能体过滤（通过为候选、否决为噪音）→ 核实智能体评级（二维评级，落「已核实」）→ 收件箱浏览 → 一键类型化反馈 → 信用归因与信源信用更新。每步经状态机执行器提案落账，无溯源不落账。
 
 范围外（后续里程碑加厚）：自动采集、主动推送、分发匹配、事件同一性、实体归一、级联重估传播深度。
 
 非功能需求：落账全程审计可追溯（推理记录含公式版本、信用计算可重放）；单机部署可用；生产链各环节不做时延承诺（人工节奏）。
-
-关联：doc-07、doc-06 §3/§4/§5、doc-02 §4.3/§6、decision-04/08/11、原型 prototype/index.html。
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

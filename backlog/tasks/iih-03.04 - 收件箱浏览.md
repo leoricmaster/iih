@@ -4,13 +4,17 @@ title: 收件箱浏览
 status: To Do
 assignee: []
 created_date: '2026-09-11 01:40'
-updated_date: '2026-09-11 01:42'
+updated_date: '2026-09-11 03:11'
 labels:
   - product
   - ui
 dependencies:
   - IIH-03.03
+references:
+  - doc-07 §3
+  - prototype/index.html
 parent_task_id: IIH-03
+type: feature
 ordinal: 8000
 ---
 
@@ -19,7 +23,7 @@ ordinal: 8000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 作为消费方，我想要在收件箱浏览已核实情报，以便日常高效获取情报。
 
-收件箱为首页（doc-07 §3、原型「收件箱/条目详情」页）：列表展示陈述摘要+二维评级+状态；条目详情可看溯源五要素与评级依据。分发匹配与推送后续里程碑加厚。关联 doc-07 §3。
+收件箱为首页（doc-07 §3、原型「收件箱/条目详情」页）：列表展示陈述摘要+二维评级+状态；条目详情可看溯源五要素与评级依据。分发匹配与推送后续里程碑加厚。
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
