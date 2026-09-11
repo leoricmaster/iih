@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>录入素材 · IIH</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.1rem; margin-top: 2rem; }
+    .field { margin-bottom: 1rem; }
+    label { display: block; margin-bottom: 0.25rem; font-size: 0.9rem; }
+    select, textarea { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; font: inherit; }
+    textarea { resize: vertical; }
+    button { padding: 0.5rem 1.5rem; }
+    .errors { color: #b00; background: #fee; border: 1px solid #dbb; border-radius: 4px; padding: 0.5rem 1rem; }
+    .item { border-bottom: 1px solid #eee; padding: 0.5rem 0; }
+    .item .meta { color: #777; font-size: 0.85rem; }
+    .pill { display: inline-block; padding: 0 0.5em; border: 1px solid #bbb; border-radius: 1em; font-size: 0.8rem; }
+    .empty { color: #999; }
+  </style>
+</head>
+<body>
+  <h1>录入素材</h1>
+
+  {% if errors %}
+  <ul class="errors">
+    {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+
+  <form method="post" action="/submissions">
+    <div class="field">
+      <label for="medium">媒介（获取场景——互联网为自动拉取，不走本页）</label>
+      <select id="medium" name="medium_code" required>
+        <option value="">请选择媒介</option>
+        {% for m in mediums %}
+        <option value="{{ m.code }}">{{ m.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="statement">陈述内容</label>
+      <textarea id="statement" name="statement" rows="4" required
+        placeholder="如：W 公司渠道大会：下一代电驱矿卡计划 2027Q2 量产"></textarea>
+    </div>
+    <button type="submit">提交</button>
+  </form>
+
+  <h2>近期人工提交</h2>
+  {% for item in items %}
+  <div class="item">
+    {{ item.statement }}
+    <span class="pill">{{ status_labels[item.status] }}</span>
+    <div class="meta">{{ item.medium.name }} / {{ item.modality.name }} · {{ item.created_at.strftime('%m-%d %H:%M') }}</div>
+  </div>
+  {% else %}
+  <div class="empty">暂无</div>
+  {% endfor %}
+</body>
+</html>

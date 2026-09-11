@@ -1,0 +1,14 @@
+.git
+.venv
+.pytest_cache
+.mypy_cache
+.ruff_cache
+__pycache__
+htmlcov
+.coverage
+coverage.xml
+.env
+backlog
+prototype
+tests
+filestore
