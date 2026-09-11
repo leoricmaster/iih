@@ -17,7 +17,7 @@ references:
 parent_task_id: IIH-01
 priority: medium
 type: feature
-ordinal: 8000
+ordinal: 7000
 ---
 
 ## Description

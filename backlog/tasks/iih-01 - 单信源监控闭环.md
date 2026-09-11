@@ -18,7 +18,7 @@ references:
   - prototype/index.html
 priority: high
 type: feature
-ordinal: 3000
+ordinal: 1000
 ---
 
 ## Description
