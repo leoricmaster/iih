@@ -4,16 +4,18 @@ title: 线索审查过滤
 status: To Do
 assignee: []
 created_date: '2026-09-10 12:50'
-updated_date: '2026-09-11 08:38'
+updated_date: '2026-09-11 08:59'
 labels:
   - product
   - pipeline
+milestone: m-0
 dependencies:
   - IIH-01.08
 references:
   - doc-02 §4.3
   - doc-06 §4
 parent_task_id: IIH-01
+priority: medium
 type: feature
 ordinal: 6000
 ---

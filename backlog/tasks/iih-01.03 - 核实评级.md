@@ -4,10 +4,11 @@ title: 核实评级
 status: To Do
 assignee: []
 created_date: '2026-09-10 12:50'
-updated_date: '2026-09-11 03:11'
+updated_date: '2026-09-11 08:59'
 labels:
   - product
   - pipeline
+milestone: m-0
 dependencies:
   - IIH-01.02
 references:
@@ -15,6 +16,7 @@ references:
   - doc-02 §5
   - doc-06 §5
 parent_task_id: IIH-01
+priority: medium
 type: feature
 ordinal: 7000
 ---

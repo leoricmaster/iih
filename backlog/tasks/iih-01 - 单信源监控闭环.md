@@ -4,7 +4,7 @@ title: 单信源监控闭环
 status: To Do
 assignee: []
 created_date: '2026-09-10 12:49'
-updated_date: '2026-09-11 08:40'
+updated_date: '2026-09-11 08:59'
 labels:
   - product
   - pipeline
@@ -16,6 +16,7 @@ references:
   - doc-02 §4.3/§6
   - decision-04
   - prototype/index.html
+priority: high
 type: feature
 ordinal: 3000
 ---

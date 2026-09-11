@@ -4,10 +4,11 @@ title: 种子信源登记
 status: To Do
 assignee: []
 created_date: '2026-09-11 03:09'
-updated_date: '2026-09-11 08:38'
+updated_date: '2026-09-11 08:59'
 labels:
   - product
   - ui
+milestone: m-0
 dependencies:
   - IIH-01.01
 references:
@@ -15,6 +16,7 @@ references:
   - doc-07 §2.1/§3
   - prototype/index.html
 parent_task_id: IIH-01
+priority: high
 type: feature
 ordinal: 4000
 ---

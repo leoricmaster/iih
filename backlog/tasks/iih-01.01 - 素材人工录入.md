@@ -4,10 +4,11 @@ title: 素材人工录入
 status: To Do
 assignee: []
 created_date: '2026-09-10 12:50'
-updated_date: '2026-09-11 08:38'
+updated_date: '2026-09-11 08:59'
 labels:
   - product
   - ui
+milestone: m-0
 dependencies: []
 references:
   - doc-07 §2.3
@@ -15,6 +16,7 @@ references:
   - doc-05 §4/§5/§8
   - prototype/index.html
 parent_task_id: IIH-01
+priority: high
 type: feature
 ordinal: 5000
 ---

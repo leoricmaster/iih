@@ -4,16 +4,18 @@ title: 收件箱浏览
 status: To Do
 assignee: []
 created_date: '2026-09-11 01:40'
-updated_date: '2026-09-11 03:11'
+updated_date: '2026-09-11 08:59'
 labels:
   - product
   - ui
+milestone: m-0
 dependencies:
   - IIH-01.03
 references:
   - doc-07 §3
   - prototype/index.html
 parent_task_id: IIH-01
+priority: medium
 type: feature
 ordinal: 8000
 ---

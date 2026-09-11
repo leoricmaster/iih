@@ -162,7 +162,7 @@ flowchart TB
 | 静态检查 | ruff（lint + format）、mypy（基础档） | ruff 单工具覆盖 lint 与格式化；mypy 基础档起步、随代码库收紧 |
 | CI | GitHub Actions | push 到 main 触发；门禁顺序 ruff check → ruff format --check → mypy → pytest --cov（--cov-fail-under=80），任一失败即红 |
 
-门禁随首个奠基故事（IIH-01.01，承载工程骨架与 CI 基线工作包）建立，此后持续生效；豁免规则见 doc-08。
+门禁由 IIH-01.01（承载工程骨架与 CI 基线工作包）建立，此后持续生效；豁免规则见 doc-08。
 
 ## 9. 开放问题
 

@@ -4,16 +4,18 @@ title: 反馈驱动信用更新
 status: To Do
 assignee: []
 created_date: '2026-09-11 01:41'
-updated_date: '2026-09-11 06:33'
+updated_date: '2026-09-11 08:59'
 labels:
   - product
   - ledger
+milestone: m-0
 dependencies:
   - IIH-01.05
 references:
   - decision-04
   - doc-02 §6
 parent_task_id: IIH-01
+priority: medium
 type: feature
 ordinal: 10000
 ---
