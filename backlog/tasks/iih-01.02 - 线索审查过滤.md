@@ -1,5 +1,5 @@
 ---
-id: IIH-03.02
+id: IIH-01.02
 title: 线索审查过滤
 status: To Do
 assignee: []
@@ -9,11 +9,11 @@ labels:
   - product
   - pipeline
 dependencies:
-  - IIH-03.01
+  - IIH-01.01
 references:
   - doc-02 §4.3
   - doc-06 §4
-parent_task_id: IIH-03
+parent_task_id: IIH-01
 type: feature
 ordinal: 6000
 ---

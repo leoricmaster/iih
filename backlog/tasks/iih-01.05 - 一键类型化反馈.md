@@ -1,5 +1,5 @@
 ---
-id: IIH-03.05
+id: IIH-01.05
 title: 一键类型化反馈
 status: To Do
 assignee: []
@@ -9,10 +9,10 @@ labels:
   - product
   - ui
 dependencies:
-  - IIH-03.04
+  - IIH-01.04
 references:
   - doc-02 §6
-parent_task_id: IIH-03
+parent_task_id: IIH-01
 type: feature
 ordinal: 9000
 ---

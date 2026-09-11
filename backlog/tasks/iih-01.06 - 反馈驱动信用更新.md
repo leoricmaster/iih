@@ -1,5 +1,5 @@
 ---
-id: IIH-03.06
+id: IIH-01.06
 title: 反馈驱动信用更新
 status: To Do
 assignee: []
@@ -9,11 +9,11 @@ labels:
   - product
   - ledger
 dependencies:
-  - IIH-03.05
+  - IIH-01.05
 references:
-  - decision-08
+  - decision-04
   - doc-02 §6
-parent_task_id: IIH-03
+parent_task_id: IIH-01
 type: feature
 ordinal: 10000
 ---
@@ -23,7 +23,7 @@ ordinal: 10000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 作为消费方，我想要反馈自动驱动信源信用更新，以便系统越用越准。
 
-有效/事实错误反馈经信用归因（decision-08）定位责任信源——转引链上最早引入该陈述的信源，如实转述者不受奖惩；信用计算器按信源信用公式（数据设计 §2.3）更新信源信用分档。事实错误触发条目作废标记（级联重估传播深度本里程碑验证作废落账即可，后续加厚）。
+有效/事实错误反馈经信用归因（decision-04）定位责任信源——转引链上最早引入该陈述的信源，如实转述者不受奖惩；信用计算器按信源信用公式（数据设计 §2.3）更新信源信用分档。事实错误触发条目作废标记（级联重估传播深度本里程碑验证作废落账即可，后续加厚）。
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

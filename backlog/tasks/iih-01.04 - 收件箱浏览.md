@@ -1,5 +1,5 @@
 ---
-id: IIH-03.04
+id: IIH-01.04
 title: 收件箱浏览
 status: To Do
 assignee: []
@@ -9,11 +9,11 @@ labels:
   - product
   - ui
 dependencies:
-  - IIH-03.03
+  - IIH-01.03
 references:
   - doc-07 §3
   - prototype/index.html
-parent_task_id: IIH-03
+parent_task_id: IIH-01
 type: feature
 ordinal: 8000
 ---

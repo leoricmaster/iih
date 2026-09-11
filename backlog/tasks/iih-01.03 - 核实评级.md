@@ -1,5 +1,5 @@
 ---
-id: IIH-03.03
+id: IIH-01.03
 title: 核实评级
 status: To Do
 assignee: []
@@ -9,12 +9,12 @@ labels:
   - product
   - pipeline
 dependencies:
-  - IIH-03.02
+  - IIH-01.02
 references:
   - doc-04 §2.1
   - doc-02 §5
   - doc-06 §5
-parent_task_id: IIH-03
+parent_task_id: IIH-01
 type: feature
 ordinal: 7000
 ---

@@ -1,7 +1,7 @@
 ---
-id: decision-08
+id: decision-04
 title: 信用归因
-date: '2026-09-07 02:14'
+date: '2026-09-11'
 status: 已采纳
 ---
 > 2026-09-07 用户裁决。

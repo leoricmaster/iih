@@ -119,7 +119,7 @@ flowchart TB
 | 溯源存储 | Provenance Store | 情报条目、命题、推理记录、反馈的持久化 | 无溯源不落账 |
 | 分发检索 | Dissemination Search | 需求匹配、消费方推送 | 已核实才可分发 |
 | 调度 | Scheduler | 智能体任务分派、采集节奏、存疑复核触发（新情报命中存疑项同一命题或合并键自动复核，人工可插，90 天兜底复核、周期可调）、评级重评与级联重估触发 | 事件驱动优先，定时兜底 |
-| 反馈路由 | Feedback Router | 类型化反馈分发到三通路、接收信用归因提案（decision-08） | 仅有效/事实错误动信用 |
+| 反馈路由 | Feedback Router | 类型化反馈分发到三通路、接收信用归因提案（decision-04） | 仅有效/事实错误动信用 |
 
 代码分包镜像此划分：记账层六模块各自成包、对外接口即提案契约（§5）；判断层每类智能体一个执行器包；工具层按载体归组。
 
@@ -162,7 +162,7 @@ flowchart TB
 | 静态检查 | ruff（lint + format）、mypy（基础档） | ruff 单工具覆盖 lint 与格式化；mypy 基础档起步、随代码库收紧 |
 | CI | GitHub Actions | push 到 main 触发；门禁顺序 ruff check → ruff format --check → mypy → pytest --cov（--cov-fail-under=80），任一失败即红 |
 
-门禁随首个奠基故事（IIH-03.01，承载工程骨架与 CI 基线工作包）建立，此后持续生效；豁免规则见 doc-08。
+门禁随首个奠基故事（IIH-01.01，承载工程骨架与 CI 基线工作包）建立，此后持续生效；豁免规则见 doc-08。
 
 ## 9. 开放问题
 

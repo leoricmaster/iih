@@ -1,5 +1,5 @@
 ---
-id: IIH-03
+id: IIH-01
 title: 单信源监控闭环
 status: To Do
 assignee: []
@@ -14,7 +14,7 @@ references:
   - doc-07
   - doc-06 §3/§4/§5
   - doc-02 §4.3/§6
-  - decision-08
+  - decision-04
   - prototype/index.html
 type: feature
 ordinal: 3000

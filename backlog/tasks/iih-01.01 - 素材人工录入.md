@@ -1,5 +1,5 @@
 ---
-id: IIH-03.01
+id: IIH-01.01
 title: 素材人工录入
 status: To Do
 assignee: []
@@ -9,13 +9,13 @@ labels:
   - product
   - ui
 dependencies:
-  - IIH-03.07
+  - IIH-01.07
 references:
   - doc-07 §2.3
   - doc-06 §3
   - doc-05 §4/§5/§8
   - prototype/index.html
-parent_task_id: IIH-03
+parent_task_id: IIH-01
 type: feature
 ordinal: 5000
 ---
@@ -27,7 +27,7 @@ ordinal: 5000
 
 录入页（doc-07 §2.3、原型「录入」页）：选信源引用与媒介、填陈述内容（或上传附件由载体管线最简处理），提交生成线索提案，经状态机执行器落账为「线索」态，溯源五要素齐备。
 
-本故事承载奠基工作包：提案契约与状态机执行器（源自原 IIH-02）、工程骨架与 CI 基线（源自原 IIH-01，选型见技术架构 §1/§3、质量保障见 §8），实现计划于开发启动时编写。
+本故事承载奠基工作包：提案契约与状态机执行器、工程骨架与 CI 基线（选型见技术架构 §1/§3、质量保障见 §8），实现计划于开发启动时编写。
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -1,7 +1,7 @@
 ---
-id: decision-06
+id: decision-03
 title: 评级体系选型：Admiralty 二维制
-date: '2026-09-07 02:14'
+date: '2026-09-11'
 status: 已采纳
 ---
 > 2026-09-07 用户裁决；补录既有模型的选型依据。
