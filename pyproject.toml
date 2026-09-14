@@ -14,6 +14,8 @@ dependencies = [
     "pydantic-settings>=2.6",
     "openai>=1.59",
     "instructor>=1.7",
+    "httpx>=0.28",
+    "beautifulsoup4>=4.12",
 ]
 
 [dependency-groups]

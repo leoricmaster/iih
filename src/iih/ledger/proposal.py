@@ -29,6 +29,9 @@ class IntelligenceItemNewPayload(BaseModel):
     statement: str  # 陈述内容
     mode: ItemMode
     event_time: datetime | None = None  # 事件时间
+    # 自动拉取路径专用（doc-06 §3 前置过滤）；人工提交路径不设
+    content_fingerprint: str | None = None
+    original_url: str | None = None
 
 
 class Proposal(BaseModel):
@@ -68,3 +71,61 @@ class SourceRegisterProposal(Proposal):
     PROPOSAL_TYPE = "source_register"
 
     payload: SourceRegisterPayload
+
+
+# ---- IIH-01.08 互联网信源自动拉取 ----
+
+
+class IntelligenceRequirementRegisterPayload(BaseModel):
+    """「情报需求登记」产出：name + content_spec（doc-04 §1）。"""
+
+    name: str
+    content_spec: str  # 主题、关键词、信源偏好、时效要求等自由文本
+
+
+class IntelligenceRequirementRegisterProposal(Proposal):
+    """提案类型「情报需求登记」：迁移 [*] → 草稿 Draft（doc-02 §4.1）。
+
+    消费方登记非情报产出，无 provenance、无 formula_version。
+    本任务最简：豁免「提出方」（单消费方前提）与「生效窗口」（范围外含调度节奏）。
+    """
+
+    PROPOSAL_TYPE = "intelligence_requirement_register"
+
+    payload: IntelligenceRequirementRegisterPayload
+
+
+class IntelligenceRequirementActivatePayload(BaseModel):
+    """「情报需求激活」产出：目标需求 ID。"""
+
+    requirement_id: int
+
+
+class IntelligenceRequirementActivateProposal(Proposal):
+    """提案类型「情报需求激活」：草稿 Draft → 激活 Active（doc-02 §4.1）。"""
+
+    PROPOSAL_TYPE = "intelligence_requirement_activate"
+
+    payload: IntelligenceRequirementActivatePayload
+
+
+class ItemProvenanceAppendPayload(BaseModel):
+    """「转引链节点追加」产出：目标既有条目 + 新信源引用（doc-06 §3 前置过滤命中路径）。"""
+
+    item_id: int
+    source_name: str
+    source_type: SourceType
+    outlet_name: str | None = None
+    original_url: str | None = None
+    collected_at: datetime
+
+
+class ItemProvenanceAppendProposal(Proposal):
+    """提案类型「转引链节点追加」：指纹命中既有条目时追加信源引用，不新建条目（doc-06 §3）。
+
+    溯源信息内嵌 payload（item_id + 信源/途径 + 采集时间 + URL），无独立 provenance 字段。
+    """
+
+    PROPOSAL_TYPE = "item_provenance_append"
+
+    payload: ItemProvenanceAppendPayload

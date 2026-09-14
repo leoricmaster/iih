@@ -1,10 +1,11 @@
 ---
 id: IIH-01.08
 title: 互联网信源自动拉取
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@lancer'
 created_date: '2026-09-11 08:38'
-updated_date: '2026-09-11 08:59'
+updated_date: '2026-09-14 07:53'
 labels:
   - product
   - pipeline
@@ -40,3 +41,17 @@ ordinal: 4000
 <!-- DOD:BEGIN -->
 - [ ] #1 符合 doc-08 通用 DoD（完成定义与豁免规则）
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. 数据模型与迁移：IntelligenceRequirement/ProvenanceChainNode + IntelligenceItem.content_fingerprint/original_url
+2. 提案契约扩展：IR register/activate + ItemProvenanceAppend + payload 扩展
+3. 状态机扩展：三个 _execute_* 方法 + AUTOMATED 模式 source 必须 confirmed
+4. 工具层：fetcher(httpx) + html_normalize(BS4) + 依赖
+5. Director：扫激活 IR × 已确认互联网途径，产出内存 CollectionTask
+6. Collector 扩展：collect_outlet 前置指纹去重 + LLM 抽取陈述
+7. CLI：ir-create/ir-activate/collect 三子命令
+8. 端到端验收：docker compose 重建 + 真实 LLM 走查 AC#1/#2
+9. 收尾：notes/summary/AC/DoD 勾选 + decision-08「采集任务不落账」
+<!-- SECTION:PLAN:END -->

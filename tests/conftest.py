@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session
 
-from iih.agents.collector import AttributionResult
+from iih.agents.collector import AttributionResult, StatementExtractionResult
 from iih.config import get_settings
 
 TEST_DB_NAME = "iih_test"
@@ -32,6 +32,23 @@ def make_fake_llm(
     return SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
 
 
+def make_fake_llm_extraction(
+    extraction: StatementExtractionResult, prompt_tokens: int = 200, completion_tokens: int = 80
+):
+    """instructor 替身：返回 StatementExtractionResult。"""
+
+    class Completions:
+        def create_with_completion(self, *, response_model, messages, **kwargs):
+            assert response_model is StatementExtractionResult
+            return extraction, SimpleNamespace(
+                usage=SimpleNamespace(
+                    prompt_tokens=prompt_tokens, completion_tokens=completion_tokens
+                )
+            )
+
+    return SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+
+
 @pytest.fixture
 def w_attribution() -> AttributionResult:
     return AttributionResult(
@@ -45,6 +62,19 @@ def w_attribution() -> AttributionResult:
 @pytest.fixture
 def fake_llm(w_attribution: AttributionResult):
     return make_fake_llm(w_attribution)
+
+
+@pytest.fixture
+def w_extraction() -> StatementExtractionResult:
+    return StatementExtractionResult(
+        statement="W 公司公告：与 Z 集团签署合资协议，Q4 设立合资公司",
+        rationale="页面首屏公告区主体陈述，事实性强、时效近",
+    )
+
+
+@pytest.fixture
+def fake_extraction_llm(w_extraction: StatementExtractionResult):
+    return make_fake_llm_extraction(w_extraction)
 
 
 @pytest.fixture(scope="session")

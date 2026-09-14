@@ -5,10 +5,26 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import select
 
-from iih.ledger.models import IntelligenceItem, ItemMode, ItemStatus, Outlet, Source, SourceType
+from iih.ledger.models import (
+    IntelligenceItem,
+    IntelligenceRequirement,
+    IntelligenceRequirementStatus,
+    ItemMode,
+    ItemStatus,
+    Outlet,
+    ProvenanceChainNode,
+    Source,
+    SourceType,
+)
 from iih.ledger.proposal import (
     IntelligenceItemNewPayload,
     IntelligenceItemNewProposal,
+    IntelligenceRequirementActivatePayload,
+    IntelligenceRequirementActivateProposal,
+    IntelligenceRequirementRegisterPayload,
+    IntelligenceRequirementRegisterProposal,
+    ItemProvenanceAppendPayload,
+    ItemProvenanceAppendProposal,
     Proposal,
     ProvenanceData,
     SourceRegisterPayload,
@@ -207,3 +223,275 @@ def test_source_register_rejects_when_internet_medium_missing(db_session) -> Non
 
     assert any("internet" in reason for reason in excinfo.value.reasons)
     assert db_session.scalars(select(Source)).first() is None
+
+
+# ---- IIH-01.08 互联网信源自动拉取 ----
+
+
+def make_automated_proposal(**overrides) -> IntelligenceItemNewProposal:
+    """AUTOMATED 模式提案：信源与途径须已登记 confirmed=True。"""
+    provenance_fields = {
+        "modality_code": "webpage",
+        "medium_code": "internet",
+        "collected_at": datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
+        "original_snapshot": "W 公司公告正文归一化文本",
+        "source_name": "W 公司",
+        "source_type": SourceType.COMPANY,
+        "outlet_name": "官网",
+    } | overrides.pop("provenance", {})
+    payload_fields = {
+        "statement": "W 公司公告：与 Z 集团签署合资协议",
+        "mode": ItemMode.AUTOMATED,
+        "content_fingerprint": "a" * 64,
+        "original_url": "https://w-mining.example/news",
+    } | overrides.pop("payload", {})
+    top_fields = {"rationale": "自动拉取，抽取自页面正文"} | overrides
+    return IntelligenceItemNewProposal(
+        payload=IntelligenceItemNewPayload(**payload_fields),
+        provenance=ProvenanceData(**provenance_fields),
+        **top_fields,
+    )
+
+
+def seed_confirmed_w_outlet(db_session) -> Source:
+    """预置已登记信源 W 公司 + 互联网途径官网。"""
+    from iih.ledger.models import Medium
+
+    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True)
+    outlet = Outlet(
+        source=source, name="官网", entry="https://w-mining.example/news", medium=medium
+    )
+    db_session.add_all([source, outlet])
+    db_session.flush()
+    return source
+
+
+def test_automated_item_new_lands_lead_with_fingerprint_and_initial_node(db_session) -> None:
+    """支撑 IIH-01.08 AC#1：自动拉取落账 Lead + 内容指纹 + 初始转引链节点。"""
+    seed_confirmed_w_outlet(db_session)
+
+    result = StateMachineExecutor().execute(make_automated_proposal(), session=db_session)
+
+    item = db_session.get(IntelligenceItem, result.item_id)
+    assert item is not None
+    assert item.status is ItemStatus.LEAD
+    assert item.mode is ItemMode.AUTOMATED
+    assert item.modality.code == "webpage"
+    assert item.medium.code == "internet"
+    assert item.source is not None and item.source.name == "W 公司"
+    assert item.source.confirmed is True
+    assert item.outlet is not None and item.outlet.name == "官网"
+    assert item.content_fingerprint == "a" * 64
+    assert item.original_url == "https://w-mining.example/news"
+
+    # 初始转引链节点：出处信源即首节点
+    nodes = db_session.scalars(
+        select(ProvenanceChainNode).where(ProvenanceChainNode.item_id == item.id)
+    ).all()
+    assert len(nodes) == 1
+    assert nodes[0].source.name == "W 公司"
+    assert nodes[0].outlet.name == "官网"
+
+
+def test_automated_item_new_rejects_unconfirmed_source(db_session) -> None:
+    """AUTOMATED 模式：信源未 confirmed 驳回（保护已登记信源边界）。"""
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=False)
+    db_session.add(source)
+    db_session.flush()
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(make_automated_proposal(), session=db_session)
+
+    assert any("未确认" in r for r in excinfo.value.reasons)
+    assert db_session.scalars(select(IntelligenceItem)).first() is None
+
+
+def test_automated_item_new_rejects_unknown_source(db_session) -> None:
+    """AUTOMATED 模式：信源未登记驳回。"""
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(make_automated_proposal(), session=db_session)
+
+    assert any("未登记" in r for r in excinfo.value.reasons)
+
+
+def test_automated_item_new_rejects_unknown_outlet(db_session) -> None:
+    """AUTOMATED 模式：途径未登记驳回。"""
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True)
+    db_session.add(source)
+    db_session.flush()
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(make_automated_proposal(), session=db_session)
+
+    assert any("途径未登记" in r for r in excinfo.value.reasons)
+
+
+def test_ir_register_lands_draft(db_session) -> None:
+    """情报需求登记：落账 Draft。"""
+    proposal = IntelligenceRequirementRegisterProposal(
+        payload=IntelligenceRequirementRegisterPayload(
+            name="跟踪 W 公司", content_spec="主题：矿卡、订单、战略"
+        ),
+        rationale="消费方声明",
+    )
+
+    result = StateMachineExecutor().execute(proposal, session=db_session)
+
+    ir = db_session.get(IntelligenceRequirement, result.requirement_id)
+    assert ir is not None
+    assert ir.name == "跟踪 W 公司"
+    assert ir.status is IntelligenceRequirementStatus.DRAFT
+
+
+def test_ir_register_rejects_blank_fields(db_session) -> None:
+    """情报需求登记：字段缺失驳回。"""
+    proposal = IntelligenceRequirementRegisterProposal(
+        payload=IntelligenceRequirementRegisterPayload(name=" ", content_spec=" "),
+        rationale=" ",
+    )
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(proposal, session=db_session)
+
+    assert "需求名称缺失" in excinfo.value.reasons
+    assert "内容规格缺失" in excinfo.value.reasons
+    assert "依据缺失" in excinfo.value.reasons
+    assert db_session.scalars(select(IntelligenceRequirement)).first() is None
+
+
+def test_ir_activate_transitions_draft_to_active(db_session) -> None:
+    """情报需求激活：Draft → Active。"""
+    ir = IntelligenceRequirement(name="跟踪 W 公司", content_spec="主题：矿卡")
+    db_session.add(ir)
+    db_session.flush()
+
+    result = StateMachineExecutor().execute(
+        IntelligenceRequirementActivateProposal(
+            payload=IntelligenceRequirementActivatePayload(requirement_id=ir.id),
+            rationale="消费方确认激活",
+        ),
+        session=db_session,
+    )
+
+    assert result.requirement_id == ir.id
+    assert (
+        db_session.get(IntelligenceRequirement, ir.id).status
+        is IntelligenceRequirementStatus.ACTIVE
+    )
+
+
+def test_ir_activate_rejects_non_draft_state(db_session) -> None:
+    """情报需求激活：非 Draft 前置违反驳回。"""
+    ir = IntelligenceRequirement(
+        name="跟踪 W 公司", content_spec="主题", status=IntelligenceRequirementStatus.ACTIVE
+    )
+    db_session.add(ir)
+    db_session.flush()
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            IntelligenceRequirementActivateProposal(
+                payload=IntelligenceRequirementActivatePayload(requirement_id=ir.id),
+                rationale="x",
+            ),
+            session=db_session,
+        )
+
+    assert any("前置违反" in r for r in excinfo.value.reasons)
+    assert (
+        db_session.get(IntelligenceRequirement, ir.id).status
+        is IntelligenceRequirementStatus.ACTIVE
+    )
+
+
+def test_ir_activate_rejects_unknown_requirement(db_session) -> None:
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            IntelligenceRequirementActivateProposal(
+                payload=IntelligenceRequirementActivatePayload(requirement_id=9999),
+                rationale="x",
+            ),
+            session=db_session,
+        )
+
+    assert "情报需求不存在" in excinfo.value.reasons
+
+
+def test_item_provenance_append_lands_node(db_session) -> None:
+    """支撑 IIH-01.08 AC#2：指纹命中追加转引链节点。"""
+    seed_confirmed_w_outlet(db_session)
+    # 先落账一条自动拉取条目（出处信源 = W 公司·官网）
+    first = StateMachineExecutor().execute(make_automated_proposal(), session=db_session)
+    item = db_session.get(IntelligenceItem, first.item_id)
+
+    # 模拟另一信源「行业媒体 A」转载同内容，指纹命中
+    media_source = Source(name="行业媒体 A", type=SourceType.MEDIA, confirmed=True)
+    db_session.add(media_source)
+    db_session.flush()
+
+    proposal = ItemProvenanceAppendProposal(
+        payload=ItemProvenanceAppendPayload(
+            item_id=item.id,
+            source_name="行业媒体 A",
+            source_type=SourceType.MEDIA,
+            outlet_name=None,
+            original_url="https://media-a.example/repost",
+            collected_at=datetime(2026, 9, 14, 11, 0, tzinfo=UTC),
+        ),
+        rationale="指纹命中追加转引链节点",
+    )
+
+    StateMachineExecutor().execute(proposal, session=db_session)
+
+    nodes = db_session.scalars(
+        select(ProvenanceChainNode).where(ProvenanceChainNode.item_id == item.id)
+    ).all()
+    assert len(nodes) == 2  # 初始节点 + 追加节点
+    appended = next(n for n in nodes if n.source.name == "行业媒体 A")
+    assert appended.original_url == "https://media-a.example/repost"
+
+
+def test_item_provenance_append_rejects_unknown_item(db_session) -> None:
+    seed_confirmed_w_outlet(db_session)
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            ItemProvenanceAppendProposal(
+                payload=ItemProvenanceAppendPayload(
+                    item_id=9999,
+                    source_name="W 公司",
+                    source_type=SourceType.COMPANY,
+                    collected_at=datetime(2026, 9, 14, 11, 0, tzinfo=UTC),
+                ),
+                rationale="x",
+            ),
+            session=db_session,
+        )
+
+    assert "情报条目不存在" in excinfo.value.reasons
+
+
+def test_item_provenance_append_rejects_duplicate_node(db_session) -> None:
+    """同(item, source, outlet)节点不重复追加。"""
+    seed_confirmed_w_outlet(db_session)
+    first = StateMachineExecutor().execute(make_automated_proposal(), session=db_session)
+    item = db_session.get(IntelligenceItem, first.item_id)
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            ItemProvenanceAppendProposal(
+                payload=ItemProvenanceAppendPayload(
+                    item_id=item.id,
+                    source_name="W 公司",
+                    source_type=SourceType.COMPANY,
+                    outlet_name="官网",
+                    original_url="https://w-mining.example/news",
+                    collected_at=datetime(2026, 9, 14, 11, 0, tzinfo=UTC),
+                ),
+                rationale="x",
+            ),
+            session=db_session,
+        )
+
+    assert "转引链节点已存在" in excinfo.value.reasons

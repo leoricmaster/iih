@@ -36,6 +36,15 @@ class ItemMode(enum.StrEnum):
     AUTOMATED = "automated"  # 自动拉取
 
 
+class IntelligenceRequirementStatus(enum.StrEnum):
+    """情报需求状态（术语表 §一；迁移与边界见 doc-02 §4.1）。"""
+
+    DRAFT = "draft"  # 草稿：声明后待确认
+    ACTIVE = "active"  # 激活：驱动采集
+    PAUSED = "paused"  # 暂停：挂起，不驱动采集
+    CLOSED = "closed"  # 关闭：需求满足或撤销
+
+
 class SourceType(enum.StrEnum):
     """信源类型（doc-04 §1）。"""
 
@@ -138,6 +147,10 @@ class IntelligenceItem(Base):
     provenance_source_id: Mapped[int | None] = mapped_column(ForeignKey("source.id"))  # 出处信源
     event_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # 事件时间
 
+    # 自动拉取路径专用（doc-06 §3 前置过滤）：内容指纹 + 原文链接
+    content_fingerprint: Mapped[str | None] = mapped_column(String(64), index=True)
+    original_url: Mapped[str | None] = mapped_column(Text)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -148,3 +161,60 @@ class IntelligenceItem(Base):
     source: Mapped["Source | None"] = relationship(foreign_keys=[source_id])
     outlet: Mapped["Outlet | None"] = relationship()
     provenance_source: Mapped["Source | None"] = relationship(foreign_keys=[provenance_source_id])
+    provenance_nodes: Mapped[list["ProvenanceChainNode"]] = relationship(
+        back_populates="item", cascade="all, delete-orphan"
+    )
+
+
+class IntelligenceRequirement(Base):
+    """情报需求（doc-04 §1、doc-02 §4.1）：消费方声明的兴趣配置。
+
+    本任务最简：name + content_spec + status。豁免「提出方」（单消费方前提，doc-07 §1）
+    与「生效窗口」（范围外含调度节奏）——任务 comment 留痕豁免。
+    """
+
+    __tablename__ = "intelligence_requirement"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    content_spec: Mapped[str] = mapped_column(Text)  # 主题、关键词、信源偏好、时效要求等自由文本
+    status: Mapped[IntelligenceRequirementStatus] = mapped_column(
+        _sa_enum(IntelligenceRequirementStatus),
+        default=IntelligenceRequirementStatus.DRAFT,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ProvenanceChainNode(Base):
+    """转引链节点（doc-03 §六）：一条情报的完整溯源路径节点。
+
+    每个节点记一个信源引用；主条目 source_id/outlet_id 作为「出处信源」（最早引入陈述的信源），
+    节点表存全部引用含出处信源本身。命中既有条目时仅追加节点，不新建条目（doc-06 §3 前置过滤）。
+    """
+
+    __tablename__ = "provenance_chain_node"
+    __table_args__ = (
+        UniqueConstraint(
+            "item_id", "source_id", "outlet_id", name="uq_node_per_item_source_outlet"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("intelligence_item.id"), index=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("source.id"))
+    outlet_id: Mapped[int | None] = mapped_column(ForeignKey("outlet.id"))
+    modality_id: Mapped[int] = mapped_column(ForeignKey("modality.id"))
+    medium_id: Mapped[int] = mapped_column(ForeignKey("medium.id"))
+    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    original_url: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    item: Mapped["IntelligenceItem"] = relationship(back_populates="provenance_nodes")
+    source: Mapped["Source"] = relationship(foreign_keys=[source_id])
+    outlet: Mapped["Outlet | None"] = relationship(foreign_keys=[outlet_id])
+    modality: Mapped["Modality"] = relationship()
+    medium: Mapped["Medium"] = relationship()
