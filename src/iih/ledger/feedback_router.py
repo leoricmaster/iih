@@ -1,7 +1,8 @@
 """反馈路由（doc-05 §4 记账层）：类型化反馈校验、落账、按六类型分流（doc-02 §6）。
 
-分流到信用通路的反馈由信用归因与信用计算器消费（IIH-01.06）；
-处置动作（作废、重估、重评）与配置 / 迭代通路后续任务加厚。
+信用通路（仅有效 / 事实错误）在落账事务内联执行：信用归因（decision-04）→
+信用计算器更新信源信用（doc-04 §2.3）；事实错误处置通路本里程碑仅作废落账
+（级联重估传播深度后续加厚）；配置 / 迭代通路后续任务加厚。
 """
 
 from dataclasses import dataclass
@@ -9,6 +10,12 @@ from enum import StrEnum
 
 from sqlalchemy.orm import Session
 
+from iih.ledger.credit import (
+    CreditUpdateResult,
+    apply_credit_adjustment,
+    attribute_responsible_source,
+    credit_delta,
+)
 from iih.ledger.models import Feedback, FeedbackType, IntelligenceItem
 
 TYPE_LABELS = {
@@ -58,15 +65,16 @@ class FeedbackRejectedError(Exception):
 
 @dataclass(frozen=True)
 class FeedbackSubmitResult:
-    """反馈落账结果：反馈 ID + 分流通路。"""
+    """反馈落账结果：反馈 ID + 分流通路 + 信用通路落账结果（未触发为 None）。"""
 
     feedback_id: int
     item_id: int
     channels: frozenset[FeedbackChannel]
+    credit_update: CreditUpdateResult | None = None
 
 
 class FeedbackRouter:
-    """反馈入口的记账层落账器：校验 → 落账 → 分流。"""
+    """反馈入口的记账层落账器：校验 → 落账 → 分流（信用 / 处置通路事务内执行）。"""
 
     def submit(
         self,
@@ -96,10 +104,27 @@ class FeedbackRouter:
         session.add(feedback)
         session.flush()
         feedback_id = feedback.id
-        item_id = item.id
+
+        credit_update: CreditUpdateResult | None = None
+        delta = credit_delta(feedback_type)
+        if delta is not None:
+            source = attribute_responsible_source(session, item)
+            # 待确认信源 / 无信源条目不参与信用记账（decision-05），反馈照常落账
+            if source is not None:
+                credit_update = apply_credit_adjustment(
+                    source=source,
+                    delta=delta,
+                    occurred_at=feedback.created_at,
+                    feedback_id=feedback_id,
+                    session=session,
+                )
+        if feedback_type is FeedbackType.FACTUAL_ERROR:
+            item.retracted = True  # 处置通路：条目作废落账（级联重估后续加厚）
+
         session.commit()
         return FeedbackSubmitResult(
             feedback_id=feedback_id,
-            item_id=item_id,
+            item_id=item.id,
             channels=FEEDBACK_ROUTING[feedback_type],
+            credit_update=credit_update,
         )

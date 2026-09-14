@@ -129,6 +129,7 @@ class Source(Base):
     credit: Mapped[str | None] = mapped_column(String(1))  # 信源信用 A–F（信用记账归 IIH-01.06）
 
     outlets: Mapped[list["Outlet"]] = relationship(back_populates="source")
+    credit_adjustments: Mapped[list["CreditAdjustment"]] = relationship(back_populates="source")
 
 
 class Outlet(Base):
@@ -336,3 +337,25 @@ class Feedback(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     item: Mapped["IntelligenceItem"] = relationship(back_populates="feedbacks")
+
+
+class CreditAdjustment(Base):
+    """信用调整记录（doc-04 §2.3、decision-04）：信用通路反馈经归因落账的责任信源奖惩。
+
+    归因结果即本行责任信源（可追溯）；反馈与调整一对一（unique）；
+    score_after/grade_after/formula_version 为计算快照，同反馈历史重放得同信用值（可重放）。
+    """
+
+    __tablename__ = "credit_adjustment"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("source.id"), index=True)
+    feedback_id: Mapped[int] = mapped_column(ForeignKey("feedback.id"), unique=True)
+    delta: Mapped[int] = mapped_column()  # 奖惩分：有效 +1 / 事实错误 −2
+    score_after: Mapped[float] = mapped_column()  # 半衰期累计分快照
+    grade_after: Mapped[str] = mapped_column(String(1))  # 信源信用档快照 A–F
+    formula_version: Mapped[str] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    source: Mapped["Source"] = relationship(back_populates="credit_adjustments")
+    feedback: Mapped["Feedback"] = relationship()
