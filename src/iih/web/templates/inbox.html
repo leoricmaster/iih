@@ -21,7 +21,7 @@
       <span class="pill">已核实</span>
       {% if item.rating %}<span class="pill rating">{{ item.rating }}</span>{% endif %}
       {% if verifications.get(item.id) %}<span class="pill">独立信源 ×{{ verifications[item.id].independent_source_count }}</span>{% endif %}
-      <span class="muted">事件时间 {{ item.event_time.strftime('%Y-%m-%d') if item.event_time else '—' }} · 出处 {% if item.source %}<a href="/sources/{{ item.source.id }}">{{ item.source.name }}</a>{% else %}—{% endif %}</span>
+      <span class="muted">事件时间 {{ item.event_time | dtstr('%Y-%m-%d') if item.event_time else '—' }} · 出处 {% if item.source %}<a href="/sources/{{ item.source.id }}">{{ item.source.name }}</a>{% else %}—{% endif %}</span>
     </div>
     <div class="fbrow">
       <form method="post" action="/items/{{ item.id }}/feedback" class="fbrow">

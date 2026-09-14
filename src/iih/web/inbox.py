@@ -14,19 +14,25 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from iih.agents.reviewer import Reviewer
+from iih.agents.verifier import Verifier
+from iih.config import get_settings
 from iih.ledger.feedback_router import TYPE_LABELS, FeedbackRejectedError, FeedbackRouter
 from iih.ledger.models import (
     FeedbackType,
     IntelligenceItem,
     ItemStatus,
+    ReviewDecisionEnum,
     Source,
     VerificationRecord,
 )
-from iih.web.context import STATUS_LABELS, base_context
-from iih.web.deps import get_session
+from iih.ledger.proposal import ItemReviewDisputePayload, ItemReviewDisputeProposal
+from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
+from iih.web.context import STATUS_LABELS, base_context, register_template_filters
+from iih.web.deps import get_llm_client, get_session
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
-templates = Jinja2Templates(directory=TEMPLATES_DIR)
+templates = register_template_filters(Jinja2Templates(directory=TEMPLATES_DIR))
 
 router = APIRouter()
 
@@ -110,9 +116,15 @@ def item_feedback(
     feedback_type: str = Form(""),
     reason: str = Form(""),
     session: Session = Depends(get_session),
+    llm=Depends(get_llm_client),
 ):
-    """反馈提交：反馈路由校验落账并分流（doc-02 §6）；失败回详情页带错误，成功回来源页。"""
-    if session.get(IntelligenceItem, item_id) is None:
+    """反馈提交：反馈路由校验落账并分流（doc-02 §6）；失败回详情页带错误，成功回来源页。
+
+    审查异议（review_dispute）落账后携理由立即重审（doc-02 §6 处置通路）：
+    重审通过回候选并即时核实；维持否决保持噪音；异议记录留存供迭代通路。
+    """
+    item = session.get(IntelligenceItem, item_id)
+    if item is None:
         raise HTTPException(status_code=404, detail="条目不存在")
 
     try:
@@ -135,5 +147,46 @@ def item_feedback(
             status_code=303,
         )
 
+    if type_enum is FeedbackType.REVIEW_DISPUTE:
+        err = _run_dispute_rereview(item=item, reason=reason, session=session, llm=llm)
+        if err is not None:
+            return RedirectResponse(f"/items/{item_id}?err={quote_plus(err)}", status_code=303)
+
     referer = request.headers.get("referer")
     return RedirectResponse(referer or f"/items/{item_id}", status_code=303)
+
+
+def _run_dispute_rereview(
+    *, item: IntelligenceItem, reason: str, session: Session, llm
+) -> str | None:
+    """异议重审编排：审查智能体携理由重审 → 异议提案落账 → 通过则即时核实。
+
+    返回错误文案；None 为成功。反馈已落账（异议记录不因重审失败丢失）。
+    """
+    reviewer = Reviewer(llm=llm, session=session, model=get_settings().llm_model)
+    try:
+        re_review = reviewer.review(item, dispute_note=reason.strip())
+    except Exception as exc:  # LLM 调用失败等
+        return f"异议已记录，但重审失败：{exc}"
+
+    try:
+        StateMachineExecutor().execute(
+            ItemReviewDisputeProposal(
+                payload=ItemReviewDisputePayload(
+                    item_id=item.id,
+                    decision=re_review.payload.decision,
+                    reason_type=re_review.payload.reason_type,
+                    matched_requirement_id=re_review.payload.matched_requirement_id,
+                ),
+                rationale=re_review.rationale,
+            ),
+            session=session,
+        )
+        if re_review.payload.decision is ReviewDecisionEnum.PASS:
+            verification = Verifier(session=session).verify(item)
+            StateMachineExecutor().execute(verification, session=session)
+    except ProposalRejectedError as exc:
+        return f"异议已记录，但重审落账被驳回：{'；'.join(exc.reasons)}"
+    except Exception as exc:  # 核实公式异常等
+        return f"异议已记录，重审通过但核实失败：{exc}"
+    return None

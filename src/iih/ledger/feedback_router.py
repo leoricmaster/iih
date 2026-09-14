@@ -1,4 +1,4 @@
-"""反馈路由（doc-05 §4 记账层）：类型化反馈校验、落账、按六类型分流（doc-02 §6）。
+"""反馈路由（doc-05 §4 记账层）：类型化反馈校验、落账、按七类型分流（doc-02 §6）。
 
 信用通路（仅有效 / 事实错误）在落账事务内联执行：信用归因（decision-04）→
 信用计算器更新信源信用（doc-04 §2.3）；事实错误处置通路本里程碑仅作废落账
@@ -16,7 +16,7 @@ from iih.ledger.credit import (
     attribute_responsible_source,
     credit_delta,
 )
-from iih.ledger.models import Feedback, FeedbackType, IntelligenceItem
+from iih.ledger.models import Feedback, FeedbackType, IntelligenceItem, ItemStatus
 
 TYPE_LABELS = {
     FeedbackType.VALID: "有效",
@@ -25,6 +25,7 @@ TYPE_LABELS = {
     FeedbackType.IRRELEVANT: "不相关",
     FeedbackType.OUTDATED: "过期",
     FeedbackType.RATING_DISPUTE: "评级异议",
+    FeedbackType.REVIEW_DISPUTE: "审查异议",
 }
 
 
@@ -52,6 +53,10 @@ FEEDBACK_ROUTING: dict[FeedbackType, frozenset[FeedbackChannel]] = {
     FeedbackType.DUPLICATE_NOISE: frozenset({FeedbackChannel.ITERATION}),
     # 评级异议：处置（评级重评）
     FeedbackType.RATING_DISPUTE: frozenset({FeedbackChannel.DISPOSITION}),
+    # 审查异议：处置（噪音回候选重审）+ 迭代（审查口径调优）
+    FeedbackType.REVIEW_DISPUTE: frozenset(
+        {FeedbackChannel.DISPOSITION, FeedbackChannel.ITERATION}
+    ),
 }
 
 
@@ -84,7 +89,10 @@ class FeedbackRouter:
         reason: str,
         session: Session,
     ) -> FeedbackSubmitResult:
-        """快捷反馈口径（doc-07 §5）：一键反馈以「快捷 · {类型}」为默认理由；事实错误理由必填。"""
+        """快捷反馈口径（doc-07 §5）：一键反馈以「快捷 · {类型}」为默认理由；事实错误理由必填。
+
+        审查异议仅对噪音态条目开放且理由必填（doc-02 §6：理由为重审输入）。
+        """
         reasons: list[str] = []
 
         item = session.get(IntelligenceItem, item_id)
@@ -92,6 +100,11 @@ class FeedbackRouter:
             reasons.append("情报条目不存在")
         if feedback_type is FeedbackType.FACTUAL_ERROR and not reason.strip():
             reasons.append("事实错误反馈必须填写理由")
+        if feedback_type is FeedbackType.REVIEW_DISPUTE:
+            if not reason.strip():
+                reasons.append("审查异议必须填写理由（将作为重审输入）")
+            elif item is not None and item.status is not ItemStatus.NOISE:
+                reasons.append(f"审查异议仅对噪音态条目开放，当前状态 {item.status.value}")
         if reasons:
             raise FeedbackRejectedError(reasons)
 

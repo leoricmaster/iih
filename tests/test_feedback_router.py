@@ -1,4 +1,4 @@
-"""反馈路由（IIH-01.05）：校验落账 + 六类型分流（doc-02 §6、doc-07 §5 快捷反馈口径）。"""
+"""反馈路由（IIH-01.05）：校验落账 + 七类型分流（doc-02 §6、doc-07 §5 快捷反馈口径）。"""
 
 from datetime import UTC, datetime
 
@@ -105,6 +105,7 @@ def test_unknown_item_rejected(db_session) -> None:
         (FeedbackType.OUTDATED, frozenset({CONFIGURATION})),
         (FeedbackType.DUPLICATE_NOISE, frozenset({ITERATION})),
         (FeedbackType.RATING_DISPUTE, frozenset({DISPOSITION})),
+        (FeedbackType.REVIEW_DISPUTE, frozenset({DISPOSITION, ITERATION})),
     ],
 )
 def test_routing_table_matches_domain_model(
@@ -114,3 +115,57 @@ def test_routing_table_matches_domain_model(
     assert FEEDBACK_ROUTING[feedback_type] == expected_channels
     credit_types = {t for t, channels in FEEDBACK_ROUTING.items() if CREDIT in channels}
     assert credit_types == {FeedbackType.VALID, FeedbackType.FACTUAL_ERROR}
+
+
+# ---- 审查异议（doc-02 §6 处置 + 迭代通路） ----
+
+
+@pytest.fixture
+def noise_item(db_session) -> IntelligenceItem:
+    """预置一条噪音态条目（审查否决产物，异议目标）。"""
+    from iih.ledger.models import Medium, Modality
+
+    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
+    item = IntelligenceItem(
+        statement="W 公司渠道大会：下一代电驱矿卡计划 2027Q2 量产",
+        status=ItemStatus.NOISE,
+        mode=ItemMode.AUTOMATED,
+        medium=medium,
+        modality=modality,
+        collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
+        original_snapshot="正文",
+    )
+    db_session.add(item)
+    db_session.flush()
+    return item
+
+
+def test_review_dispute_lands_and_routes(noise_item, db_session) -> None:
+    """异议携理由落账，分流处置（噪音回候选重审）+ 迭代（审查口径调优）。"""
+    result = _submit(
+        db_session, noise_item.id, FeedbackType.REVIEW_DISPUTE, reason="陈述明确命中需求主题"
+    )
+
+    feedback = db_session.get(Feedback, result.feedback_id)
+    assert feedback is not None
+    assert feedback.reason == "陈述明确命中需求主题"
+    assert result.channels == frozenset({DISPOSITION, ITERATION})
+    assert result.credit_update is None  # 异议不动信用
+
+
+def test_review_dispute_without_reason_rejected(noise_item, db_session) -> None:
+    """异议理由必填：理由为重审输入。"""
+    with pytest.raises(FeedbackRejectedError) as excinfo:
+        _submit(db_session, noise_item.id, FeedbackType.REVIEW_DISPUTE)
+
+    assert any("理由" in r for r in excinfo.value.reasons)
+    assert db_session.scalars(select(Feedback)).first() is None
+
+
+def test_review_dispute_rejects_non_noise_item(db_session, verified_item) -> None:
+    """异议仅对噪音态条目开放。"""
+    with pytest.raises(FeedbackRejectedError) as excinfo:
+        _submit(db_session, verified_item.id, FeedbackType.REVIEW_DISPUTE, reason="x")
+
+    assert any("噪音态" in r for r in excinfo.value.reasons)

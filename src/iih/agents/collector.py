@@ -24,7 +24,7 @@ from iih.ledger.proposal import (
     ItemProvenanceAppendProposal,
     ProvenanceData,
 )
-from iih.tools.html_normalize import fingerprint, normalize
+from iih.tools.html_normalize import extract_links, fingerprint, normalize
 
 ATTRIBUTION_SYSTEM_PROMPT = """你是情报采集智能体的归因模块。
 给定一条情报陈述与其获取媒介，推断信源与发布途径。
@@ -54,6 +54,8 @@ EXTRACTION_SYSTEM_PROMPT = """你是情报采集智能体的陈述抽取模块�
 
 要求：
 - statement：客观陈述句，描述事实而非评价；若页面无情报价值内容，返回空字符串；
+- source_url：本页正文所在文章的链接——从输入的候选链接清单中选出该陈述所在页面的链接；
+  通常是包含文章路径的详情页链接；若清单中确无本文链接则留空；
 - rationale：一句话说明为何选此陈述（依据记入提案）。"""
 
 
@@ -61,6 +63,9 @@ class StatementExtractionResult(BaseModel):
     """LLM 结构化陈述抽取输出。"""
 
     statement: str = Field(description="页面中最具情报价值的一条陈述；无则空字符串")
+    source_url: str | None = Field(
+        default=None, description="该陈述所在文章页链接（取自候选链接清单）；无则留空"
+    )
     rationale: str = Field(description="一句话抽取依据")
 
 
@@ -116,11 +121,12 @@ class Collector:
         1. normalize(html) → 归一化文本 + fingerprint
         2. 查 IntelligenceItem by content_fingerprint
         3. 命中：返回 ItemProvenanceAppendProposal（不调 LLM、不计量）
-        4. 未命中：调 LLM 抽取陈述
+        4. 未命中：extract_links 供 LLM 指认文章页 URL，调 LLM 抽取陈述
            4a. statement 空：返回 None（计量已发生）
            4b. 非空：返回 IntelligenceItemNewProposal（mode=AUTOMATED, modality=webpage,
                medium=internet, source=task.source_name, outlet=task.outlet_name,
-               original_snapshot=归一化文本, original_url=task.url, content_fingerprint=fp）
+               original_snapshot=归一化文本, original_url=LLM 指认文章页（回退 task.url）,
+               content_fingerprint=fp）
         """
         text = normalize(html)
         fp = fingerprint(text)
@@ -141,6 +147,8 @@ class Collector:
                 rationale=f"内容指纹命中既有条目 #{existing.id}，追加转引链节点",
             )
 
+        links = extract_links(html, base_url=task.url)
+        links_block = "\n".join(f"- {u}" for u in links) if links else "（无）"
         extraction, completion = self.llm.chat.completions.create_with_completion(
             response_model=StatementExtractionResult,
             messages=[
@@ -148,7 +156,8 @@ class Collector:
                 {
                     "role": "user",
                     "content": (
-                        f"信源：{task.source_name}\n途径：{task.outlet_name}\n正文：\n{text}"
+                        f"信源：{task.source_name}\n途径：{task.outlet_name}"
+                        f"\n候选链接清单：\n{links_block}\n\n正文：\n{text}"
                     ),
                 },
             ],
@@ -159,12 +168,16 @@ class Collector:
         if not extraction.statement.strip():
             return None  # LLM 判定无情报价值内容
 
+        # 原文链接以 LLM 指认的文章页为准，非法值回退采集入口
+        source_url = extraction.source_url or ""
+        original_url = source_url if source_url.startswith("http") else task.url
+
         return IntelligenceItemNewProposal(
             payload=IntelligenceItemNewPayload(
                 statement=extraction.statement.strip(),
                 mode=ItemMode.AUTOMATED,
                 content_fingerprint=fp,
-                original_url=task.url,
+                original_url=original_url,
             ),
             provenance=ProvenanceData(
                 modality_code="webpage",

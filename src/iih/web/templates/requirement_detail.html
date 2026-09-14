@@ -7,7 +7,7 @@
 {% if errors %}{% for e in errors %}<div class="err">{{ e }}</div>{% endfor %}{% endif %}
 
 <div class="box"><h2>{{ ir.name }} <span class="pill">{{ status_labels[ir.status] }}</span></h2>
-  <div class="muted">创建于 {{ ir.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+  <div class="muted">创建于 {{ ir.created_at | dtstr }}</div>
   <div class="fbrow" style="margin-top:8px">
     {% if ir.status.value == 'draft' %}
     <form method="post" action="/requirements/{{ ir.id }}/action"><input type="hidden" name="action" value="activate"><button class="btn small primary">确认激活</button></form>

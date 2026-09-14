@@ -207,6 +207,27 @@ class ReviewProposal(Proposal):
     payload: ReviewPayload
 
 
+class ItemReviewDisputePayload(BaseModel):
+    """「审查异议重审」产出：item_id + 重审决策（同 ReviewPayload 决策字段）。"""
+
+    item_id: int
+    decision: ReviewDecisionEnum
+    reason_type: RejectionReasonEnum | None = None  # 维持否决时必填
+    matched_requirement_id: int | None = None  # 重审通过时必填
+
+
+class ItemReviewDisputeProposal(Proposal):
+    """提案类型「审查异议重审」：Noise → Candidate（重审通过）或维持 Noise（doc-02 §4.3、§6）。
+
+    由消费方审查异议触发、审查智能体携异议理由重审后产出；重审决策落 ReviewDecision
+    （版本化历史），依据记入 rationale。
+    """
+
+    PROPOSAL_TYPE = "intelligence_item_review_dispute"
+
+    payload: ItemReviewDisputePayload
+
+
 # ---- IIH-01.03 核实评级 ----
 
 

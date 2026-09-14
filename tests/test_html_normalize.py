@@ -1,6 +1,6 @@
 """HTML 归一化与内容指纹单测（doc-06 §3 前置过滤）。"""
 
-from iih.tools.html_normalize import fingerprint, normalize
+from iih.tools.html_normalize import extract_links, fingerprint, normalize
 
 
 def test_normalize_strips_script_and_style() -> None:
@@ -55,3 +55,35 @@ def test_fingerprint_is_64_hex_chars() -> None:
     fp = fingerprint("x")
     assert len(fp) == 64
     int(fp, 16)  # 可解析为 hex
+
+
+# ---- 原文链接提取（doc-05 §5 溯源：原文链接指向文章页） ----
+
+
+def test_extract_links_absolutizes_and_dedupes() -> None:
+    html = (
+        '<a href="/news/2026/jv-agreement">合资公告</a>'
+        '<a href="/news/2026/jv-agreement">转载同一链接</a>'
+        '<a href="https://other.example/report">外部</a>'
+        '<a href="javascript:void(0)">非 http</a>'
+        '<a href="mailto:a@b.example">邮件</a>'
+    )
+
+    links = extract_links(html, base_url="https://w-mining.example/news")
+
+    assert links == [
+        "https://w-mining.example/news/2026/jv-agreement",
+        "https://other.example/report",
+    ]
+
+
+def test_extract_links_respects_limit_and_order() -> None:
+    html = "".join(f'<a href="/p/{i}">第{i}条</a>' for i in range(10))
+
+    links = extract_links(html, base_url="https://x.example", limit=3)
+
+    assert links == [f"https://x.example/p/{i}" for i in range(3)]
+
+
+def test_extract_links_empty_when_no_anchors() -> None:
+    assert extract_links("<p>纯文本</p>", base_url="https://x.example") == []

@@ -240,3 +240,58 @@ def test_collect_outlet_llm_no_statement_returns_none(db_session, fake_extractio
     assert proposal is None
     # 计量已发生（LLM 成本在调用时已发生）
     assert len(db_session.scalars(select(LlmCall)).all()) == 1
+
+
+# ---- 原文链接纠偏：LLM 从候选链接指认文章页 ----
+
+
+HTML_WITH_ARTICLE_LINK = """
+<html><body>
+  <nav><a href="/">首页</a><a href="/products">产品</a></nav>
+  <main>
+    <h1>新闻</h1>
+    <a href="/news/2026/jv-agreement">W 公司与 Z 集团签署合资协议</a>
+    <p>W 公司公告：与 Z 集团签署合资协议，Q4 设立合资公司。</p>
+  </main>
+</body></html>
+"""
+
+
+def test_collect_outlet_uses_llm_identified_article_url(db_session) -> None:
+    """LLM 从候选链接清单指认文章页 → original_url 为文章链接而非入口页。"""
+    source = _seed_confirmed_w_outlet(db_session)
+    outlet = source.outlets[0]
+    task = _make_task(source, outlet)
+    extraction = StatementExtractionResult(
+        statement="W 公司公告：与 Z 集团签署合资协议，Q4 设立合资公司",
+        source_url="https://w-mining.example/news/2026/jv-agreement",
+        rationale="页面公告区主体陈述",
+    )
+    collector = Collector(
+        llm=make_fake_llm_extraction(extraction), session=db_session, model="deepseek-chat"
+    )
+
+    proposal = collector.collect_outlet(task=task, html=HTML_WITH_ARTICLE_LINK)
+
+    assert isinstance(proposal, IntelligenceItemNewProposal)
+    assert proposal.payload.original_url == "https://w-mining.example/news/2026/jv-agreement"
+
+
+def test_collect_outlet_falls_back_to_entry_url_on_invalid_source_url(db_session) -> None:
+    """LLM 未指认或指认非法（非 http 开头）→ 回退采集入口 URL。"""
+    source = _seed_confirmed_w_outlet(db_session)
+    outlet = source.outlets[0]
+    task = _make_task(source, outlet)
+    extraction = StatementExtractionResult(
+        statement="W 公司公告：与 Z 集团签署合资协议，Q4 设立合资公司",
+        source_url="不是链接",
+        rationale="页面公告区主体陈述",
+    )
+    collector = Collector(
+        llm=make_fake_llm_extraction(extraction), session=db_session, model="deepseek-chat"
+    )
+
+    proposal = collector.collect_outlet(task=task, html=HTML_WITH_ARTICLE_LINK)
+
+    assert isinstance(proposal, IntelligenceItemNewProposal)
+    assert proposal.payload.original_url == "https://w-mining.example/news"

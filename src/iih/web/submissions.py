@@ -13,11 +13,11 @@ from iih.agents.collector import Collector
 from iih.config import get_settings
 from iih.ledger.models import IntelligenceItem, ItemMode, Medium
 from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
-from iih.web.context import STATUS_LABELS, base_context
+from iih.web.context import STATUS_LABELS, base_context, register_template_filters
 from iih.web.deps import get_llm_client, get_session
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
-templates = Jinja2Templates(directory=TEMPLATES_DIR)
+templates = register_template_filters(Jinja2Templates(directory=TEMPLATES_DIR))
 
 router = APIRouter()
 

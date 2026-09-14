@@ -14,7 +14,7 @@
       <td><a href="/requirements/{{ r.id }}">{{ r.name }}</a></td>
       <td><span class="pill">{{ status_labels[r.status] }}</span></td>
       <td class="muted">{{ hit_counts.get(r.id, 0) }}</td>
-      <td class="muted">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td class="muted">{{ r.created_at | dtstr }}</td>
     </tr>
     {% endfor %}
   </table>

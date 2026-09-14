@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     # 流水线后台自动循环间隔（秒）；0 = 关闭（doc-07 §2.2 常驻监控的最简实现）
     pipeline_interval_seconds: int = 300
 
+    # 展示时区：库内时间戳一律 UTC，Web 展示按此时区换算
+    display_timezone: str = "Asia/Shanghai"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 

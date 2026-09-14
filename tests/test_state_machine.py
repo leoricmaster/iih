@@ -34,6 +34,8 @@ from iih.ledger.proposal import (
     ItemProvenanceAppendProposal,
     ItemReverifyPayload,
     ItemReverifyProposal,
+    ItemReviewDisputePayload,
+    ItemReviewDisputeProposal,
     Proposal,
     ProvenanceData,
     ReviewPayload,
@@ -1206,3 +1208,137 @@ def test_item_reverify_rejects_blank_rationale(db_session) -> None:
         )
 
     assert any("依据缺失" in r for r in excinfo.value.reasons)
+
+
+# ---- 审查异议重审（doc-02 §4.3、§6） ----
+
+
+def _seed_noise_item(db_session) -> tuple[IntelligenceItem, IntelligenceRequirement]:
+    """预置一条噪音态条目（已被审查否决）+ 激活需求。"""
+    item, ir = _seed_lead_with_active_ir(db_session)
+    item.status = ItemStatus.NOISE
+    db_session.add(
+        ReviewDecision(
+            item=item,
+            decision=ReviewDecisionEnum.REJECT,
+            reason_type=RejectionReasonEnum.IRRELEVANT,
+            rationale="陈述与激活需求主题不相关",
+        )
+    )
+    db_session.flush()
+    return item, ir
+
+
+def test_dispute_pass_transitions_noise_to_candidate(db_session) -> None:
+    """异议重审通过：Noise → Candidate + ReviewDecision 留痕（版本化历史）。"""
+    item, ir = _seed_noise_item(db_session)
+
+    result = StateMachineExecutor().execute(
+        ItemReviewDisputeProposal(
+            payload=ItemReviewDisputePayload(
+                item_id=item.id,
+                decision=ReviewDecisionEnum.PASS,
+                matched_requirement_id=ir.id,
+            ),
+            rationale="异议成立：陈述命中需求主题",
+        ),
+        session=db_session,
+    )
+
+    assert result.item_id == item.id
+    assert db_session.get(IntelligenceItem, item.id).status is ItemStatus.CANDIDATE
+    decisions = db_session.scalars(
+        select(ReviewDecision).where(ReviewDecision.item_id == item.id)
+    ).all()
+    assert len(decisions) == 2  # 原否决 + 重审通过
+    assert decisions[-1].decision is ReviewDecisionEnum.PASS
+    assert decisions[-1].matched_requirement_id == ir.id
+
+
+def test_dispute_reject_keeps_noise(db_session) -> None:
+    """异议重审维持否决：状态保持 Noise + 维持决策落账。"""
+    item, _ir = _seed_noise_item(db_session)
+
+    StateMachineExecutor().execute(
+        ItemReviewDisputeProposal(
+            payload=ItemReviewDisputePayload(
+                item_id=item.id,
+                decision=ReviewDecisionEnum.REJECT,
+                reason_type=RejectionReasonEnum.INVALID,
+            ),
+            rationale="异议不成立：陈述仍不完整",
+        ),
+        session=db_session,
+    )
+
+    assert db_session.get(IntelligenceItem, item.id).status is ItemStatus.NOISE
+    decisions = db_session.scalars(
+        select(ReviewDecision).where(ReviewDecision.item_id == item.id)
+    ).all()
+    assert len(decisions) == 2
+    assert decisions[-1].reason_type is RejectionReasonEnum.INVALID
+
+
+def test_dispute_rejects_non_noise_state(db_session) -> None:
+    """前置违反：非噪音态不可异议重审。"""
+    item, ir = _seed_noise_item(db_session)
+    item.status = ItemStatus.VERIFIED
+    item.rating = "B2"
+    db_session.flush()
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            ItemReviewDisputeProposal(
+                payload=ItemReviewDisputePayload(
+                    item_id=item.id,
+                    decision=ReviewDecisionEnum.PASS,
+                    matched_requirement_id=ir.id,
+                ),
+                rationale="x",
+            ),
+            session=db_session,
+        )
+
+    assert any("前置违反" in r for r in excinfo.value.reasons)
+
+
+def test_dispute_pass_requires_active_requirement(db_session) -> None:
+    """重审通过必须匹配激活需求；非激活驳回。"""
+    item, ir = _seed_noise_item(db_session)
+    ir.status = IntelligenceRequirementStatus.CLOSED
+    db_session.flush()
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            ItemReviewDisputeProposal(
+                payload=ItemReviewDisputePayload(
+                    item_id=item.id,
+                    decision=ReviewDecisionEnum.PASS,
+                    matched_requirement_id=ir.id,
+                ),
+                rationale="x",
+            ),
+            session=db_session,
+        )
+
+    assert any("非激活态" in r for r in excinfo.value.reasons)
+
+
+def test_dispute_reject_decision_requires_reason_type(db_session) -> None:
+    """维持否决必须附理由类型。"""
+    item, _ir = _seed_noise_item(db_session)
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            ItemReviewDisputeProposal(
+                payload=ItemReviewDisputePayload(
+                    item_id=item.id,
+                    decision=ReviewDecisionEnum.REJECT,
+                    reason_type=None,
+                ),
+                rationale="x",
+            ),
+            session=db_session,
+        )
+
+    assert any("理由类型" in r for r in excinfo.value.reasons)

@@ -16,7 +16,7 @@
     <tr><th>时间</th><th>奖惩</th><th>累计分</th><th>分档</th><th>公式版本</th></tr>
     {% for adj in adjustments %}
     <tr>
-      <td class="muted">{{ adj.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td class="muted">{{ adj.created_at | dtstr }}</td>
       <td>{{ '+1（有效）' if adj.delta > 0 else '−2（事实错误）' }}</td>
       <td>{{ '%.2f' % adj.score_after }}</td>
       <td><span class="pill rating">{{ adj.grade_after }}</span></td>

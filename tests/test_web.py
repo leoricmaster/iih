@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from conftest import make_fake_llm, make_fake_llm_dispatch
+from conftest import make_fake_llm, make_fake_llm_dispatch, make_fake_llm_review
 from iih.agents.collector import StatementExtractionResult
 from iih.agents.reviewer import ReviewJudgmentResult
 from iih.ledger.credit import SOURCE_CREDIT_FORMULA_VERSION
@@ -358,7 +358,7 @@ def test_item_detail_shows_provenance_and_rating_basis(
     # 溯源五要素（元数据折叠区）：载体 / 媒介 / 采集时间 / 原文快照 / 信源与途径归因
     assert "元数据" in response.text
     assert "互联网 / 网页" in response.text  # 媒介 / 载体
-    assert "2026-09-14 10:00" in response.text  # 采集时间
+    assert "2026-09-14 18:00" in response.text  # 采集时间（UTC 10:00 → 展示时区）
     assert "W 公司今日公告，与 Z 集团签署合资协议。" in response.text  # 原文快照
     assert "官网" in response.text  # 途径归因（元数据 + 转引链）
     assert ">转引链" in response.text
@@ -1195,3 +1195,144 @@ def test_requirement_probe_without_outlets_shows_hint(db_session) -> None:
 
     assert response.status_code == 200
     assert "无已登记互联网途径" in response.text
+
+
+# ---- 审查异议重审（doc-02 §6 处置通路：噪音回候选） ----
+
+
+def _seed_noise_item(db_session) -> tuple[IntelligenceItem, IntelligenceRequirement]:
+    """预置一条噪音条目：单节点转引链 + 原否决决策 + 激活需求 + 信源信用档 B。"""
+    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, credit="B")
+    ir = IntelligenceRequirement(
+        name="跟踪 W 公司",
+        content_spec="主题：合资协议",
+        status=IntelligenceRequirementStatus.ACTIVE,
+    )
+    item = IntelligenceItem(
+        statement="W 公司公告：与 Z 集团签署合资协议",
+        status=ItemStatus.NOISE,
+        mode=ItemMode.AUTOMATED,
+        medium=medium,
+        modality=modality,
+        collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
+        original_snapshot="正文",
+        source=source,
+    )
+    db_session.add_all([source, ir, item])
+    db_session.flush()
+    db_session.add(
+        ProvenanceChainNode(
+            item=item,
+            source=source,
+            modality=modality,
+            medium=medium,
+            collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
+        )
+    )
+    db_session.add(
+        ReviewDecision(
+            item=item,
+            decision=ReviewDecisionEnum.REJECT,
+            reason_type=RejectionReasonEnum.IRRELEVANT,
+            rationale="陈述与激活需求主题不相关",
+        )
+    )
+    db_session.flush()
+    return item, ir
+
+
+def test_noise_detail_offers_dispute_form(inbox_client: TestClient, db_session) -> None:
+    """噪音详情页提供审查异议入口（理由必填）；已核实详情不出现该选项。"""
+    noise, _ir = _seed_noise_item(db_session)
+    verified = _seed_verified_item(db_session, source_name="Z 集团")
+
+    noise_detail = inbox_client.get(f"/items/{noise.id}")
+    assert "审查异议" in noise_detail.text
+    assert "提交异议并重审" in noise_detail.text
+    assert 'name="reason" required' in noise_detail.text
+
+    verified_detail = inbox_client.get(f"/items/{verified.id}")
+    assert 'value="review_dispute"' not in verified_detail.text
+
+
+def test_dispute_pass_returns_noise_to_verified(db_session) -> None:
+    """异议 → 重审通过 → 候选并即时核实出评级；轨迹呈现完整往返。"""
+    item, ir = _seed_noise_item(db_session)
+    judgment = ReviewJudgmentResult(
+        decision="pass",
+        reason_type=None,
+        matched_requirement_id=ir.id,
+        rationale="异议成立：陈述命中需求主题",
+    )
+    app = create_app()
+    app.state.llm = make_fake_llm_review(judgment)
+    app.dependency_overrides[get_session] = lambda: db_session
+    with TestClient(app) as client:
+        response = client.post(
+            f"/items/{item.id}/feedback",
+            data={"feedback_type": "review_dispute", "reason": "该陈述明确命中需求主题"},
+            follow_redirects=True,
+        )
+
+    assert response.status_code == 200
+    final = db_session.get(IntelligenceItem, item.id)
+    assert final.status is ItemStatus.VERIFIED
+    assert final.rating == "B2"  # 单节点链 + 信源档 B → 确定性重评
+    # 轨迹：噪音 → 候选（异议重审通过）→ 已核实
+    assert "噪音（审查否决 · 不相关）" in response.text
+    assert "候选情报（异议重审通过）" in response.text
+    assert "已核实（B2）" in response.text
+    decisions = db_session.scalars(
+        select(ReviewDecision).where(ReviewDecision.item_id == item.id)
+    ).all()
+    assert len(decisions) == 2  # 否决 + 重审通过（版本化历史）
+    feedback = db_session.scalars(select(Feedback).where(Feedback.item_id == item.id)).one()
+    assert feedback.feedback_type is FeedbackType.REVIEW_DISPUTE
+    assert feedback.reason == "该陈述明确命中需求主题"
+
+
+def test_dispute_reject_keeps_noise_with_history(db_session) -> None:
+    """重审维持否决：状态保持噪音，异议与维持决策均留痕（供迭代通路）。"""
+    item, _ir = _seed_noise_item(db_session)
+    judgment = ReviewJudgmentResult(
+        decision="reject",
+        reason_type="irrelevant",
+        matched_requirement_id=None,
+        rationale="维持：陈述仍与需求不相关",
+    )
+    app = create_app()
+    app.state.llm = make_fake_llm_review(judgment)
+    app.dependency_overrides[get_session] = lambda: db_session
+    with TestClient(app) as client:
+        response = client.post(
+            f"/items/{item.id}/feedback",
+            data={"feedback_type": "review_dispute", "reason": "我认为相关"},
+            follow_redirects=True,
+        )
+
+    assert response.status_code == 200
+    assert db_session.get(IntelligenceItem, item.id).status is ItemStatus.NOISE
+    assert "噪音（异议重审维持 · 不相关）" in response.text
+    decisions = db_session.scalars(
+        select(ReviewDecision).where(ReviewDecision.item_id == item.id)
+    ).all()
+    assert len(decisions) == 2
+    feedbacks = db_session.scalars(select(Feedback).where(Feedback.item_id == item.id)).all()
+    assert len(feedbacks) == 1  # 异议记录不因维持而丢失
+
+
+def test_dispute_without_reason_rejected_before_llm(inbox_client: TestClient, db_session) -> None:
+    """异议理由必填：未填理由直接驳回，不触发重审。"""
+    item, _ir = _seed_noise_item(db_session)
+
+    response = inbox_client.post(
+        f"/items/{item.id}/feedback",
+        data={"feedback_type": "review_dispute", "reason": ""},
+        follow_redirects=True,
+    )
+
+    assert "审查异议必须填写理由" in response.text
+    assert db_session.get(IntelligenceItem, item.id).status is ItemStatus.NOISE
+    assert db_session.scalars(select(Feedback)).first() is None

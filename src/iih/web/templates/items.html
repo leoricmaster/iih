@@ -30,7 +30,7 @@
       <td>{% if item.source %}<a href="/sources/{{ item.source.id }}">{{ item.source.name }}</a>{% else %}—{% endif %}</td>
       <td class="muted">{{ item.medium.name }} / {{ item.modality.name }}</td>
       <td class="muted">{{ '自动拉取' if item.mode.value == 'automated' else '人工提交' }}</td>
-      <td class="muted">{{ item.event_time.strftime('%Y-%m-%d') if item.event_time else '—' }}</td>
+      <td class="muted">{{ item.event_time | dtstr('%Y-%m-%d') if item.event_time else '—' }}</td>
     </tr>
     {% else %}
     <tr><td colspan="8"><div class="empty">当前筛选下无条目</div></td></tr>

@@ -1,5 +1,9 @@
-"""Web 层共享模板上下文：侧栏徽标计数与通用标签。"""
+"""Web 层共享模板上下文：侧栏徽标计数、通用标签、模板过滤器。"""
 
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
+
+from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -49,3 +53,19 @@ def base_context(session: Session, nav: str) -> dict:
         "inbox_count": inbox_count(session),
         "pipeline_interval": get_settings().pipeline_interval_seconds,
     }
+
+
+def register_template_filters(templates: Jinja2Templates) -> Jinja2Templates:
+    """注册全站模板过滤器（各路由模块共用同一 Jinja2 环境）。
+
+    dtstr：库内 UTC 时间戳按展示时区格式化；空值显示「—」。
+    """
+
+    def _dtstr(value: datetime | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
+        if value is None:
+            return "—"
+        aware = value if value.tzinfo else value.replace(tzinfo=UTC)
+        return aware.astimezone(ZoneInfo(get_settings().display_timezone)).strftime(fmt)
+
+    templates.env.filters["dtstr"] = _dtstr
+    return templates

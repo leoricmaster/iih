@@ -6,6 +6,7 @@
 
 import hashlib
 import re
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
@@ -25,3 +26,18 @@ def normalize(html: str) -> str:
 def fingerprint(text: str) -> str:
     """归一化文本的 SHA-256 hex digest（64 字符）。"""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def extract_links(html: str, *, base_url: str, limit: int = 60) -> list[str]:
+    """提取页面内绝对化 http(s) 链接（去重、保序、截断），供 LLM 指认原文 URL。"""
+    soup = BeautifulSoup(html, "html.parser")
+    seen: set[str] = set()
+    links: list[str] = []
+    for anchor in soup.find_all("a", href=True):
+        url = urljoin(base_url, str(anchor["href"]).strip())
+        if url.startswith(("http://", "https://")) and url not in seen:
+            seen.add(url)
+            links.append(url)
+            if len(links) >= limit:
+                break
+    return links

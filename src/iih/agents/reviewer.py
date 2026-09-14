@@ -38,6 +38,7 @@ REVIEW_SYSTEM_PROMPT = """你是情报审查智能体。
 - rationale：一句话审查依据，将记入提案的「依据」。
 
 边界：本里程碑不做事件同一性（duplicate）判定；如判定为同源纯重复，按 irrelevant 或 invalid 给理由。
+输入可能附带消费方审查异议与理由（此前否决存疑）：重审时须结合异议理由独立重新判断，不默认服从原判或异议。
 """
 
 
@@ -64,8 +65,8 @@ class Reviewer:
         self.session = session
         self.model = model
 
-    def review(self, item: IntelligenceItem) -> ReviewProposal:
-        """对一条 Lead 态条目产出审查提案。
+    def review(self, item: IntelligenceItem, *, dispute_note: str | None = None) -> ReviewProposal:
+        """对一条 Lead 态条目产出审查提案；异议重审时携 dispute_note（doc-02 §6）。
 
         无激活情报需求时直接否决为 IRRELEVANT（无需求即无相关性），不调 LLM、不计量。
         有激活需求时调 LLM 判断，产出 PASS 或 REJECT 提案。
@@ -90,7 +91,10 @@ class Reviewer:
             )
 
         judgment = self.judge_statement(
-            statement=item.statement, requirements=active_irs, target="item_review"
+            statement=item.statement,
+            requirements=active_irs,
+            target="item_review",
+            dispute_note=dispute_note,
         )
 
         return ReviewProposal(
@@ -109,16 +113,20 @@ class Reviewer:
         statement: str,
         requirements: list[IntelligenceRequirement],
         target: str = "statement_preview",
+        dispute_note: str | None = None,
     ) -> ReviewJudgmentResult:
         """对一条陈述按给定需求集做审查预判（试采集预览路径，不产出提案、不落账）。"""
         ir_block = "\n".join(f"- #{ir.id}：{ir.name}（{ir.content_spec}）" for ir in requirements)
+        dispute_block = f"\n\n消费方审查异议：{dispute_note}" if dispute_note else ""
         judgment, completion = self.llm.chat.completions.create_with_completion(
             response_model=ReviewJudgmentResult,
             messages=[
                 {"role": "system", "content": REVIEW_SYSTEM_PROMPT},
                 {
                     "role": "user",
-                    "content": f"线索陈述：{statement}\n\n激活情报需求：\n{ir_block}",
+                    "content": (
+                        f"线索陈述：{statement}\n\n激活情报需求：\n{ir_block}{dispute_block}"
+                    ),
                 },
             ],
             model=self.model,

@@ -74,7 +74,7 @@ class VerificationOutcome(enum.StrEnum):
 
 
 class FeedbackType(enum.StrEnum):
-    """反馈六类型（术语表 §七、doc-02 §6）。"""
+    """反馈七类型（术语表 §七、doc-02 §6）。"""
 
     VALID = "valid"  # 有效
     FACTUAL_ERROR = "factual_error"  # 事实错误
@@ -82,6 +82,7 @@ class FeedbackType(enum.StrEnum):
     IRRELEVANT = "irrelevant"  # 不相关
     OUTDATED = "outdated"  # 过期
     RATING_DISPUTE = "rating_dispute"  # 评级异议
+    REVIEW_DISPUTE = "review_dispute"  # 审查异议：不服审查否决，携理由重审
 
 
 class SourceType(enum.StrEnum):

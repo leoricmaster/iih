@@ -22,24 +22,24 @@
     <span class="muted">信源{{ item.rating[0] }} · 可信度{{ item.rating[1:] }}</span>{% endif %}
     {% if latest_verification %}<span class="pill">独立信源 ×{{ latest_verification.independent_source_count }}</span>{% endif %}
   </div>
-  <div class="muted">出处 {% if item.source %}<a href="/sources/{{ item.source.id }}">{{ item.source.name }}</a>{% else %}—{% endif %} · 事件时间 {{ item.event_time.strftime('%Y-%m-%d') if item.event_time else '—' }} · 采集 {{ item.collected_at.strftime('%Y-%m-%d %H:%M') }} · {{ item.medium.name }} / {{ item.modality.name }} · {{ '自动拉取' if item.mode.value == 'automated' else '人工提交' }}</div>
+  <div class="muted">出处 {% if item.source %}<a href="/sources/{{ item.source.id }}">{{ item.source.name }}</a>{% else %}—{% endif %} · 事件时间 {{ item.event_time | dtstr('%Y-%m-%d') if item.event_time else '—' }} · 采集 {{ item.collected_at | dtstr }} · {{ item.medium.name }} / {{ item.modality.name }} · {{ '自动拉取' if item.mode.value == 'automated' else '人工提交' }}</div>
   <h3 style="margin-top:10px">状态迁移</h3>
-  <div class="muted">{% for label, at in trail %}{{ label }}<span class="muted">（{{ at.strftime('%Y-%m-%d %H:%M') if at else '—' }}）</span>{% if not loop.last %} <span class="arrow">→</span> {% endif %}{% endfor %}</div>
+  <div class="muted">{% for label, at in trail %}{{ label }}<span class="muted">（{{ at | dtstr if at else '—' }}）</span>{% if not loop.last %} <span class="arrow">→</span> {% endif %}{% endfor %}</div>
 </div>
 
 {% if item.status.value in ('lead', 'candidate') %}
 <div class="box"><h2>流水线进度</h2>
   <ul class="pipe">
-    <li><span class="st done">✓</span><span>线索 · 采集落账 <span class="muted">{{ item.collected_at.strftime('%m-%d %H:%M') }}</span></span></li>
+    <li><span class="st done">✓</span><span>线索 · 采集落账 <span class="muted">{{ item.collected_at | dtstr('%m-%d %H:%M') }}</span></span></li>
     {% if review %}
-    <li><span class="st done">✓</span><span>审查 · 相关性 / 有效性初筛 <span class="muted">{{ review.created_at.strftime('%m-%d %H:%M') }}</span><br><span class="muted">{{ review.rationale }}</span></span></li>
+    <li><span class="st done">✓</span><span>审查 · 相关性 / 有效性初筛 <span class="muted">{{ review.created_at | dtstr('%m-%d %H:%M') }}</span><br><span class="muted">{{ review.rationale }}</span></span></li>
     {% elif item.status.value == 'candidate' %}
     <li><span class="st done">✓</span><span>审查 · 通过 → 候选情报</span></li>
     {% else %}
     <li><span class="st doing">●</span><span>审查 · 相关性 / 有效性初筛（待运行）</span></li>
     {% endif %}
     {% if latest_verification %}
-    <li><span class="st done">✓</span><span>核实评级 <span class="muted">{{ latest_verification.created_at.strftime('%m-%d %H:%M') }}</span></span></li>
+    <li><span class="st done">✓</span><span>核实评级 <span class="muted">{{ latest_verification.created_at | dtstr('%m-%d %H:%M') }}</span></span></li>
     {% elif item.status.value == 'candidate' %}
     <li><span class="st doing">●</span><span>核实评级 · 穿透转引链 · 独立信源统计（待运行）</span></li>
     {% else %}
@@ -83,7 +83,7 @@
   <div class="fbrow">
     <form method="post" action="/items/{{ item.id }}/feedback" class="fbrow">
       {% for ft, label in type_labels.items() %}
-      {% if ft.value != 'factual_error' %}
+      {% if ft.value not in ('factual_error', 'review_dispute') %}
       <button name="feedback_type" value="{{ ft.value }}">{{ label }}</button>
       {% endif %}
       {% endfor %}
@@ -95,12 +95,23 @@
       <label>反馈类型与理由</label>
       <select name="feedback_type">
         {% for ft, label in type_labels.items() %}
+        {% if ft.value != 'review_dispute' %}
         <option value="{{ ft.value }}" {{ 'selected' if fb_type == ft.value }}>{{ label }}</option>
+        {% endif %}
         {% endfor %}
       </select>
       <textarea name="reason" placeholder="{{ '必填：请说明事实错误的依据' if fb_type == 'factual_error' else '补写理由（可选）' }}" style="margin-top:6px">{{ fb_reason }}</textarea>
     </div>
     <button class="btn primary">提交反馈</button>
+  </form>
+  {% elif item.status.value == 'noise' and not item.retracted %}
+  <form method="post" action="/items/{{ item.id }}/feedback">
+    <input type="hidden" name="feedback_type" value="review_dispute">
+    <div class="field">
+      <label>审查异议（理由必填，将作为重审输入）</label>
+      <textarea name="reason" required placeholder="必填：说明为何不认同否决">{{ fb_reason or '' }}</textarea>
+    </div>
+    <button class="btn primary">提交异议并重审</button>
   </form>
   {% else %}
   <div class="muted">当前状态不开放反馈。</div>
@@ -110,15 +121,15 @@
 <details class="box"><summary>元数据</summary>
   <dl class="kv">
     <dt>状态</dt><dd>{{ status_labels[item.status] }}{{ ' · 作废' if item.retracted }}</dd>
-    <dt>事件时间</dt><dd>{{ item.event_time.strftime('%Y-%m-%d %H:%M') if item.event_time else '—' }}</dd>
-    <dt>采集时间</dt><dd>{{ item.collected_at.strftime('%Y-%m-%d %H:%M') }}</dd>
+    <dt>事件时间</dt><dd>{{ item.event_time | dtstr if item.event_time else '—' }}</dd>
+    <dt>采集时间</dt><dd>{{ item.collected_at | dtstr }}</dd>
     <dt>媒介 / 载体</dt><dd>{{ item.medium.name }} / {{ item.modality.name }}</dd>
     <dt>采集模式</dt><dd>{{ '自动拉取' if item.mode.value == 'automated' else '人工提交' }}</dd>
     <dt>出处信源</dt><dd>{% if item.source %}<a href="/sources/{{ item.source.id }}">{{ item.source.name }}</a>{% else %}—{% endif %}</dd>
     <dt>途径</dt><dd>{{ item.outlet.name if item.outlet else '—' }}</dd>
-    <dt>原文快照</dt><dd>{{ item.original_snapshot }}</dd>
+    <dt>原文快照</dt><dd><div class="snapbox">{{ item.original_snapshot }}</div></dd>
     <dt>原文链接</dt><dd>{% if item.original_url %}<a href="{{ item.original_url }}" rel="noopener">{{ item.original_url }}</a>{% else %}—{% endif %}</dd>
-    <dt>登记时间</dt><dd>{{ item.created_at.strftime('%Y-%m-%d %H:%M') }}</dd>
+    <dt>登记时间</dt><dd>{{ item.created_at | dtstr }}</dd>
   </dl>
 </details>
 
@@ -132,7 +143,7 @@
     <li class="{{ 'first' if loop.first }}">
       <a href="/sources/{{ node.source_id }}">{{ node.source.name }}</a><span class="muted"> · {{ node.outlet.name if node.outlet else '途径未记' }}</span>
       {% if node.source_id == attribution_source_id %}<span class="pill">信用归因对象</span>{% endif %}
-      <span class="muted">{{ node.collected_at.strftime('%Y-%m-%d %H:%M') }}{% if node.original_url %} · <a href="{{ node.original_url }}" rel="noopener">原文</a>{% endif %}</span>
+      <span class="muted">{{ node.collected_at | dtstr }}{% if node.original_url %} · <a href="{{ node.original_url }}" rel="noopener">原文</a>{% endif %}</span>
     </li>
     {% endfor %}
   </ul>
@@ -144,7 +155,7 @@
     <tr><th>时间</th><th>结果</th><th>N</th><th>R</th><th>可信度</th><th>评级</th><th>公式版本</th><th>依据</th></tr>
     {% for v in verifications %}
     <tr>
-      <td class="muted">{{ v.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td class="muted">{{ v.created_at | dtstr }}</td>
       <td>{{ '已核实' if v.outcome.value == 'verified' else '存疑' }}</td>
       <td>{{ v.independent_source_count }}</td>
       <td>{{ v.source_reliability or '—' }}</td>
@@ -164,7 +175,7 @@
   {% if feedbacks %}
   {% for f in feedbacks %}
   <div style="border-bottom:1px solid #eee;padding:8px 0">
-    <span class="pill">{{ type_labels[f.feedback_type] }}</span> <span class="muted">{{ f.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+    <span class="pill">{{ type_labels[f.feedback_type] }}</span> <span class="muted">{{ f.created_at | dtstr }}</span>
     <div style="margin:3px 0">理由：{{ f.reason }}</div>
   </div>
   {% endfor %}

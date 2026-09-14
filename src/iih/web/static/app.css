@@ -88,3 +88,4 @@ details.box>summary{cursor:pointer;user-select:none;font-size:14.5px;display:fle
 details.box>summary .muted{font-weight:400;font-size:12.5px}
 details.box[open]>summary{margin-bottom:10px}
 .runbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.snapbox{white-space:pre-wrap;word-break:break-word;max-height:320px;overflow:auto;background:#f8f9fb;border:1px solid #e8e8ee;border-radius:6px;padding:8px 10px;font-size:12px;line-height:1.6}

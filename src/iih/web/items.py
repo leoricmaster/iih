@@ -27,11 +27,16 @@ from iih.ledger.models import (
 )
 from iih.ledger.proposal import ItemReverifyPayload, ItemReverifyProposal
 from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
-from iih.web.context import REJECTION_REASON_LABELS, STATUS_LABELS, base_context
+from iih.web.context import (
+    REJECTION_REASON_LABELS,
+    STATUS_LABELS,
+    base_context,
+    register_template_filters,
+)
 from iih.web.deps import get_session
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
-templates = Jinja2Templates(directory=TEMPLATES_DIR)
+templates = register_template_filters(Jinja2Templates(directory=TEMPLATES_DIR))
 
 router = APIRouter()
 
@@ -156,27 +161,37 @@ def _neighbors(session: Session, item_id: int) -> tuple[int | None, int | None]:
 
 
 def _item_trail(
-    item: IntelligenceItem, review: ReviewDecision | None, feedbacks: list[Feedback]
+    item: IntelligenceItem,
+    reviews: list[ReviewDecision],
+    verifications: list[VerificationRecord],
+    feedbacks: list[Feedback],
 ) -> list[tuple[str, object]]:
-    """状态迁移轨迹（原型 trail）：线索 → 审查 → 核实 → 作废。"""
+    """状态迁移轨迹（原型 trail）：按决策时间升序走全部审查与核实记录。
+
+    审查序列可呈现异议重审往返（噪音 → 候选 / 噪音维持）；核实序列可呈现存疑重核
+    （存疑 → 已核实）；作废以事实错误反馈时间收尾。
+    """
     trail: list[tuple[str, object]] = [
         (f"线索（{'人工提交' if item.mode is ItemMode.MANUAL else '自动拉取'}）", item.created_at)
     ]
-    if review is not None:
+    for index, review in enumerate(reviews):
+        reason = (
+            REJECTION_REASON_LABELS.get(review.reason_type, "未知")
+            if review.reason_type
+            else "未知"
+        )
         if review.decision.value == "pass":
-            trail.append(("候选情报（审查通过）", review.created_at))
+            label = "候选情报（异议重审通过）" if index > 0 else "候选情报（审查通过）"
         else:
-            reason = (
-                REJECTION_REASON_LABELS.get(review.reason_type, "未知")
-                if review.reason_type
-                else "未知"
+            label = (
+                f"噪音（异议重审维持 · {reason}）" if index > 0 else f"噪音（审查否决 · {reason}）"
             )
-            trail.append((f"噪音（审查否决 · {reason}）", review.created_at))
-    if item.rating or item.status is ItemStatus.UNDETERMINED:
-        if item.rating:
-            trail.append((f"已核实（{item.rating}）", item.updated_at))
+        trail.append((label, review.created_at))
+    for v in verifications:
+        if v.outcome.value == "verified":
+            trail.append((f"已核实（{v.rating}）", v.created_at))
         else:
-            trail.append(("存疑（核实无法完成）", item.updated_at))
+            trail.append(("存疑（核实无法完成）", v.created_at))
     if item.retracted:
         factual = next(
             (f for f in feedbacks if f.feedback_type is FeedbackType.FACTUAL_ERROR), None
@@ -212,12 +227,13 @@ def _render_detail(
             .order_by(Feedback.created_at.desc(), Feedback.id.desc())
         )
     )
-    review = session.scalars(
-        select(ReviewDecision)
-        .where(ReviewDecision.item_id == item_id)
-        .order_by(ReviewDecision.created_at.desc(), ReviewDecision.id.desc())
-        .limit(1)
-    ).first()
+    reviews = list(
+        session.scalars(
+            select(ReviewDecision)
+            .where(ReviewDecision.item_id == item_id)
+            .order_by(ReviewDecision.created_at.asc(), ReviewDecision.id.asc())
+        )
+    )
     prev_id, next_id = _neighbors(session, item_id)
     chain_nodes = _chain_nodes(session, item_id)
 
@@ -230,12 +246,12 @@ def _render_detail(
             "verifications": verifications,
             "latest_verification": verifications[0] if verifications else None,
             "feedbacks": feedbacks,
-            "review": review,
+            "review": reviews[-1] if reviews else None,
             "chain_nodes": chain_nodes,
             "attribution_source_id": chain_nodes[0].source_id if chain_nodes else None,
             "prev_id": prev_id,
             "next_id": next_id,
-            "trail": _item_trail(item, review, feedbacks),
+            "trail": _item_trail(item, reviews, list(reversed(verifications)), feedbacks),
             "type_labels": TYPE_LABELS,
             "status_labels": STATUS_LABELS,
             "reason_labels": REJECTION_REASON_LABELS,
