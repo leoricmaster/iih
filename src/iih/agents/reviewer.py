@@ -89,19 +89,9 @@ class Reviewer:
                 rationale="无激活情报需求，无法判定相关性",
             )
 
-        ir_block = "\n".join(f"- #{ir.id}：{ir.name}（{ir.content_spec}）" for ir in active_irs)
-        judgment, completion = self.llm.chat.completions.create_with_completion(
-            response_model=ReviewJudgmentResult,
-            messages=[
-                {"role": "system", "content": REVIEW_SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": f"线索陈述：{item.statement}\n\n激活情报需求：\n{ir_block}",
-                },
-            ],
-            model=self.model,
+        judgment = self.judge_statement(
+            statement=item.statement, requirements=active_irs, target="item_review"
         )
-        self._meter(target="item_review", usage=completion.usage)
 
         return ReviewProposal(
             payload=ReviewPayload(
@@ -112,6 +102,29 @@ class Reviewer:
             ),
             rationale=judgment.rationale,
         )
+
+    def judge_statement(
+        self,
+        *,
+        statement: str,
+        requirements: list[IntelligenceRequirement],
+        target: str = "statement_preview",
+    ) -> ReviewJudgmentResult:
+        """对一条陈述按给定需求集做审查预判（试采集预览路径，不产出提案、不落账）。"""
+        ir_block = "\n".join(f"- #{ir.id}：{ir.name}（{ir.content_spec}）" for ir in requirements)
+        judgment, completion = self.llm.chat.completions.create_with_completion(
+            response_model=ReviewJudgmentResult,
+            messages=[
+                {"role": "system", "content": REVIEW_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": f"线索陈述：{statement}\n\n激活情报需求：\n{ir_block}",
+                },
+            ],
+            model=self.model,
+        )
+        self._meter(target=target, usage=completion.usage)
+        return judgment
 
     def _meter(self, *, target: str, usage: CompletionUsage) -> None:
         """调用计量即时入账：LLM 成本在调用时已发生，与提案成败无关（技术架构 §1）。"""

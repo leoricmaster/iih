@@ -28,8 +28,12 @@ from iih.ledger.models import (
 from iih.ledger.proposal import (
     IntelligenceItemNewProposal,
     IntelligenceRequirementActivateProposal,
+    IntelligenceRequirementCloseProposal,
+    IntelligenceRequirementPauseProposal,
     IntelligenceRequirementRegisterProposal,
+    IntelligenceRequirementResumeProposal,
     ItemProvenanceAppendProposal,
+    ItemReverifyProposal,
     Proposal,
     ProvenanceData,
     ReviewProposal,
@@ -68,12 +72,38 @@ class StateMachineExecutor:
                 return self._execute_ir_register(proposal, session)
             case IntelligenceRequirementActivateProposal():
                 return self._execute_ir_activate(proposal, session)
+            case IntelligenceRequirementPauseProposal():
+                return self._execute_ir_transition(
+                    proposal,
+                    session,
+                    from_statuses=(IntelligenceRequirementStatus.ACTIVE,),
+                    to_status=IntelligenceRequirementStatus.PAUSED,
+                )
+            case IntelligenceRequirementResumeProposal():
+                return self._execute_ir_transition(
+                    proposal,
+                    session,
+                    from_statuses=(IntelligenceRequirementStatus.PAUSED,),
+                    to_status=IntelligenceRequirementStatus.ACTIVE,
+                )
+            case IntelligenceRequirementCloseProposal():
+                return self._execute_ir_transition(
+                    proposal,
+                    session,
+                    from_statuses=(
+                        IntelligenceRequirementStatus.ACTIVE,
+                        IntelligenceRequirementStatus.PAUSED,
+                    ),
+                    to_status=IntelligenceRequirementStatus.CLOSED,
+                )
             case ItemProvenanceAppendProposal():
                 return self._execute_item_provenance_append(proposal, session)
             case ReviewProposal():
                 return self._execute_review(proposal, session)
             case VerificationProposal():
                 return self._execute_verification(proposal, session)
+            case ItemReverifyProposal():
+                return self._execute_item_reverify(proposal, session)
             case _:
                 raise ProposalRejectedError([f"未知提案类型：{type(proposal).__name__}"])
 
@@ -229,9 +259,9 @@ class StateMachineExecutor:
     ) -> ExecutionResult:
         """种子信源登记（decision-05 通道一）：新主体 + 首条互联网途径。
 
-        校验：字段完整 + medium=internet 解析 + 信源名唯一；
-        落账 Source.confirmed=True、credit=None。本任务范围仅新建主体；
-        为既有主体补途径留待后续。
+        校验：字段完整 + medium=internet 解析 + 信源名唯一 + 初始档必填合法（doc-04 §2.3）；
+        落账 Source.confirmed=True、credit=initial_credit（人工先验初值）。
+        本任务范围仅新建主体；为既有主体补途径留待后续。
         """
         reasons = self._validate_register_completeness(proposal)
         if reasons:
@@ -247,7 +277,10 @@ class StateMachineExecutor:
             raise ProposalRejectedError([f"信源名已存在：{payload.source_name}"])
 
         source = Source(
-            name=payload.source_name, type=payload.source_type, confirmed=True, credit=None
+            name=payload.source_name,
+            type=payload.source_type,
+            confirmed=True,
+            credit=payload.initial_credit,
         )
         outlet = Outlet(
             source=source,
@@ -262,7 +295,7 @@ class StateMachineExecutor:
         return ExecutionResult(source_id=source_id)
 
     def _validate_register_completeness(self, proposal: SourceRegisterProposal) -> list[str]:
-        """字段完整性校验：4 字段非空白。source_type 已是枚举，无需校验。"""
+        """字段完整性校验：4 字段非空白 + 初始档合法。source_type 已是枚举，无需校验。"""
         reasons: list[str] = []
         payload = proposal.payload
         if not payload.source_name.strip():
@@ -271,6 +304,10 @@ class StateMachineExecutor:
             reasons.append("途径名缺失")
         if not payload.outlet_entry.strip():
             reasons.append("采集入口缺失")
+        if not payload.initial_credit:
+            reasons.append("初始信用档缺失：登记必填（A–F）")
+        elif payload.initial_credit not in "ABCDEF":
+            reasons.append(f"初始信用档不合法：{payload.initial_credit}（需 A–F）")
         if not proposal.rationale.strip():
             reasons.append("依据缺失")
         return reasons
@@ -320,6 +357,35 @@ class StateMachineExecutor:
             raise ProposalRejectedError([f"前置违反：当前状态 {ir.status.value}，需 Draft"])
 
         ir.status = IntelligenceRequirementStatus.ACTIVE
+        session.flush()
+        requirement_id = ir.id
+        session.commit()
+        return ExecutionResult(requirement_id=requirement_id)
+
+    def _execute_ir_transition(
+        self,
+        proposal: (
+            IntelligenceRequirementPauseProposal
+            | IntelligenceRequirementResumeProposal
+            | IntelligenceRequirementCloseProposal
+        ),
+        session: Session,
+        *,
+        from_statuses: tuple[IntelligenceRequirementStatus, ...],
+        to_status: IntelligenceRequirementStatus,
+    ) -> ExecutionResult:
+        """情报需求通用迁移：暂停 / 恢复 / 关闭（doc-02 §4.1）。
+
+        前置违反（不在 from_statuses）驳回，状态不变。
+        """
+        ir = session.get(IntelligenceRequirement, proposal.payload.requirement_id)
+        if ir is None:
+            raise ProposalRejectedError(["情报需求不存在"])
+        if ir.status not in from_statuses:
+            allowed = " 或 ".join(s.value for s in from_statuses)
+            raise ProposalRejectedError([f"前置违反：当前状态 {ir.status.value}，需 {allowed}"])
+
+        ir.status = to_status
         session.flush()
         requirement_id = ir.id
         session.commit()
@@ -504,6 +570,34 @@ class StateMachineExecutor:
             rationale=proposal.rationale,
         )
         session.add(record)
+        session.flush()
+        item_id = item.id
+        session.commit()
+        return ExecutionResult(item_id=item_id)
+
+    def _execute_item_reverify(
+        self, proposal: ItemReverifyProposal, session: Session
+    ) -> ExecutionResult:
+        """存疑重核回流：Undetermined → Candidate（doc-02 §4.1「复核期到 / 新证据」）。
+
+        校验：item 存在 + 当前状态为 UNDETERMINED（前置）+ 依据（新证据说明）非空。
+        仅做状态回流，不写核实记录——重评由核实段产出新的 VerificationRecord（版本化历史）。
+        """
+        reasons: list[str] = []
+        if not proposal.rationale.strip():
+            reasons.append("依据缺失：重核回流需说明新证据")
+
+        item = session.get(IntelligenceItem, proposal.payload.item_id)
+        if item is None:
+            reasons.append("情报条目不存在")
+        elif item.status is not ItemStatus.UNDETERMINED:
+            reasons.append(f"前置违反：当前状态 {item.status.value}，需 Undetermined")
+
+        if reasons:
+            raise ProposalRejectedError(reasons)
+
+        assert item is not None
+        item.status = ItemStatus.CANDIDATE
         session.flush()
         item_id = item.id
         session.commit()

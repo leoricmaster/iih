@@ -65,6 +65,7 @@ class SourceRegisterPayload(BaseModel):
     source_type: SourceType
     outlet_name: str  # 途径名（如「官网」）
     outlet_entry: str  # 采集入口：网址 / RSS / 账号 ID
+    initial_credit: str | None = None  # 初始信用档（人工评估 · 冷启动设档；空 = 不设档）
 
 
 class SourceRegisterProposal(Proposal):
@@ -113,6 +114,48 @@ class IntelligenceRequirementActivateProposal(Proposal):
     PROPOSAL_TYPE = "intelligence_requirement_activate"
 
     payload: IntelligenceRequirementActivatePayload
+
+
+class IntelligenceRequirementPausePayload(BaseModel):
+    """「情报需求暂停」产出：目标需求 ID。"""
+
+    requirement_id: int
+
+
+class IntelligenceRequirementPauseProposal(Proposal):
+    """提案类型「情报需求暂停」：激活 Active → 暂停 Paused（doc-02 §4.1）。"""
+
+    PROPOSAL_TYPE = "intelligence_requirement_pause"
+
+    payload: IntelligenceRequirementPausePayload
+
+
+class IntelligenceRequirementResumePayload(BaseModel):
+    """「情报需求恢复」产出：目标需求 ID。"""
+
+    requirement_id: int
+
+
+class IntelligenceRequirementResumeProposal(Proposal):
+    """提案类型「情报需求恢复」：暂停 Paused → 激活 Active（doc-02 §4.1）。"""
+
+    PROPOSAL_TYPE = "intelligence_requirement_resume"
+
+    payload: IntelligenceRequirementResumePayload
+
+
+class IntelligenceRequirementClosePayload(BaseModel):
+    """「情报需求关闭」产出：目标需求 ID。"""
+
+    requirement_id: int
+
+
+class IntelligenceRequirementCloseProposal(Proposal):
+    """提案类型「情报需求关闭」：激活/暂停 → 关闭 Closed（终态，doc-02 §4.1）。"""
+
+    PROPOSAL_TYPE = "intelligence_requirement_close"
+
+    payload: IntelligenceRequirementClosePayload
 
 
 class ItemProvenanceAppendPayload(BaseModel):
@@ -194,3 +237,24 @@ class VerificationProposal(Proposal):
     PROPOSAL_TYPE = "intelligence_item_verification"
 
     payload: VerificationPayload
+
+
+# ---- IIH-01.13 存疑重核回流 ----
+
+
+class ItemReverifyPayload(BaseModel):
+    """「存疑重核」产出：item_id。"""
+
+    item_id: int
+
+
+class ItemReverifyProposal(Proposal):
+    """提案类型「存疑重核」：Undetermined → Candidate（doc-02 §4.1「复核期到 / 新证据」回流）。
+
+    典型新证据：信源画像补设信用档（R 由空变有）。回到候选后由核实段重评；
+    无独立 provenance（非采集动作）；依据（新证据说明）记入 rationale。
+    """
+
+    PROPOSAL_TYPE = "intelligence_item_reverify"
+
+    payload: ItemReverifyPayload

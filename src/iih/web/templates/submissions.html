@@ -1,63 +1,35 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>录入素材 · IIH</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #222; }
-    h1 { font-size: 1.4rem; }
-    h2 { font-size: 1.1rem; margin-top: 2rem; }
-    .nav { margin-bottom: 1rem; font-size: 0.9rem; }
-    .field { margin-bottom: 1rem; }
-    label { display: block; margin-bottom: 0.25rem; font-size: 0.9rem; }
-    select, textarea { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; font: inherit; }
-    textarea { resize: vertical; }
-    button { padding: 0.5rem 1.5rem; }
-    .errors { color: #b00; background: #fee; border: 1px solid #dbb; border-radius: 4px; padding: 0.5rem 1rem; }
-    .item { border-bottom: 1px solid #eee; padding: 0.5rem 0; }
-    .item .meta { color: #777; font-size: 0.85rem; }
-    .pill { display: inline-block; padding: 0 0.5em; border: 1px solid #bbb; border-radius: 1em; font-size: 0.8rem; }
-    .empty { color: #999; }
-  </style>
-</head>
-<body>
-  <div class="nav"><a href="/">收件箱</a> · <a href="/sources">信源库</a></div>
-  <h1>录入素材</h1>
+{% extends "base.html" %}
+{% block title %}录入素材{% endblock %}
+{% block content %}
+<h1 class="page">录入素材</h1>
+<div class="sub">人工提交是采集模式之一：素材与自动采集走同一条流水线，不经定向任务化、直接进入审查。</div>
 
-  {% if errors %}
-  <ul class="errors">
-    {% for error in errors %}<li>{{ error }}</li>{% endfor %}
-  </ul>
-  {% endif %}
+{% if errors %}{% for e in errors %}<div class="err">{{ e }}</div>{% endfor %}{% endif %}
 
+<div class="box"><h2>提交素材</h2>
   <form method="post" action="/submissions">
-    <div class="field">
-      <label for="medium">媒介（获取场景——互联网为自动拉取，不走本页）</label>
-      <select id="medium" name="medium_code" required>
-        <option value="">请选择媒介</option>
-        {% for m in mediums %}
-        <option value="{{ m.code }}">{{ m.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="field">
-      <label for="statement">陈述内容</label>
-      <textarea id="statement" name="statement" rows="4" required
-        placeholder="如：W 公司渠道大会：下一代电驱矿卡计划 2027Q2 量产"></textarea>
-    </div>
-    <button type="submit">提交</button>
+    <div class="field"><label>媒介（获取场景 · 决定采集模式——互联网为自动拉取，不走本页）</label>
+      <select name="medium_code">
+        {% for m in mediums %}<option value="{{ m.code }}">{{ m.name }}</option>{% endfor %}
+      </select></div>
+    <div class="field"><label>陈述（客观事实陈述；信源与途径由采集智能体从素材识别归因，新信源经确认入信源库）</label>
+      <textarea name="statement" placeholder="例：W 公司渠道大会上宣布，下一代电驱矿卡计划 2027Q2 量产"></textarea></div>
+    <div class="muted" style="margin:10px 0">流水线：素材 → 线索 →（审查 · 按激活情报需求自动匹配）→ 候选情报 →（核实评级）→ 已核实 → 分发回来。附件上传（录音 / 图片 / 文档）即将上线。</div>
+    <button class="btn primary">提交</button>
   </form>
+</div>
 
-  <h2>近期人工提交</h2>
+<div class="box"><h2>近期人工提交（进度在情报条目列表按「人工提交」过滤可见）</h2>
+  {% if items %}
   {% for item in items %}
-  <div class="item">
-    {{ item.statement }}
-    <span class="pill">{{ status_labels[item.status] }}</span>
-    <div class="meta">{{ item.medium.name }} / {{ item.modality.name }} · {{ item.created_at.strftime('%m-%d %H:%M') }}</div>
+  <div style="border-bottom:1px solid #eee;padding:8px 0">
+    <a href="/items/{{ item.id }}">{{ item.statement }}</a>
+    <span class="pill {{ 'dashed' if item.retracted }}">{{ status_labels[item.status] }}{{ ' · 作废' if item.retracted }}</span>
+    <span class="muted">{{ item.medium.name }} / {{ item.modality.name }} · {{ item.collected_at.strftime('%Y-%m-%d %H:%M') }}</span>
   </div>
+  {% endfor %}
   {% else %}
   <div class="empty">暂无</div>
-  {% endfor %}
-</body>
-</html>
+  {% endif %}
+</div>
+{% endblock %}

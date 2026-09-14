@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}情报条目{% endblock %}
+{% block content %}
+<h1 class="page">情报条目</h1>
+<div class="sub">已核实起的全部状态可筛选；一页制——本页 + 条目详情。</div>
+<div class="box">
+  <form method="get" action="/items" class="field" style="margin:0 0 10px;display:flex;gap:8px;">
+    <input type="text" name="q" placeholder="检索：陈述 / 出处信源" value="{{ cur_q }}">
+    <input type="hidden" name="status" value="{{ cur_status }}">
+    <input type="hidden" name="mode" value="{{ cur_mode }}">
+    <button class="btn small">检索</button>
+  </form>
+  <div class="chips"><span class="lbl">状态</span>
+    {% for key, label in status_filters %}
+    <a class="chip {{ 'on' if cur_status == key }}" href="/items?status={{ key }}&mode={{ cur_mode }}&q={{ cur_q }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+  <div class="chips"><span class="lbl">采集模式</span>
+    {% for key, label in mode_filters %}
+    <a class="chip {{ 'on' if cur_mode == key }}" href="/items?status={{ cur_status }}&mode={{ key }}&q={{ cur_q }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+  <table>
+    <tr><th>陈述</th><th>评级</th><th>独立信源</th><th>状态</th><th>出处信源</th><th>媒介 / 载体</th><th>采集模式</th><th>事件时间</th></tr>
+    {% for item in items %}
+    <tr>
+      <td><a href="/items/{{ item.id }}">{{ item.statement }}</a>{% if item.mode.value == 'manual' %} <span class="pill">人工提交</span>{% endif %}</td>
+      <td>{% if item.rating %}<span class="pill rating">{{ item.rating }}</span>{% else %}<span class="pill dashed">未评级</span>{% endif %}</td>
+      <td>{% if verifications.get(item.id) %}×{{ verifications[item.id].independent_source_count }}{% else %}—{% endif %}</td>
+      <td><span class="pill {{ 'dashed' if item.retracted }}">{{ status_labels[item.status] }}{{ ' · 作废' if item.retracted }}</span></td>
+      <td>{% if item.source %}<a href="/sources/{{ item.source.id }}">{{ item.source.name }}</a>{% else %}—{% endif %}</td>
+      <td class="muted">{{ item.medium.name }} / {{ item.modality.name }}</td>
+      <td class="muted">{{ '自动拉取' if item.mode.value == 'automated' else '人工提交' }}</td>
+      <td class="muted">{{ item.event_time.strftime('%Y-%m-%d') if item.event_time else '—' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8"><div class="empty">当前筛选下无条目</div></td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

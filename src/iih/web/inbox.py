@@ -1,26 +1,28 @@
-"""收件箱（首页）与条目详情页（doc-07 §3、§5，原型「收件箱/条目详情」页）。
+"""收件箱（首页）与反馈提交（doc-07 §3、§5，原型「收件箱」页）。
 
-浏览已核实情报 + 反馈入口（doc-07 §5）：收件箱行内一键（事实错误跳详情补理由）；
-详情页六类型表单、理由可补写（事实错误必填）。分发匹配与推送后续里程碑加厚：
-本页列表为已核实条目，不经分发记录。
+三类待办聚合：待反馈条目 · 警报汇总 · 待确认信源（decision-05）。
+本里程碑分发记录与警报未建：待反馈以已核实未作废条目近似、警报区块空态呈现；
+待确认信源为素材归因补记产生（decision-05 通道二），确认动作后续里程碑开通。
 """
 
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from iih.ledger.feedback_router import TYPE_LABELS, FeedbackRejectedError, FeedbackRouter
 from iih.ledger.models import (
-    Feedback,
     FeedbackType,
     IntelligenceItem,
     ItemStatus,
+    Source,
     VerificationRecord,
 )
+from iih.web.context import STATUS_LABELS, base_context
 from iih.web.deps import get_session
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -28,82 +30,77 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 router = APIRouter()
 
-STATUS_LABELS = {
-    ItemStatus.LEAD: "线索",
-    ItemStatus.CANDIDATE: "候选",
-    ItemStatus.VERIFIED: "已核实",
-    ItemStatus.UNDETERMINED: "存疑",
-    ItemStatus.NOISE: "噪音",
-    ItemStatus.REJECTED: "否决",
-}
+QUICK_TYPES = [
+    FeedbackType.VALID,
+    FeedbackType.DUPLICATE_NOISE,
+    FeedbackType.IRRELEVANT,
+    FeedbackType.OUTDATED,
+    FeedbackType.RATING_DISPUTE,
+]
 
 
-def _verified_items(session: Session) -> list[IntelligenceItem]:
+def _feedback_items(session: Session) -> list[IntelligenceItem]:
+    """待反馈条目：已核实未作废（分发记录未建的近似，doc-07 §3）。"""
     return list(
         session.scalars(
             select(IntelligenceItem)
             .where(IntelligenceItem.status == ItemStatus.VERIFIED)
+            .where(IntelligenceItem.retracted.is_(False))
             .order_by(IntelligenceItem.created_at.desc(), IntelligenceItem.id.desc())
         )
     )
 
 
-def _render_item_detail(
-    request: Request,
-    session: Session,
-    item_id: int,
-    *,
-    errors: list[str] | None = None,
-    form_type: str | None = None,
-    form_reason: str | None = None,
-):
-    item = session.get(IntelligenceItem, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="条目不存在")
+def _latest_verifications(session: Session, item_ids: list[int]) -> dict[int, VerificationRecord]:
+    """各条目最新核实记录（独立信源计数 N 与评级依据来源）。"""
+    result: dict[int, VerificationRecord] = {}
+    for item_id in item_ids:
+        record = session.scalars(
+            select(VerificationRecord)
+            .where(VerificationRecord.item_id == item_id)
+            .order_by(VerificationRecord.created_at.desc(), VerificationRecord.id.desc())
+            .limit(1)
+        ).first()
+        if record is not None:
+            result[item_id] = record
+    return result
 
-    verification = session.scalars(
-        select(VerificationRecord)
-        .where(VerificationRecord.item_id == item_id)
-        .order_by(VerificationRecord.created_at.desc(), VerificationRecord.id.desc())
-        .limit(1)
-    ).first()
-    feedbacks = list(
-        session.scalars(
-            select(Feedback)
-            .where(Feedback.item_id == item_id)
-            .order_by(Feedback.created_at.desc(), Feedback.id.desc())
+
+def _pending_sources(session: Session) -> list[Source]:
+    """待确认信源：素材归因补记产生，不入正式池（decision-05 通道二）。"""
+    return list(session.scalars(select(Source).where(Source.confirmed.is_(False))))
+
+
+def _undetermined_count(session: Session) -> int:
+    """待复核（存疑）条目计数：运行结果不在待反馈队列，需显式指向防「结果消失」。"""
+    return (
+        session.scalar(
+            select(func.count())
+            .select_from(IntelligenceItem)
+            .where(IntelligenceItem.status == ItemStatus.UNDETERMINED)
         )
-    )
-
-    return templates.TemplateResponse(
-        request,
-        "item_detail.html",
-        {
-            "item": item,
-            "verification": verification,
-            "feedbacks": feedbacks,
-            "feedback_type_options": list(TYPE_LABELS.items()),
-            "feedback_type_labels": TYPE_LABELS,
-            "status_labels": STATUS_LABELS,
-            "errors": errors or [],
-            "form_type": form_type or "",
-            "form_reason": form_reason or "",
-        },
+        or 0
     )
 
 
 @router.get("/")
-def inbox_page(request: Request, session: Session = Depends(get_session)):
+def inbox_page(request: Request, flash: str = "", session: Session = Depends(get_session)):
+    items = _feedback_items(session)
     return templates.TemplateResponse(
         request,
         "inbox.html",
-        {"items": _verified_items(session), "status_labels": STATUS_LABELS},
+        {
+            **base_context(session, "inbox"),
+            "items": items,
+            "verifications": _latest_verifications(session, [i.id for i in items]),
+            "undetermined_count": _undetermined_count(session),
+            "pending_sources": _pending_sources(session),
+            "quick_types": QUICK_TYPES,
+            "type_labels": TYPE_LABELS,
+            "status_labels": STATUS_LABELS,
+            "flash": flash,
+        },
     )
-
-
-@router.get("/items/{item_id}")
-def item_detail_page(item_id: int, request: Request, session: Session = Depends(get_session)):
-    return _render_item_detail(request, session, item_id)
 
 
 @router.post("/items/{item_id}/feedback")
@@ -121,13 +118,10 @@ def item_feedback(
     try:
         type_enum = FeedbackType(feedback_type)
     except ValueError:
-        return _render_item_detail(
-            request,
-            session,
-            item_id,
-            errors=[f"未知反馈类型：{feedback_type}"],
-            form_type=feedback_type,
-            form_reason=reason,
+        return RedirectResponse(
+            f"/items/{item_id}?err={quote_plus(f'未知反馈类型：{feedback_type}')}"
+            f"&fb_type={quote_plus(feedback_type)}&fb_reason={quote_plus(reason)}",
+            status_code=303,
         )
 
     try:
@@ -135,13 +129,10 @@ def item_feedback(
             item_id=item_id, feedback_type=type_enum, reason=reason, session=session
         )
     except FeedbackRejectedError as exc:
-        return _render_item_detail(
-            request,
-            session,
-            item_id,
-            errors=exc.reasons,
-            form_type=feedback_type,
-            form_reason=reason,
+        return RedirectResponse(
+            f"/items/{item_id}?err={quote_plus('；'.join(exc.reasons))}"
+            f"&fb_type={quote_plus(feedback_type)}&fb_reason={quote_plus(reason)}",
+            status_code=303,
         )
 
     referer = request.headers.get("referer")

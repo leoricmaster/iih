@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}{{ source.name }}{% endblock %}
+{% block content %}
+<h1 class="page"><a href="/sources">信源库</a> / 信源画像</h1>
+<div class="sub">{{ source.name }} · {{ source_type_labels[source.type] }}（发布主体）
+  {% if source.confirmed %}<span class="pill">已确认</span>{% else %}<span class="pill dashed">待确认</span>{% endif %}</div>
+
+{% if err %}<div class="err">{{ err }}</div>{% endif %}
+
+{% if not source.confirmed %}
+<div class="box"><div class="empty">待确认——不入库、不建画像、不参与信用记账；确认动作即将上线。</div></div>
+{% else %}
+<div class="box"><h2>信源信用（记在主体上） <span class="pill rating">{{ source.credit or '—' }}</span></h2>
+  {% if adjustments %}
+  <table>
+    <tr><th>时间</th><th>奖惩</th><th>累计分</th><th>分档</th><th>公式版本</th></tr>
+    {% for adj in adjustments %}
+    <tr>
+      <td class="muted">{{ adj.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td>{{ '+1（有效）' if adj.delta > 0 else '−2（事实错误）' }}</td>
+      <td>{{ '%.2f' % adj.score_after }}</td>
+      <td><span class="pill rating">{{ adj.grade_after }}</span></td>
+      <td class="muted">{{ adj.formula_version }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="muted">尚无信用反馈记录——首次「有效 / 事实错误」反馈后按累计分演进信用档。</div>
+  {% endif %}
+  <form method="post" action="/sources/{{ source.id }}/credit" style="margin-top:8px">
+    <div class="field"><label>人工设档（补设 / 调整，直接生效）<span class="muted" title="信源信用档 A–F：A 最可靠 → F 最不可靠。累计分映射：A ≥8、B [4,8)、C [0,4)、D [−4,0)、E [−8,−4)、F <−8；有效反馈 +1、事实错误 −2、180 天半衰期；清空 = 不设档，条目核实将存疑。">ⓘ</span></label>
+      <div class="fbrow">
+        <select name="credit">
+          <option value="" {{ 'selected' if not source.credit }}>不设</option>
+          {% for g in "ABCDEF" %}<option value="{{ g }}" {{ 'selected' if source.credit == g }}>{{ g }}</option>{% endfor %}
+        </select>
+        <button class="btn small">保存信用档</button>
+      </div>
+    </div>
+  </form>
+  <div class="muted" style="margin-top:6px">公式：有效 +1 · 事实错误 −2 · {{ half_life_days }} 天半衰期 · 累计分分档映射 A–F，调整历史全程留痕。信用归因：反馈记至转引链上最早引入该陈述的信源，如实转述者不受奖惩。</div>
+</div>
+
+<div class="box"><h2>途径（发布出口 · {{ source.outlets | length }}）</h2>
+  {% if source.outlets %}
+  <table>
+    <tr><th>途径</th><th>媒介</th><th>采集入口 / 场景</th></tr>
+    {% for o in source.outlets %}
+    <tr><td><b>{{ o.name }}</b></td>
+      <td class="muted">{{ o.medium.name if o.medium else '—' }}</td>
+      <td class="muted">{{ o.entry or '—' }}</td></tr>
+    {% endfor %}
+  </table>
+  <div class="muted" style="margin-top:6px">互联网途径经登记后由系统自动拉取；线下途径经素材录入归因。更新节奏与领域侧重信息即将补充。</div>
+  {% else %}
+  <div class="muted">暂无途径。</div>
+  {% endif %}
+</div>
+
+<div class="box"><h2>参与条目（转引链出现即计）</h2>
+  {% if participating %}
+  {% for item in participating %}
+  <div style="border-bottom:1px solid #eee;padding:7px 0">
+    <a href="/items/{{ item.id }}">{{ item.statement }}</a>
+    <span class="pill {{ 'dashed' if item.retracted }}">{{ item_status_labels[item.status] }}{{ ' · 作废' if item.retracted }}</span>
+    {% if item.rating %}<span class="pill rating">{{ item.rating }}</span>{% endif %}
+    {% if item.source_id == source.id %}<span class="pill">出处信源</span>{% endif %}
+  </div>
+  {% endfor %}
+  {% else %}
+  <div class="empty">暂无</div>
+  {% endif %}
+</div>
+
+<div class="box"><h2>主体画像</h2>
+  <div class="muted">立场偏差、独立性关联、挂接实体——画像功能即将上线。</div>
+</div>
+{% endif %}
+{% endblock %}

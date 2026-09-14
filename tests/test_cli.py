@@ -286,7 +286,7 @@ def test_cli_collect_e2e_produces_lead(db_session, monkeypatch, w_extraction) ->
     monkeypatch.setattr("iih.cli.collect.make_engine", lambda settings: fake_engine)
     monkeypatch.setattr("iih.cli.collect.make_session_factory", lambda engine: fake_factory)
     monkeypatch.setattr("iih.cli.collect.make_llm_client", lambda settings: fake_llm)
-    monkeypatch.setattr("iih.cli.collect.fetch", lambda url, **kwargs: HTML_W)
+    monkeypatch.setattr("iih.pipeline.fetch", lambda url, **kwargs: HTML_W)
 
     rc = main(["collect"])
 

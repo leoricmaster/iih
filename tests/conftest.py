@@ -67,6 +67,23 @@ def make_fake_llm_review(
     return SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
 
 
+def make_fake_llm_dispatch(extraction: StatementExtractionResult, judgment: ReviewJudgmentResult):
+    """instructor 替身：按 response_model 分发（采集抽取 / 审查判定），供流水线全链测试。"""
+
+    class Completions:
+        def create_with_completion(self, *, response_model, messages, **kwargs):
+            if response_model is StatementExtractionResult:
+                result = extraction
+            else:
+                assert response_model is ReviewJudgmentResult
+                result = judgment
+            return result, SimpleNamespace(
+                usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5)
+            )
+
+    return SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+
+
 @pytest.fixture
 def w_attribution() -> AttributionResult:
     return AttributionResult(

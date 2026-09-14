@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.deepseek.com"
     llm_api_key: str = ""
 
+    # 流水线后台自动循环间隔（秒）；0 = 关闭（doc-07 §2.2 常驻监控的最简实现）
+    pipeline_interval_seconds: int = 300
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 

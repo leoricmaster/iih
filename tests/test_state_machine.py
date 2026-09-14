@@ -32,6 +32,8 @@ from iih.ledger.proposal import (
     IntelligenceRequirementRegisterProposal,
     ItemProvenanceAppendPayload,
     ItemProvenanceAppendProposal,
+    ItemReverifyPayload,
+    ItemReverifyProposal,
     Proposal,
     ProvenanceData,
     ReviewPayload,
@@ -168,6 +170,7 @@ def make_register_proposal(**overrides) -> SourceRegisterProposal:
         "source_type": SourceType.COMPANY,
         "outlet_name": "官网",
         "outlet_entry": "https://w-mining.example/news",
+        "initial_credit": "B",
     } | overrides.pop("payload", {})
     top_fields = {"rationale": "人工登记（decision-05 通道一）"} | overrides
     return SourceRegisterProposal(payload=SourceRegisterPayload(**payload_fields), **top_fields)
@@ -183,7 +186,7 @@ def test_source_register_lands_confirmed_with_internet_outlet(db_session) -> Non
     assert source.name == "W 公司"
     assert source.type is SourceType.COMPANY
     assert source.confirmed is True
-    assert source.credit is None  # 信用档由 IIH-01.06 信用计算器首次更新时设
+    assert source.credit == "B"  # 初始档必填（doc-04 §2.3）
     assert len(source.outlets) == 1
     outlet = source.outlets[0]
     assert outlet.name == "官网"
@@ -194,7 +197,12 @@ def test_source_register_lands_confirmed_with_internet_outlet(db_session) -> Non
 def test_source_register_rejects_blank_fields(db_session) -> None:
     """支撑 IIH-01.07 AC#2：记账层字段完整性校验，缺失即驳回、无落账。"""
     proposal = make_register_proposal(
-        payload={"source_name": " ", "outlet_name": " ", "outlet_entry": " "},
+        payload={
+            "source_name": " ",
+            "outlet_name": " ",
+            "outlet_entry": " ",
+            "initial_credit": None,
+        },
         rationale=" ",
     )
 
@@ -204,9 +212,31 @@ def test_source_register_rejects_blank_fields(db_session) -> None:
     assert "主体名称缺失" in excinfo.value.reasons
     assert "途径名缺失" in excinfo.value.reasons
     assert "采集入口缺失" in excinfo.value.reasons
+    assert "初始信用档缺失：登记必填（A–F）" in excinfo.value.reasons  # doc-04 §2.3
     assert "依据缺失" in excinfo.value.reasons
     assert db_session.scalars(select(Source)).first() is None
     assert db_session.scalars(select(Outlet)).first() is None
+
+
+def test_source_register_with_initial_credit_lands_grade(db_session) -> None:
+    """登记携带初始信用档（人工评估 · 冷启动设档）：落账 credit。"""
+    result = StateMachineExecutor().execute(
+        make_register_proposal(payload={"initial_credit": "B"}), session=db_session
+    )
+
+    source = db_session.get(Source, result.source_id)
+    assert source is not None
+    assert source.credit == "B"
+
+
+def test_source_register_rejects_illegal_initial_credit(db_session) -> None:
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            make_register_proposal(payload={"initial_credit": "X"}), session=db_session
+        )
+
+    assert any("初始信用档不合法" in reason for reason in excinfo.value.reasons)
+    assert db_session.scalars(select(Source)).first() is None
 
 
 def test_source_register_rejects_duplicate_source_name(db_session) -> None:
@@ -1098,3 +1128,81 @@ def test_verification_undetermined_rejects_with_rating_fields(db_session) -> Non
         )
 
     assert any("不应含信源可靠度" in r for r in excinfo.value.reasons)
+
+
+# ---- IIH-01.13 存疑重核回流（偏差 #6 裁决） ----
+
+
+def _seed_undetermined_item(db_session) -> IntelligenceItem:
+    """预置一条存疑条目：信源未设信用档（credit=None），核实无法完成。"""
+    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True)
+    item = IntelligenceItem(
+        statement="W 公司公告：与 Z 集团签署合资协议",
+        status=ItemStatus.UNDETERMINED,
+        mode=ItemMode.AUTOMATED,
+        medium=medium,
+        modality=modality,
+        collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
+        original_snapshot="正文",
+        source=source,
+    )
+    db_session.add_all([source, item])
+    db_session.flush()
+    return item
+
+
+def test_item_reverify_transitions_undetermined_to_candidate(db_session) -> None:
+    """doc-02 §4.1 新证据回流：存疑 → 候选；不写核实记录（重评由核实段产出新版本）。"""
+    item = _seed_undetermined_item(db_session)
+
+    result = StateMachineExecutor().execute(
+        ItemReverifyProposal(
+            payload=ItemReverifyPayload(item_id=item.id),
+            rationale="Web 人工重核（信源信用档已补设）",
+        ),
+        session=db_session,
+    )
+
+    assert result.item_id == item.id
+    assert db_session.get(IntelligenceItem, item.id).status is ItemStatus.CANDIDATE
+    assert db_session.scalars(select(VerificationRecord)).first() is None
+
+
+def test_item_reverify_rejects_non_undetermined(db_session) -> None:
+    item = _seed_undetermined_item(db_session)
+    item.status = ItemStatus.VERIFIED
+    item.rating = "B2"
+    db_session.flush()
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            ItemReverifyProposal(payload=ItemReverifyPayload(item_id=item.id), rationale="x"),
+            session=db_session,
+        )
+
+    assert any("前置违反" in r for r in excinfo.value.reasons)
+    assert db_session.get(IntelligenceItem, item.id).status is ItemStatus.VERIFIED
+
+
+def test_item_reverify_rejects_unknown_item(db_session) -> None:
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            ItemReverifyProposal(payload=ItemReverifyPayload(item_id=9999), rationale="x"),
+            session=db_session,
+        )
+
+    assert "情报条目不存在" in excinfo.value.reasons
+
+
+def test_item_reverify_rejects_blank_rationale(db_session) -> None:
+    item = _seed_undetermined_item(db_session)
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            ItemReverifyProposal(payload=ItemReverifyPayload(item_id=item.id), rationale=" "),
+            session=db_session,
+        )
+
+    assert any("依据缺失" in r for r in excinfo.value.reasons)

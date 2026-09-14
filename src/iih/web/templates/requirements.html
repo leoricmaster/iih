@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}情报需求{% endblock %}
+{% block content %}
+<h1 class="page">情报需求</h1>
+<div class="sub">消费方声明的兴趣配置，命中即推送条目。覆盖度量（已分发 / 已消费）持续完善中，本页暂以命中计数呈现。</div>
+<div class="box">
+  {% if hit_counts %}
+  {% for status, reqs in groups %}
+  {% if reqs %}
+  <h3>{{ status_labels[status] }} <span class="muted">× {{ reqs | length }}</span></h3>
+  <table>
+    <tr><th>需求</th><th>状态</th><th>命中</th><th>创建时间</th></tr>
+    {% for r in reqs %}
+    <tr>
+      <td><a href="/requirements/{{ r.id }}">{{ r.name }}</a></td>
+      <td><span class="pill">{{ status_labels[r.status] }}</span></td>
+      <td class="muted">{{ hit_counts.get(r.id, 0) }}</td>
+      <td class="muted">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  {% endfor %}
+  {% else %}
+  <div class="empty">暂无情报需求——登记并激活后，系统开始派采集任务。</div>
+  {% endif %}
+</div>
+<div class="box"><h2>新建情报需求</h2>
+  {% if errors %}{% for e in errors %}<div class="err">{{ e }}</div>{% endfor %}{% endif %}
+  <form method="post" action="/requirements">
+    <div class="field"><label>名称</label><input type="text" name="name" placeholder="例：长期跟踪某公司动态" value="{{ form_name or '' }}"></div>
+    <div class="field"><label>内容规格（主题、关键词、信源偏好、时效要求等自由文本）</label>
+      <textarea name="content_spec" placeholder="例：矿卡、订单、业绩、战略动向；一次信源优先；时效一周内">{{ form_spec or '' }}</textarea></div>
+    <button class="btn primary">创建（初始态 = 草稿）</button>
+  </form>
+  <div class="muted" style="margin-top:8px">草稿需在详情页确认激活，才驱动采集。</div>
+</div>
+{% endblock %}

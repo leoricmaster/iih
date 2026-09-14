@@ -1,16 +1,28 @@
-"""信源库页（doc-07 §2.1、§3，原型「信源库」页）：登记种子信源 + 首条互联网途径，列表浏览。"""
+"""信源库页（doc-07 §2.1、§3，原型「信源库/信源画像」页）。
+
+列表（主体 / 途径两栏）+ 登记种子信源 + 信源画像（信用档与调整历史、途径、参与条目）。
+"""
 
 from pathlib import Path
+from urllib.parse import quote_plus
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from iih.ledger.models import Source, SourceType
+from iih.ledger.credit import HALF_LIFE_DAYS
+from iih.ledger.models import (
+    CreditAdjustment,
+    IntelligenceItem,
+    ProvenanceChainNode,
+    Source,
+    SourceType,
+)
 from iih.ledger.proposal import SourceRegisterPayload, SourceRegisterProposal
 from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
+from iih.web.context import STATUS_LABELS, base_context
 from iih.web.deps import get_session
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -37,12 +49,37 @@ def _confirmed_sources(session: Session) -> list[Source]:
     )
 
 
+def _pending_sources(session: Session) -> list[Source]:
+    """待确认信源（decision-05 通道二：素材归因补记产生）。"""
+    return list(
+        session.scalars(select(Source).where(Source.confirmed.is_(False)).order_by(Source.id))
+    )
+
+
+def _feedback_counts(session: Session) -> dict[int, dict[str, int]]:
+    """各信源信用通路反馈计数（按调整记录 delta 符号归并）。"""
+    rows = session.execute(
+        select(
+            CreditAdjustment.source_id,
+            func.count().filter(CreditAdjustment.delta > 0),
+            func.count().filter(CreditAdjustment.delta < 0),
+        ).group_by(CreditAdjustment.source_id)
+    ).all()
+    return {
+        source_id: {"valid": valid or 0, "factual_error": factual or 0}
+        for source_id, valid, factual in rows
+    }
+
+
 def _render(request: Request, session: Session, errors: list[str] | None = None):
     return templates.TemplateResponse(
         request,
         "sources.html",
         {
+            **base_context(session, "sources"),
             "sources": _confirmed_sources(session),
+            "pending_sources": _pending_sources(session),
+            "feedback_counts": _feedback_counts(session),
             "source_types": list(SOURCE_TYPE_LABELS.items()),
             "source_type_labels": SOURCE_TYPE_LABELS,
             "errors": errors or [],
@@ -62,6 +99,7 @@ def register(
     source_type: str = Form(""),
     outlet_name: str = Form(""),
     outlet_entry: str = Form(""),
+    initial_credit: str = Form(""),
     session: Session = Depends(get_session),
 ):
     """表单校验 → 种子信源登记提案 → 状态机执行器落账。"""
@@ -74,6 +112,11 @@ def register(
         errors.append("请填写途径名")
     if not outlet_entry.strip():
         errors.append("请填写采集入口")
+    credit = initial_credit.strip()
+    if not credit:
+        errors.append("请选择初始信用档")
+    elif credit not in "ABCDEF":
+        errors.append("初始信用档需为 A–F")
 
     if errors:
         return _render(request, session, errors)
@@ -89,6 +132,7 @@ def register(
             source_type=source_type_enum,
             outlet_name=outlet_name.strip(),
             outlet_entry=outlet_entry.strip(),
+            initial_credit=credit or None,
         ),
         rationale=REGISTER_RATIONALE,
     )
@@ -98,3 +142,75 @@ def register(
         return _render(request, session, exc.reasons)
 
     return RedirectResponse("/sources", status_code=303)
+
+
+@router.get("/sources/{source_id}")
+def source_detail(
+    source_id: int, request: Request, err: str = "", session: Session = Depends(get_session)
+):
+    """信源画像：信用（档 + 调整历史）+ 途径 + 参与条目（转引链出现即计）。"""
+    source = session.get(Source, source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="信源不存在")
+
+    adjustments = list(
+        session.scalars(
+            select(CreditAdjustment)
+            .where(CreditAdjustment.source_id == source_id)
+            .order_by(CreditAdjustment.created_at.desc(), CreditAdjustment.id.desc())
+        )
+    )
+    participating = list(
+        session.scalars(
+            select(IntelligenceItem)
+            .where(
+                IntelligenceItem.id.in_(
+                    select(ProvenanceChainNode.item_id).where(
+                        ProvenanceChainNode.source_id == source_id
+                    )
+                )
+            )
+            .order_by(IntelligenceItem.created_at.desc(), IntelligenceItem.id.desc())
+        )
+    )
+    return templates.TemplateResponse(
+        request,
+        "source_detail.html",
+        {
+            **base_context(session, "sources"),
+            "source": source,
+            "adjustments": adjustments,
+            "participating": participating,
+            "source_type_labels": SOURCE_TYPE_LABELS,
+            "item_status_labels": STATUS_LABELS,
+            "half_life_days": HALF_LIFE_DAYS,
+            "err": err,
+        },
+    )
+
+
+@router.post("/sources/{source_id}/credit")
+def source_credit_set(
+    source_id: int,
+    request: Request,
+    credit: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    """人工补设/调整信用档（doc-04 §2.3：人工设档直接生效；A–F 或清空）。
+
+    消费方配置编辑，非智能体写入；调整历史（信用通路反馈）不受影响。
+    """
+    source = session.get(Source, source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="信源不存在")
+
+    grade = credit.strip()
+    if not source.confirmed:
+        err = "待确认信源不入库、不建画像、不记账"
+    elif grade and grade not in "ABCDEF":
+        err = f"信用档需为 A–F 或不设：{grade}"
+    else:
+        source.credit = grade or None
+        session.commit()
+        return RedirectResponse(f"/sources/{source_id}", status_code=303)
+    return RedirectResponse(f"/sources/{source_id}?err={quote_plus(err)}", status_code=303)

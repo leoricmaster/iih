@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>{% block title %}IIH{% endblock %} · IIH</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<aside id="sidebar">
+  <div class="brand">IIH</div>
+  <a class="btn primary side-submit" href="/submissions" title="录入素材快捷入口">＋ 录入素材</a>
+  <nav id="nav">
+    <div>
+      <div class="grp">消费</div>
+      <a href="/" class="{{ 'active' if nav == 'inbox' }}">收件箱<span class="cnt">{{ inbox_count }}</span></a>
+      <a href="/items" class="{{ 'active' if nav == 'items' }}">情报条目</a>
+    </div>
+    <div>
+      <div class="grp">探究</div>
+      <span class="navoff" title="即将上线">研究课题<span class="tag">未开通</span></span>
+      <span class="navoff" title="即将上线">命题<span class="tag">未开通</span></span>
+      <span class="navoff" title="即将上线">图谱<span class="tag">未开通</span></span>
+    </div>
+    <div>
+      <div class="grp">管理</div>
+      <a href="/requirements" class="{{ 'active' if nav == 'reqs' }}">情报需求</a>
+      <a href="/sources" class="{{ 'active' if nav == 'sources' }}">信源库</a>
+    </div>
+  </nav>
+</aside>
+<div id="right">
+<header id="topbar">
+  <div class="nav-actions">
+    <details class="account">
+      <summary>单账号 · lancer ▾</summary>
+      <div class="menu">
+        <div class="menu-title">账号信息</div>
+        <div class="muted">单消费方 · 本机部署（多消费方暂不支持）</div>
+        <div class="menu-title">推送通道绑定</div>
+        <div class="muted">IM 机器人推送——绑定功能即将上线</div>
+        <div class="menu-title">分发偏好</div>
+        <div class="muted">晨间分发汇总 · 警报事件即时——推送通道开通后可配</div>
+      </div>
+    </details>
+  </div>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+</div>
+</body>
+</html>

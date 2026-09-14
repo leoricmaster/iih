@@ -1,84 +1,60 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>信源库 · IIH</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #222; }
-    h1 { font-size: 1.4rem; }
-    h2 { font-size: 1.1rem; margin-top: 2rem; }
-    .nav { margin-bottom: 1rem; font-size: 0.9rem; }
-    .field { margin-bottom: 1rem; }
-    label { display: block; margin-bottom: 0.25rem; font-size: 0.9rem; }
-    input, select { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; font: inherit; }
-    button { padding: 0.5rem 1.5rem; }
-    .errors { color: #b00; background: #fee; border: 1px solid #dbb; border-radius: 4px; padding: 0.5rem 1rem; }
-    table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
-    th, td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid #eee; }
-    th { font-size: 0.85rem; color: #555; }
-    .pill { display: inline-block; padding: 0 0.5em; border: 1px solid #bbb; border-radius: 1em; font-size: 0.8rem; }
-    .empty { color: #999; }
-    .muted { color: #777; font-size: 0.85rem; }
-  </style>
-</head>
-<body>
-  <div class="nav"><a href="/">收件箱</a> · <a href="/submissions">录入素材</a></div>
-  <h1>信源库</h1>
+{% extends "base.html" %}
+{% block title %}信源库{% endblock %}
+{% block content %}
+<h1 class="page">信源库</h1>
+<div class="sub">已准入信源（发布主体）及其途径的全集；新信源经确认后准入。</div>
 
-  <p class="muted">已准入信源（发布主体）及其途径的全集（doc-03 §六）；新信源经双通道确认制准入（decision-05）。登记只收互联网途径（系统自动拉取）；线下途径经素材录入归因补记。</p>
+{% if errors %}{% for e in errors %}<div class="err">{{ e }}</div>{% endfor %}{% endif %}
 
-  {% if errors %}
-  <ul class="errors">
-    {% for error in errors %}<li>{{ error }}</li>{% endfor %}
-  </ul>
-  {% endif %}
+{% if pending_sources %}
+<div class="box"><h2>待确认（不入库 · 不建画像 · 不记账）</h2>
+  {% for s in pending_sources %}
+  <div style="border-bottom:1px solid #eee;padding:9px 0">
+    <b>{{ s.name }}</b> <span class="pill">{{ source_type_labels[s.type] }}</span> <span class="pill dashed">待确认</span>
+    <div class="muted" style="margin:4px 0">由素材录入归因产生；确认动作即将上线。</div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 
-  <h2>信源（主体 / 途径两栏）</h2>
-  {% if sources %}
+<div class="box">
   <table>
-    <tr><th>信源（主体）</th><th>类型</th><th>途径</th></tr>
+    <tr><th>信源（主体）</th><th>类型</th><th>途径</th><th>信源信用</th><th>历史反馈</th><th>状态</th></tr>
     {% for s in sources %}
     <tr>
-      <td>{{ s.name }}</td>
+      <td><a href="/sources/{{ s.id }}">{{ s.name }}</a></td>
       <td class="muted">{{ source_type_labels[s.type] }}</td>
-      <td class="muted">{{ s.outlets | map(attribute='name') | join('、') or '—' }}</td>
+      <td class="muted">{{ s.outlets | map(attribute='name') | join('、') if s.outlets else '—' }}</td>
+      <td>{% if s.credit %}<span class="pill rating">{{ s.credit }}</span>{% else %}<span class="pill dashed">未设档</span>{% endif %}</td>
+      <td class="muted">{% if feedback_counts.get(s.id) %}有效 ×{{ feedback_counts[s.id]['valid'] }} · 事实错误 ×{{ feedback_counts[s.id]['factual_error'] }}{% else %}—{% endif %}</td>
+      <td><span class="pill">已确认</span></td>
     </tr>
+    {% else %}
+    <tr><td colspan="6"><div class="empty">信源库为空——先登记首个信源，开启自动采集。</div></td></tr>
     {% endfor %}
   </table>
-  <p class="muted">独立信源按主体计数：同主体多途径 = 1（doc-03 §六）。</p>
-  {% else %}
-  <div class="empty">暂无信源——下方登记种子信源</div>
-  {% endif %}
+  <div class="muted" style="margin-top:6px">独立信源按主体计数：同主体多途径 = 1。</div>
+</div>
 
-  <h2>登记信源（双通道 · 通道一 · 人工登记）</h2>
-  <p class="muted">冷启动入口：信源库为空时先登记种子信源（doc-07 §2.1）。仅登记互联网途径，供自动拉取消费（IIH-01.08）。</p>
+<div class="box"><h2>登记信源（人工登记）</h2>
+  <div class="muted" style="margin-bottom:8px">登记主体、随手添途径。仅支持互联网途径（系统自动拉取）；线下场景经录入素材页提交，信源由采集智能体识别归因。</div>
   <form method="post" action="/sources">
-    <div class="field">
-      <label for="source_name">名称（发布主体）</label>
-      <input type="text" id="source_name" name="source_name" required
-        placeholder="例：W 公司、新华社、张三">
+    <div class="grid2">
+      <div class="field"><label>名称（发布主体）</label><input type="text" name="source_name" placeholder="例：W 公司、新华社、张三"></div>
+      <div class="field"><label>类型（主体维度）</label><select name="source_type">
+        {% for value, label in source_types %}<option value="{{ value.value }}">{{ label }}</option>{% endfor %}
+      </select></div>
+      <div class="field"><label>初始信用档（必填 · 人工先验）<span class="muted" title="信源信用档 A–F：A 最可靠 → F 最不可靠。累计分映射：A ≥8、B [4,8)、C [0,4)、D [−4,0)、E [−8,−4)、F <−8；有效反馈 +1、事实错误 −2、180 天半衰期。本档为人工先验初值，作核实评级的信源可靠度 R；C 为中性默认（对应累计分 0）。">ⓘ</span></label>
+        <select name="initial_credit">
+          {% for g in "ABCDEF" %}<option value="{{ g }}" {{ 'selected' if g == 'C' }}>{{ g }}</option>{% endfor %}
+        </select></div>
     </div>
-    <div class="field">
-      <label for="source_type">类型（主体维度）</label>
-      <select id="source_type" name="source_type" required>
-        <option value="">请选择类型</option>
-        {% for code, label in source_types %}
-        <option value="{{ code.value }}">{{ label }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="field">
-      <label for="outlet_name">首条途径名（互联网）</label>
-      <input type="text" id="outlet_name" name="outlet_name" required
-        placeholder="例：官网 / 公众号 / 行业媒体站点">
-    </div>
-    <div class="field">
-      <label for="outlet_entry">采集入口（网址 / RSS / 账号 ID）</label>
-      <input type="text" id="outlet_entry" name="outlet_entry" required
-        placeholder="例：https://… 或 RSS 地址或公众号 ID">
-    </div>
-    <button type="submit">登记</button>
+    <h3>首条途径（互联网 · 系统自动拉取 · 可后补）</h3>
+    <div class="field"><label>途径名</label><input type="text" name="outlet_name" placeholder="例：官网 / 公众号 / 行业媒体站点"></div>
+    <div class="field"><label>采集入口（网址 / RSS / 账号 ID——须为可机读地址，系统据此派采集任务）</label>
+      <input type="text" name="outlet_entry" placeholder="例：https://… 或 RSS 地址或公众号 ID"></div>
+    <button class="btn primary">登记（经确认入信源库）</button>
   </form>
-</body>
-</html>
+  <div class="muted" style="margin-top:8px">同主体多途径 = 1 个独立信源；信用记在主体上，不按途径拆分。</div>
+</div>
+{% endblock %}

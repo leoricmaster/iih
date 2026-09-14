@@ -11,23 +11,15 @@ from sqlalchemy.orm import Session
 
 from iih.agents.collector import Collector
 from iih.config import get_settings
-from iih.ledger.models import IntelligenceItem, ItemMode, ItemStatus, Medium
+from iih.ledger.models import IntelligenceItem, ItemMode, Medium
 from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
+from iih.web.context import STATUS_LABELS, base_context
 from iih.web.deps import get_llm_client, get_session
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 router = APIRouter()
-
-STATUS_LABELS = {
-    ItemStatus.LEAD: "线索",
-    ItemStatus.CANDIDATE: "候选",
-    ItemStatus.VERIFIED: "已核实",
-    ItemStatus.UNDETERMINED: "存疑",
-    ItemStatus.NOISE: "噪音",
-    ItemStatus.REJECTED: "否决",
-}
 
 RECENT_LIMIT = 10
 
@@ -55,6 +47,7 @@ def _render(request: Request, session: Session, errors: list[str] | None = None)
         request,
         "submissions.html",
         {
+            **base_context(session, "submit"),
             "mediums": _offline_mediums(session),
             "items": _recent_manual_items(session),
             "status_labels": STATUS_LABELS,
