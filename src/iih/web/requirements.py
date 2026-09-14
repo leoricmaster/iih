@@ -42,7 +42,7 @@ from iih.ledger.proposal import (
 )
 from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
 from iih.tools.fetcher import FetcherError, fetch
-from iih.web.context import STATUS_LABELS, base_context
+from iih.web.context import REJECTION_REASON_LABELS, STATUS_LABELS, base_context
 from iih.web.deps import get_llm_client, get_session
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -347,7 +347,9 @@ def requirement_probe(
                 results.append(result)
                 continue
             result.decision = judgment.decision.value
-            result.reason_type = judgment.reason_type.value if judgment.reason_type else None
+            result.reason_type = (
+                REJECTION_REASON_LABELS.get(judgment.reason_type) if judgment.reason_type else None
+            )
             result.judgment_rationale = judgment.rationale
         results.append(result)
 

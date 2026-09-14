@@ -2,7 +2,6 @@
 {% block title %}条目详情{% endblock %}
 {% block content %}
 <h1 class="page"><a href="/items">情报条目</a> / 详情</h1>
-<div class="sub">消费动线与核查动线的交汇点：摘要优先，核查深区按需展开。</div>
 
 {% if err %}<div class="err">{{ err }}</div>{% endif %}
 
@@ -29,7 +28,7 @@
 </div>
 
 {% if item.status.value in ('lead', 'candidate') %}
-<div class="box"><h2>流水线进度（线索 → 审查 → 核实评级）</h2>
+<div class="box"><h2>流水线进度</h2>
   <ul class="pipe">
     <li><span class="st done">✓</span><span>线索 · 采集落账 <span class="muted">{{ item.collected_at.strftime('%m-%d %H:%M') }}</span></span></li>
     {% if review %}
@@ -49,35 +48,33 @@
   </ul>
   <div class="fbrow"><button class="btn small primary" form="run-one">▶ 立即运行一轮</button></div>
   <form id="run-one" method="post" action="/pipeline/run"></form>
-  <div class="muted" style="margin-top:6px">人工提交不经定向任务化，直接进入审查；核实完成后经正常分发回来。</div>
 </div>
 {% elif item.status.value == 'verified' and latest_verification %}
 <div class="box"><h2>评级依据</h2>
   <div>{{ latest_verification.rationale }}</div>
   <div class="muted" style="margin-top:6px">公式 {{ latest_verification.formula_version }}：N={{ latest_verification.independent_source_count }}（穿透转引链后独立信源数），R={{ latest_verification.source_reliability }}（出处信源可靠度档）→ 内容可信度 {{ latest_verification.content_credibility }} → 评级 {{ latest_verification.rating }}。</div>
-  <div class="muted" style="margin-top:4px">重评触发器（新印证合并 / 信源信用迁移 / 评级异议）即将上线；下游引用取当前值。</div>
 </div>
 {% elif item.status.value == 'undetermined' %}
 <div class="box"><h2>存疑说明</h2>
-  <div class="muted">核实无法完成，挂起待复核。{% if latest_verification %}{{ latest_verification.rationale }}{% endif %}</div>
-  <div class="muted" style="margin-top:6px">新证据（如信源画像补设信用档）后可回流重评：存疑 → 候选 → 重新核实；复核兜底期即将上线。</div>
+  <div class="muted">核实无法完成。{% if latest_verification %}{{ latest_verification.rationale }}{% endif %}</div>
   <div class="fbrow" style="margin-top:8px">
     <form method="post" action="/items/{{ item.id }}/reverify"><button class="btn small primary">重新核实</button></form>
-    {% if item.source and not item.source.credit %}<span class="muted">出处信源 <a href="/sources/{{ item.source.id }}">{{ item.source.name }}</a> 未设信用档——先到画像页人工设档，再回此处重核。</span>{% endif %}
+    {% if item.source and not item.source.confirmed %}<span class="muted">出处信源 <a href="/sources/{{ item.source.id }}">{{ item.source.name }}</a> 尚待确认——确认功能即将上线。</span>
+    {% elif item.source and not item.source.credit %}<span class="muted">出处信源 <a href="/sources/{{ item.source.id }}">{{ item.source.name }}</a> 未设信用档——先到画像页人工设档，再回此处重核。</span>{% endif %}
   </div>
 </div>
 {% elif review %}
 <div class="box"><h2>审查否决</h2>
   <div>{{ review.rationale }}</div>
-  <div class="muted" style="margin-top:6px">否决理由：{{ review.reason_type.value if review.reason_type else '未知' }}——噪音为终态。</div>
+  <div class="muted" style="margin-top:6px">否决理由：{{ reason_labels[review.reason_type] if review.reason_type else '未知' }}</div>
 </div>
 {% endif %}
 
 {% if item.retracted %}
-<div class="box"><h2>作废原因与级联影响</h2>
+<div class="box"><h2>作废原因</h2>
   {% set fe = feedbacks | selectattr('feedback_type.value', 'equalto', 'factual_error') | first %}
   <div>{% if fe %}{{ fe.reason }}{% else %}已作废{% endif %}</div>
-  <div class="muted" style="margin-top:6px">事实错误 → 条目作废并扣减责任信源信用（归因最早引入方）；级联重估即将上线。</div>
+  <div class="muted" style="margin-top:6px">已扣减责任信源（最早引入方）信用。</div>
 </div>
 {% endif %}
 
@@ -91,26 +88,26 @@
       {% endif %}
       {% endfor %}
     </form>
-    <span class="muted">快捷反馈以「快捷 · {类型}」为默认理由；事实错误须填写理由。</span>
+    <span class="muted">事实错误须填写理由。</span>
   </div>
   <form method="post" action="/items/{{ item.id }}/feedback">
     <div class="field" style="margin-top:10px">
-      <label>带理由反馈（事实错误必填 · 其余可空）</label>
+      <label>反馈类型与理由</label>
       <select name="feedback_type">
         {% for ft, label in type_labels.items() %}
         <option value="{{ ft.value }}" {{ 'selected' if fb_type == ft.value }}>{{ label }}</option>
         {% endfor %}
       </select>
-      <textarea name="reason" placeholder="{{ '必填：请说明事实错误的依据' if fb_type == 'factual_error' else '补写理由（可选，空则记「快捷 · {类型}」）' }}" style="margin-top:6px">{{ fb_reason }}</textarea>
+      <textarea name="reason" placeholder="{{ '必填：请说明事实错误的依据' if fb_type == 'factual_error' else '补写理由（可选）' }}" style="margin-top:6px">{{ fb_reason }}</textarea>
     </div>
     <button class="btn primary">提交反馈</button>
   </form>
   {% else %}
-  <div class="muted">当前状态（{{ status_labels[item.status] }}{{ ' · 作废' if item.retracted }}）不开放反馈——反馈仅对已核实条目开放。</div>
+  <div class="muted">当前状态不开放反馈。</div>
   {% endif %}
 </div>
 
-<details class="box"><summary>元数据 <span class="muted">溯源与采集信息</span></summary>
+<details class="box"><summary>元数据</summary>
   <dl class="kv">
     <dt>状态</dt><dd>{{ status_labels[item.status] }}{{ ' · 作废' if item.retracted }}</dd>
     <dt>事件时间</dt><dd>{{ item.event_time.strftime('%Y-%m-%d %H:%M') if item.event_time else '—' }}</dd>
@@ -127,23 +124,21 @@
 
 <details class="box"><summary>独立信源计数 <span class="muted">{% if latest_verification %}×{{ latest_verification.independent_source_count }}{% else %}—{% endif %}</span></summary>
   <div>穿透转引链后：<b>{% if latest_verification %}×{{ latest_verification.independent_source_count }}{% else %}—{% endif %}</b>（{{ chain_nodes | map(attribute='source') | map(attribute='name') | join('、') }}）</div>
-  <div class="muted" style="margin-top:4px">N 家转载同一通稿 = 1 个独立信源；同主体多途径 = 1——按发布主体计数。</div>
 </details>
 
-<details class="box"><summary>转引链穿透视图 <span class="muted">{{ chain_nodes | length }} 节点</span></summary>
+<details class="box"><summary>转引链 <span class="muted">{{ chain_nodes | length }} 节点</span></summary>
   <ul class="chain">
     {% for node in chain_nodes %}
     <li class="{{ 'first' if loop.first }}">
       <a href="/sources/{{ node.source_id }}">{{ node.source.name }}</a><span class="muted"> · {{ node.outlet.name if node.outlet else '途径未记' }}</span>
-      {% if node.source_id == attribution_source_id %}<span class="pill">信用归因对象 · 最早引入方</span>{% endif %}
+      {% if node.source_id == attribution_source_id %}<span class="pill">信用归因对象</span>{% endif %}
       <span class="muted">{{ node.collected_at.strftime('%Y-%m-%d %H:%M') }}{% if node.original_url %} · <a href="{{ node.original_url }}" rel="noopener">原文</a>{% endif %}</span>
     </li>
     {% endfor %}
   </ul>
-  <div class="muted">转引链 = 载体 → … → 原始信源；节点记信源 × 途径 × 载体 × 时间——核实与独立性判断的依据。</div>
 </details>
 
-<details class="box"><summary>评级历史（版本化 · 可重放）<span class="muted">{{ verifications | length }} 条</span></summary>
+<details class="box"><summary>评级历史 <span class="muted">{{ verifications | length }} 条</span></summary>
   {% if verifications %}
   <table>
     <tr><th>时间</th><th>结果</th><th>N</th><th>R</th><th>可信度</th><th>评级</th><th>公式版本</th><th>依据</th></tr>

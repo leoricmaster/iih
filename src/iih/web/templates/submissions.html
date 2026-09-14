@@ -2,24 +2,22 @@
 {% block title %}录入素材{% endblock %}
 {% block content %}
 <h1 class="page">录入素材</h1>
-<div class="sub">人工提交是采集模式之一：素材与自动采集走同一条流水线，不经定向任务化、直接进入审查。</div>
 
 {% if errors %}{% for e in errors %}<div class="err">{{ e }}</div>{% endfor %}{% endif %}
 
 <div class="box"><h2>提交素材</h2>
   <form method="post" action="/submissions">
-    <div class="field"><label>媒介（获取场景 · 决定采集模式——互联网为自动拉取，不走本页）</label>
+    <div class="field"><label>媒介</label>
       <select name="medium_code">
         {% for m in mediums %}<option value="{{ m.code }}">{{ m.name }}</option>{% endfor %}
       </select></div>
-    <div class="field"><label>陈述（客观事实陈述；信源与途径由采集智能体从素材识别归因，新信源经确认入信源库）</label>
+    <div class="field"><label>陈述</label>
       <textarea name="statement" placeholder="例：W 公司渠道大会上宣布，下一代电驱矿卡计划 2027Q2 量产"></textarea></div>
-    <div class="muted" style="margin:10px 0">流水线：素材 → 线索 →（审查 · 按激活情报需求自动匹配）→ 候选情报 →（核实评级）→ 已核实 → 分发回来。附件上传（录音 / 图片 / 文档）即将上线。</div>
     <button class="btn primary">提交</button>
   </form>
 </div>
 
-<div class="box"><h2>近期人工提交（进度在情报条目列表按「人工提交」过滤可见）</h2>
+<div class="box"><h2>近期人工提交</h2>
   {% if items %}
   {% for item in items %}
   <div style="border-bottom:1px solid #eee;padding:8px 0">

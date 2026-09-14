@@ -4,7 +4,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from iih.config import get_settings
-from iih.ledger.models import IntelligenceItem, ItemStatus
+from iih.ledger.models import (
+    IntelligenceItem,
+    ItemStatus,
+    RejectionReasonEnum,
+)
 
 STATUS_LABELS = {
     ItemStatus.LEAD: "线索",
@@ -13,6 +17,12 @@ STATUS_LABELS = {
     ItemStatus.UNDETERMINED: "存疑",
     ItemStatus.NOISE: "噪音",
     ItemStatus.REJECTED: "否决",
+}
+
+REJECTION_REASON_LABELS = {
+    RejectionReasonEnum.IRRELEVANT: "不相关",
+    RejectionReasonEnum.DUPLICATE: "重复",
+    RejectionReasonEnum.INVALID: "无效",
 }
 
 

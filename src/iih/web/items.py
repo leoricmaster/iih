@@ -27,7 +27,7 @@ from iih.ledger.models import (
 )
 from iih.ledger.proposal import ItemReverifyPayload, ItemReverifyProposal
 from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
-from iih.web.context import STATUS_LABELS, base_context
+from iih.web.context import REJECTION_REASON_LABELS, STATUS_LABELS, base_context
 from iih.web.deps import get_session
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -166,7 +166,11 @@ def _item_trail(
         if review.decision.value == "pass":
             trail.append(("候选情报（审查通过）", review.created_at))
         else:
-            reason = review.reason_type.value if review.reason_type else "未知"
+            reason = (
+                REJECTION_REASON_LABELS.get(review.reason_type, "未知")
+                if review.reason_type
+                else "未知"
+            )
             trail.append((f"噪音（审查否决 · {reason}）", review.created_at))
     if item.rating or item.status is ItemStatus.UNDETERMINED:
         if item.rating:
@@ -234,6 +238,7 @@ def _render_detail(
             "trail": _item_trail(item, review, feedbacks),
             "type_labels": TYPE_LABELS,
             "status_labels": STATUS_LABELS,
+            "reason_labels": REJECTION_REASON_LABELS,
             "err": err,
             "fb_type": fb_type,
             "fb_reason": fb_reason,

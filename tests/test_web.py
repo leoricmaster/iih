@@ -26,6 +26,7 @@ from iih.ledger.models import (
     Modality,
     Outlet,
     ProvenanceChainNode,
+    RejectionReasonEnum,
     ReviewDecision,
     ReviewDecisionEnum,
     Source,
@@ -126,7 +127,7 @@ def test_sources_page_lists_confirmed_sources(sources_client: TestClient) -> Non
     assert "登记信源" in response.text
     for label in ("公司", "政府", "组织", "媒体", "人物", "其他"):
         assert label in response.text  # 类型下拉 6 项
-    assert "信源信用档 A–F" in response.text  # 初始档 tooltip（doc-04 §2.3）
+    assert "信用档 A–F" in response.text  # 初始档 tooltip（doc-04 §2.3）
 
 
 def test_register_lands_source_and_outlet_end_to_end(
@@ -360,7 +361,7 @@ def test_item_detail_shows_provenance_and_rating_basis(
     assert "2026-09-14 10:00" in response.text  # 采集时间
     assert "W 公司今日公告，与 Z 集团签署合资协议。" in response.text  # 原文快照
     assert "官网" in response.text  # 途径归因（元数据 + 转引链）
-    assert "转引链穿透视图" in response.text
+    assert ">转引链" in response.text
     # 评级依据：核实记录 + N/R/内容可信度/公式版本
     assert "评级依据" in response.text
     assert "穿透转引链得独立信源 N=1" in response.text
@@ -590,7 +591,7 @@ def test_item_detail_retracted_shows_cascade_box(inbox_client: TestClient, db_se
 
     response = inbox_client.get(f"/items/{item.id}")
 
-    assert "作废原因与级联影响" in response.text
+    assert "作废原因" in response.text
     assert "合资协议从未签署" in response.text
     assert "作废（事实错误）" in response.text  # 状态迁移轨迹
 
@@ -639,9 +640,9 @@ def test_item_detail_chain_marks_attribution_object(inbox_client: TestClient, db
     response = inbox_client.get(f"/items/{item.id}")
 
     assert response.status_code == 200
-    assert "转引链穿透视图" in response.text
+    assert ">转引链" in response.text
     assert "2 节点" in response.text
-    assert "信用归因对象 · 最早引入方" in response.text
+    assert "信用归因对象" in response.text
     assert response.text.count("信用归因对象") == 1  # 仅最早引入方
     assert f'href="/sources/{media.id}"' in response.text  # 链节点进信源画像
 
@@ -929,11 +930,13 @@ def test_pipeline_button_busy_flashes_hint(db_session) -> None:
 # ---- IIH-01.13 存疑补救：收件箱指向 / 补设档 / 重核（偏差 #5、#6） ----
 
 
-def _seed_undetermined_item(db_session, *, credit: str | None = None) -> IntelligenceItem:
+def _seed_undetermined_item(
+    db_session, *, credit: str | None = None, confirmed: bool = True, name: str = "W 公司"
+) -> IntelligenceItem:
     """预置一条存疑条目：单节点转引链 + 存疑核实记录（R 空）。"""
     medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
     modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
-    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, credit=credit)
+    source = Source(name=name, type=SourceType.COMPANY, confirmed=confirmed, credit=credit)
     item = IntelligenceItem(
         statement="W 公司公告：与 Z 集团签署合资协议",
         status=ItemStatus.UNDETERMINED,
@@ -1041,6 +1044,54 @@ def test_reverify_rescues_undetermined_after_credit_set(
     assert "前置违反" in blocked.text  # 已核实条目不可再重核
 
 
+def test_undetermined_hint_branches_by_source_confirmation(
+    inbox_client: TestClient, db_session
+) -> None:
+    """存疑指引分流：未确认信源提示待确认（无设档入口，不指死路）；已确认未设档才指画像设档。"""
+    unconfirmed = _seed_undetermined_item(db_session, confirmed=False, name="Y 公司")
+
+    detail = inbox_client.get(f"/items/{unconfirmed.id}")
+
+    assert "尚待确认" in detail.text
+    assert "未设信用档——先到画像页" not in detail.text
+
+    confirmed = _seed_undetermined_item(db_session)
+    detail_confirmed = inbox_client.get(f"/items/{confirmed.id}")
+    assert "未设信用档——先到画像页" in detail_confirmed.text
+
+
+def test_rejection_reason_rendered_in_chinese(client: TestClient, db_session) -> None:
+    """审查否决理由以中文上屏（条目详情 + 状态迁移轨迹），不出现原始枚举值。"""
+    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
+    item = IntelligenceItem(
+        statement="与任何需求无关的陈述",
+        status=ItemStatus.NOISE,
+        mode=ItemMode.AUTOMATED,
+        medium=medium,
+        modality=modality,
+        collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
+        original_snapshot="正文",
+    )
+    db_session.add(item)
+    db_session.flush()
+    db_session.add(
+        ReviewDecision(
+            item=item,
+            decision=ReviewDecisionEnum.REJECT,
+            reason_type=RejectionReasonEnum.IRRELEVANT,
+            rationale="与激活需求无关",
+        )
+    )
+    db_session.commit()
+
+    detail = client.get(f"/items/{item.id}")
+
+    assert "否决理由：不相关" in detail.text
+    assert "噪音（审查否决 · 不相关）" in detail.text
+    assert "irrelevant" not in detail.text
+
+
 # ---- IIH-01.13 配置自检：试采集预览不落账（偏差 #7） ----
 
 
@@ -1084,12 +1135,34 @@ def test_requirement_probe_previews_without_landing(db_session, monkeypatch, w_e
         response = client.post(f"/requirements/{ir_id}/probe")
 
     assert response.status_code == 200
-    assert "试采集预览" in response.text
+    assert "配置自检" in response.text
     assert w_extraction.statement in response.text
     assert w_extraction.rationale in response.text
-    assert "预判 · 通过（命中本需求）" in response.text
+    assert "预判 · 命中" in response.text
     assert db_session.scalars(select(IntelligenceItem)).first() is None  # 不落账
     assert len(db_session.scalars(select(LlmCall)).all()) == 2  # 抽取 + 预判，计量照记
+
+
+def test_requirement_probe_reject_shows_chinese_reason(
+    db_session, monkeypatch, w_extraction
+) -> None:
+    """试采集否决预判的否决理由以中文上屏，不出现原始枚举值。"""
+    ir_id = _seed_probe_target(db_session)
+    judgment = ReviewJudgmentResult(
+        decision="reject",
+        reason_type="irrelevant",
+        matched_requirement_id=None,
+        rationale="与需求内容规格无关",
+    )
+    app = _probe_app(db_session, make_fake_llm_dispatch(w_extraction, judgment))
+    monkeypatch.setattr("iih.web.requirements.fetch", lambda url, **kwargs: HTML_FETCH_PAGE)
+
+    with TestClient(app) as client:
+        response = client.post(f"/requirements/{ir_id}/probe")
+
+    assert response.status_code == 200
+    assert "预判 · 否决（不相关）" in response.text
+    assert "irrelevant" not in response.text
 
 
 def test_requirement_probe_reports_fetch_failure(db_session, monkeypatch) -> None:
@@ -1121,4 +1194,4 @@ def test_requirement_probe_without_outlets_shows_hint(db_session) -> None:
         response = client.post(f"/requirements/{ir.id}/probe")
 
     assert response.status_code == 200
-    assert "无已登记互联网途径可试" in response.text
+    assert "无已登记互联网途径" in response.text

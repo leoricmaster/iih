@@ -7,7 +7,7 @@
 {% if errors %}{% for e in errors %}<div class="err">{{ e }}</div>{% endfor %}{% endif %}
 
 <div class="box"><h2>{{ ir.name }} <span class="pill">{{ status_labels[ir.status] }}</span></h2>
-  <div class="muted">创建 {{ ir.created_at.strftime('%Y-%m-%d %H:%M') }} · 声明（消费方）· 生效窗口 = 常驻（限时窗口即将上线）。</div>
+  <div class="muted">创建于 {{ ir.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
   <div class="fbrow" style="margin-top:8px">
     {% if ir.status.value == 'draft' %}
     <form method="post" action="/requirements/{{ ir.id }}/action"><input type="hidden" name="action" value="activate"><button class="btn small primary">确认激活</button></form>
@@ -21,22 +21,21 @@
   </div>
 </div>
 
-<div class="box"><h2>内容规格 {% if ir.status.value == 'active' %}<span class="muted">（激活期可定期微调）</span>{% endif %}</h2>
+<div class="box"><h2>内容规格</h2>
   {% if ir.status.value == 'active' %}
   <form method="post" action="/requirements/{{ ir.id }}/spec">
     <div class="field"><textarea name="content_spec">{{ ir.content_spec }}</textarea></div>
-    <button class="btn primary">保存微调</button>
-    <span class="muted">生效于下轮采集。</span>
+    <button class="btn primary">保存</button>
   </form>
   {% else %}
   <div class="muted">{{ ir.content_spec }}</div>
   {% endif %}
 </div>
 
-<div class="box"><h2>配置自检（试采集预览 · 不落账）</h2>
+<div class="box"><h2>配置自检</h2>
   <form method="post" action="/requirements/{{ ir.id }}/probe">
     <button class="btn small primary">▶ 试采集一轮</button>
-    <span class="muted">逐已登记互联网途径抓取 → 抽取陈述 → 按本需求内容规格审查预判；即时回显，不产生条目（LLM 调用照常计量）。</span>
+    <span class="muted">不产生正式条目</span>
   </form>
   {% if probe_results is not none %}
   {% if probe_results %}
@@ -51,9 +50,9 @@
     <div style="margin:4px 0">「{{ r.statement }}」</div>
     <div class="muted">抽取依据：{{ r.extraction_rationale }}</div>
     {% if r.decision == 'pass' %}
-    <div style="margin-top:4px"><span class="pill">预判 · 通过（命中本需求）</span> <span class="muted">{{ r.judgment_rationale }}</span></div>
+    <div style="margin-top:4px"><span class="pill">预判 · 命中</span> <span class="muted">{{ r.judgment_rationale }}</span></div>
     {% elif r.decision == 'reject' %}
-    <div style="margin-top:4px"><span class="pill dashed">预判 · 否决（{{ r.reason_type }}）</span> <span class="muted">{{ r.judgment_rationale }}——可微调内容规格后重试。</span></div>
+    <div style="margin-top:4px"><span class="pill dashed">预判 · 否决（{{ r.reason_type }}）</span> <span class="muted">{{ r.judgment_rationale }}</span></div>
     {% else %}
     <div class="err" style="margin-top:4px">审查预判失败：{{ r.judge_error }}</div>
     {% endif %}
@@ -61,7 +60,7 @@
   </div>
   {% endfor %}
   {% else %}
-  <div class="empty" style="margin-top:8px">无已登记互联网途径可试——先在信源库登记信源与途径。</div>
+  <div class="empty" style="margin-top:8px">无已登记互联网途径</div>
   {% endif %}
   {% endif %}
 </div>
@@ -76,8 +75,7 @@
   </div>
   {% endfor %}
   {% else %}
-  <div class="empty">待命中——激活后由采集驱动，审查按内容规格匹配。</div>
+  <div class="empty">暂无命中条目</div>
   {% endif %}
-  <div class="muted" style="margin-top:6px">覆盖度量（已分发 / 已消费，防「采而不用」）持续完善中。</div>
 </div>
 {% endblock %}

@@ -2,7 +2,6 @@
 {% block title %}收件箱{% endblock %}
 {% block content %}
 <h1 class="page">收件箱</h1>
-<div class="sub">三类待办聚合：待反馈条目 · 警报汇总 · 待确认信源。站内收件箱为推送通道的兜底与存档，推送功能即将上线。</div>
 
 {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
 
@@ -10,15 +9,16 @@
   <form method="post" action="/pipeline/run">
     <button class="btn small primary">▶ 立即运行一轮</button>
   </form>
-  <span class="muted">采集 → 审查 → 核实；后台每 {{ pipeline_interval // 60 }} 分钟自动运行。</span>
+  <span class="muted">后台每 {{ pipeline_interval // 60 }} 分钟自动运行</span>
 </div>
 
-<div class="box"><h2>已分发待反馈</h2>
+<div class="box"><h2>待反馈条目</h2>
   {% if items %}
   {% for item in items %}
   <div style="border-bottom:1px solid #eee;padding:10px 0;">
     <div><a href="/items/{{ item.id }}"><b>{{ item.statement }}</b></a></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;">
+      <span class="pill">已核实</span>
       {% if item.rating %}<span class="pill rating">{{ item.rating }}</span>{% endif %}
       {% if verifications.get(item.id) %}<span class="pill">独立信源 ×{{ verifications[item.id].independent_source_count }}</span>{% endif %}
       <span class="muted">事件时间 {{ item.event_time.strftime('%Y-%m-%d') if item.event_time else '—' }} · 出处 {% if item.source %}<a href="/sources/{{ item.source.id }}">{{ item.source.name }}</a>{% else %}—{% endif %}</span>
@@ -35,33 +35,31 @@
   </div>
   {% endfor %}
   {% else %}
-  <div class="empty">无待反馈条目——登记信源、激活情报需求后运行采集（上方按钮或等后台循环）。</div>
+  <div class="empty">无待反馈条目——先登记信源并激活情报需求</div>
   {% endif %}
-  <div class="muted" style="margin-top:8px">暂以已核实未作废条目作为待反馈队列；推送卡片即将上线。</div>
 </div>
 
 {% if undetermined_count %}
 <div class="box"><h2>待复核（存疑）</h2>
-  <div>存疑 {{ undetermined_count }} 条——核实无法完成（常见：信源未设信用档）。补设档后可在条目详情「重新核实」回流重评。</div>
+  <div>存疑 {{ undetermined_count }} 条——常见原因：信源未设信用档，补设后可在详情页「重新核实」。</div>
   <div style="margin-top:6px"><a href="/items?status=undetermined">查看存疑条目 →</a></div>
 </div>
 {% endif %}
 
-<div class="box"><h2>警报汇总</h2>
-  <div class="empty">暂无警报——复核与翻案推送即将上线。</div>
+<div class="box"><h2>警报</h2>
+  <div class="empty">暂无警报</div>
 </div>
 
-<div class="box"><h2>待确认信源（新信源确认队列）</h2>
+<div class="box"><h2>待确认信源</h2>
   {% if pending_sources %}
   {% for s in pending_sources %}
   <div style="border-bottom:1px solid #eee;padding:10px 0;">
     <div><b>{{ s.name }}</b> <span class="pill">信源</span> <span class="pill dashed">待确认</span></div>
-    <div class="muted" style="margin:4px 0">由素材录入归因产生——确认前不入库、不建画像、不参与信用记账。</div>
   </div>
   {% endfor %}
   {% else %}
   <div class="empty">队列为空</div>
   {% endif %}
-  <div class="muted" style="margin-top:8px">信源来源：人工登记 / 采集发现；准入一律经确认——确认动作即将上线。</div>
+  <div class="muted" style="margin-top:8px">确认功能即将上线</div>
 </div>
 {% endblock %}

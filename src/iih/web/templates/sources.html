@@ -2,24 +2,23 @@
 {% block title %}信源库{% endblock %}
 {% block content %}
 <h1 class="page">信源库</h1>
-<div class="sub">已准入信源（发布主体）及其途径的全集；新信源经确认后准入。</div>
 
 {% if errors %}{% for e in errors %}<div class="err">{{ e }}</div>{% endfor %}{% endif %}
 
 {% if pending_sources %}
-<div class="box"><h2>待确认（不入库 · 不建画像 · 不记账）</h2>
+<div class="box"><h2>待确认</h2>
   {% for s in pending_sources %}
   <div style="border-bottom:1px solid #eee;padding:9px 0">
     <b>{{ s.name }}</b> <span class="pill">{{ source_type_labels[s.type] }}</span> <span class="pill dashed">待确认</span>
-    <div class="muted" style="margin:4px 0">由素材录入归因产生；确认动作即将上线。</div>
   </div>
   {% endfor %}
+  <div class="muted" style="margin-top:6px">确认功能即将上线。</div>
 </div>
 {% endif %}
 
 <div class="box">
   <table>
-    <tr><th>信源（主体）</th><th>类型</th><th>途径</th><th>信源信用</th><th>历史反馈</th><th>状态</th></tr>
+    <tr><th>信源</th><th>类型</th><th>途径</th><th>信源信用</th><th>历史反馈</th><th>状态</th></tr>
     {% for s in sources %}
     <tr>
       <td><a href="/sources/{{ s.id }}">{{ s.name }}</a></td>
@@ -30,31 +29,28 @@
       <td><span class="pill">已确认</span></td>
     </tr>
     {% else %}
-    <tr><td colspan="6"><div class="empty">信源库为空——先登记首个信源，开启自动采集。</div></td></tr>
+    <tr><td colspan="6"><div class="empty">信源库为空</div></td></tr>
     {% endfor %}
   </table>
-  <div class="muted" style="margin-top:6px">独立信源按主体计数：同主体多途径 = 1。</div>
 </div>
 
-<div class="box"><h2>登记信源（人工登记）</h2>
-  <div class="muted" style="margin-bottom:8px">登记主体、随手添途径。仅支持互联网途径（系统自动拉取）；线下场景经录入素材页提交，信源由采集智能体识别归因。</div>
+<div class="box"><h2>登记信源</h2>
   <form method="post" action="/sources">
     <div class="grid2">
-      <div class="field"><label>名称（发布主体）</label><input type="text" name="source_name" placeholder="例：W 公司、新华社、张三"></div>
-      <div class="field"><label>类型（主体维度）</label><select name="source_type">
+      <div class="field"><label>信源主体</label><input type="text" name="source_name" placeholder="例：W 公司、新华社、张三"></div>
+      <div class="field"><label>类型</label><select name="source_type">
         {% for value, label in source_types %}<option value="{{ value.value }}">{{ label }}</option>{% endfor %}
       </select></div>
-      <div class="field"><label>初始信用档（必填 · 人工先验）<span class="muted" title="信源信用档 A–F：A 最可靠 → F 最不可靠。累计分映射：A ≥8、B [4,8)、C [0,4)、D [−4,0)、E [−8,−4)、F <−8；有效反馈 +1、事实错误 −2、180 天半衰期。本档为人工先验初值，作核实评级的信源可靠度 R；C 为中性默认（对应累计分 0）。">ⓘ</span></label>
+      <div class="field"><label>初始信用 <span class="muted" title="信用档 A–F：A 最可靠 → F 最不可靠。累计分映射：A ≥8、B [4,8)、C [0,4)、D [−4,0)、E [−8,−4)、F <−8；有效反馈 +1、事实错误 −2、180 天半衰期。C 为中性默认。">ⓘ</span></label>
         <select name="initial_credit">
           {% for g in "ABCDEF" %}<option value="{{ g }}" {{ 'selected' if g == 'C' }}>{{ g }}</option>{% endfor %}
         </select></div>
     </div>
-    <h3>首条途径（互联网 · 系统自动拉取 · 可后补）</h3>
-    <div class="field"><label>途径名</label><input type="text" name="outlet_name" placeholder="例：官网 / 公众号 / 行业媒体站点"></div>
-    <div class="field"><label>采集入口（网址 / RSS / 账号 ID——须为可机读地址，系统据此派采集任务）</label>
-      <input type="text" name="outlet_entry" placeholder="例：https://… 或 RSS 地址或公众号 ID"></div>
-    <button class="btn primary">登记（经确认入信源库）</button>
+    <h3>途径</h3>
+    <div class="field"><input type="text" name="outlet_name" placeholder="例：官网 / 公众号 / 行业媒体站点"></div>
+    <div class="field"><label>采集入口</label>
+      <input type="text" name="outlet_entry" placeholder="https://… 或 RSS 地址或公众号 ID"></div>
+    <button class="btn primary">登记</button>
   </form>
-  <div class="muted" style="margin-top:8px">同主体多途径 = 1 个独立信源；信用记在主体上，不按途径拆分。</div>
 </div>
 {% endblock %}

@@ -2,10 +2,9 @@
 {% block title %}情报条目{% endblock %}
 {% block content %}
 <h1 class="page">情报条目</h1>
-<div class="sub">已核实起的全部状态可筛选；一页制——本页 + 条目详情。</div>
 <div class="box">
   <form method="get" action="/items" class="field" style="margin:0 0 10px;display:flex;gap:8px;">
-    <input type="text" name="q" placeholder="检索：陈述 / 出处信源" value="{{ cur_q }}">
+    <input type="text" name="q" placeholder="检索" value="{{ cur_q }}">
     <input type="hidden" name="status" value="{{ cur_status }}">
     <input type="hidden" name="mode" value="{{ cur_mode }}">
     <button class="btn small">检索</button>
