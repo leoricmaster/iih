@@ -8,6 +8,7 @@
     body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #222; }
     h1 { font-size: 1.4rem; }
     h2 { font-size: 1.1rem; margin-top: 2rem; }
+    .nav { margin-bottom: 1rem; font-size: 0.9rem; }
     .field { margin-bottom: 1rem; }
     label { display: block; margin-bottom: 0.25rem; font-size: 0.9rem; }
     select, textarea { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; font: inherit; }
@@ -21,6 +22,7 @@
   </style>
 </head>
 <body>
+  <div class="nav"><a href="/">收件箱</a> · <a href="/sources">信源库</a></div>
   <h1>录入素材</h1>
 
   {% if errors %}

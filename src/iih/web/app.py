@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from iih.config import get_settings
 from iih.db import make_engine, make_session_factory
+from iih.web.inbox import router as inbox_router
 from iih.web.sources import router as sources_router
 from iih.web.submissions import router as submissions_router
 
@@ -21,6 +22,7 @@ def create_app() -> FastAPI:
         engine.dispose()
 
     app = FastAPI(title="智能情报中心（IIH）", lifespan=lifespan)
+    app.include_router(inbox_router)
     app.include_router(submissions_router)
     app.include_router(sources_router)
 

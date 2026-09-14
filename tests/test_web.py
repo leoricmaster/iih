@@ -1,11 +1,26 @@
-"""录入素材页单测（doc-07 §2.3、原型）：表单校验拦截（AC#2）、提交落账 Lead（AC#1）。"""
+"""Web 页单测（doc-07 §3、原型）：录入素材、信源库、收件箱与条目详情。"""
+
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from conftest import make_fake_llm
-from iih.ledger.models import IntelligenceItem, ItemStatus, Outlet, Source, SourceType
+from iih.ledger.formula import CONTENT_CREDIBILITY_FORMULA_VERSION
+from iih.ledger.models import (
+    IntelligenceItem,
+    ItemMode,
+    ItemStatus,
+    Medium,
+    Modality,
+    Outlet,
+    ProvenanceChainNode,
+    Source,
+    SourceType,
+    VerificationOutcome,
+    VerificationRecord,
+)
 from iih.web.app import create_app
 from iih.web.deps import get_session
 
@@ -177,3 +192,126 @@ def test_register_shows_rejection_reasons(sources_client: TestClient, db_session
     assert "信源名已存在" in response.text
     sources = db_session.scalars(select(Source).where(Source.name == "W 公司")).unique().all()
     assert len(sources) == 1  # 第二次登记被驳回，未新增
+
+
+# ---- IIH-01.04 收件箱与条目详情 ----
+
+
+@pytest.fixture
+def inbox_client(db_session) -> TestClient:
+    """收件箱客户端：浏览页不需要 LLM。"""
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: db_session
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+def _seed_verified_item(db_session, *, statement: str = "W 公司公告：与 Z 集团签署合资协议"):
+    """预置一条已核实条目：转引链单节点 + 核实记录（B2），溯源五要素齐备。"""
+    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, credit="B")
+    outlet = Outlet(source=source, name="官网", entry="https://w-mining.example/news")
+    item = IntelligenceItem(
+        statement=statement,
+        status=ItemStatus.VERIFIED,
+        rating="B2",
+        mode=ItemMode.AUTOMATED,
+        medium=medium,
+        modality=modality,
+        collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
+        original_snapshot="W 公司今日公告，与 Z 集团签署合资协议。",
+        source=source,
+        outlet=outlet,
+    )
+    db_session.add_all([source, outlet, item])
+    db_session.flush()
+    db_session.add(
+        ProvenanceChainNode(
+            item=item,
+            source=source,
+            modality=modality,
+            medium=medium,
+            collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
+        )
+    )
+    rationale = "穿透转引链得独立信源 N=1，出处信源可靠度 R=B，公式出内容可信度 2，组装评级 B2"
+    db_session.add(
+        VerificationRecord(
+            item=item,
+            outcome=VerificationOutcome.VERIFIED,
+            independent_source_count=1,
+            source_reliability="B",
+            content_credibility=2,
+            rating="B2",
+            formula_version=CONTENT_CREDIBILITY_FORMULA_VERSION,
+            rationale=rationale,
+        )
+    )
+    db_session.flush()
+    return item
+
+
+def test_inbox_is_homepage_and_lists_verified_items(inbox_client: TestClient, db_session) -> None:
+    """对应 IIH-01.04 AC#1：收件箱为首页，列表展示陈述摘要 + 二维评级 + 状态。"""
+    item = _seed_verified_item(db_session)
+
+    response = inbox_client.get("/")
+
+    assert response.status_code == 200
+    assert "收件箱" in response.text
+    assert "W 公司公告：与 Z 集团签署合资协议" in response.text  # 陈述摘要
+    assert "B2" in response.text  # 二维评级
+    assert "已核实" in response.text  # 状态
+    assert f'href="/items/{item.id}"' in response.text  # 条目链接进详情
+
+
+def test_inbox_hides_unverified_items(inbox_client: TestClient, db_session) -> None:
+    """收件箱只收已核实条目：线索/候选不出现；空态有提示。"""
+    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
+    db_session.add(
+        IntelligenceItem(
+            statement="未经核实的线索",
+            status=ItemStatus.LEAD,
+            mode=ItemMode.MANUAL,
+            medium=medium,
+            modality=modality,
+            collected_at=datetime(2026, 9, 14, 9, 0, tzinfo=UTC),
+            original_snapshot="草稿",
+        )
+    )
+
+    response = inbox_client.get("/")
+
+    assert response.status_code == 200
+    assert "未经核实的线索" not in response.text
+    assert "暂无已核实条目" in response.text
+
+
+def test_item_detail_shows_provenance_and_rating_basis(
+    inbox_client: TestClient, db_session
+) -> None:
+    """对应 IIH-01.04 AC#2：详情可看溯源五要素与评级依据。"""
+    item = _seed_verified_item(db_session)
+
+    response = inbox_client.get(f"/items/{item.id}")
+
+    assert response.status_code == 200
+    # 溯源五要素：载体 / 媒介 / 采集时间 / 原文快照 / 信源与途径归因
+    assert "溯源五要素" in response.text
+    assert "网页" in response.text  # 载体
+    assert "互联网" in response.text  # 媒介
+    assert "2026-09-14 10:00" in response.text  # 采集时间
+    assert "W 公司今日公告，与 Z 集团签署合资协议。" in response.text  # 原文快照
+    assert "W 公司 · 官网" in response.text  # 信源 / 途径归因
+    # 评级依据：核实记录 + N/R/内容可信度/公式版本
+    assert "评级依据" in response.text
+    assert "穿透转引链得独立信源 N=1" in response.text
+    assert "content_credibility_v1" in response.text
+
+
+def test_item_detail_returns_404_for_unknown_item(inbox_client: TestClient) -> None:
+    response = inbox_client.get("/items/9999")
+
+    assert response.status_code == 404

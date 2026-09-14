@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>收件箱 · IIH</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.1rem; margin-top: 2rem; }
+    .nav { margin-bottom: 1rem; font-size: 0.9rem; }
+    table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+    th, td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid #eee; vertical-align: top; }
+    th { font-size: 0.85rem; color: #555; }
+    .pill { display: inline-block; padding: 0 0.5em; border: 1px solid #bbb; border-radius: 1em; font-size: 0.8rem; white-space: nowrap; }
+    .pill.rating { border-color: #4a6; color: #2c4; font-weight: 600; }
+    .empty { color: #999; }
+    .muted { color: #777; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <div class="nav"><a href="/submissions">录入素材</a> · <a href="/sources">信源库</a></div>
+  <h1>收件箱</h1>
+  <p class="muted">浏览已核实情报：陈述摘要 + 二维评级 + 状态（doc-07 §3）。分发匹配与推送后续里程碑加厚。</p>
+
+  {% if items %}
+  <table>
+    <tr><th>陈述摘要</th><th>二维评级</th><th>状态</th><th>核实时间</th></tr>
+    {% for item in items %}
+    <tr>
+      <td><a href="/items/{{ item.id }}">{{ item.statement }}</a></td>
+      <td><span class="pill rating">{{ item.rating }}</span></td>
+      <td><span class="pill">{{ status_labels[item.status] }}</span></td>
+      <td class="muted">{{ item.updated_at.strftime('%Y-%m-%d %H:%M') }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">暂无已核实条目——核实评级后进入收件箱</div>
+  {% endif %}
+</body>
+</html>

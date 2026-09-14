@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>条目详情 · IIH</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    h1 { font-size: 1.25rem; line-height: 1.5; }
+    h2 { font-size: 1.1rem; margin-top: 2rem; }
+    .nav { margin-bottom: 1rem; font-size: 0.9rem; }
+    .pill { display: inline-block; padding: 0 0.5em; border: 1px solid #bbb; border-radius: 1em; font-size: 0.8rem; white-space: nowrap; }
+    .pill.rating { border-color: #4a6; color: #2c4; font-weight: 600; }
+    dl { margin: 0.5rem 0; }
+    dt { font-size: 0.85rem; color: #555; margin-top: 0.6rem; }
+    dd { margin: 0.15rem 0 0 0; }
+    .snapshot { white-space: pre-wrap; background: #f7f7f7; border: 1px solid #eee; border-radius: 4px; padding: 0.5rem; }
+    .muted { color: #777; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <div class="nav"><a href="/">← 收件箱</a></div>
+  <h1>{{ item.statement }}</h1>
+  <p>
+    <span class="pill rating">{{ item.rating or '—' }}</span>
+    <span class="pill">{{ status_labels[item.status] }}</span>
+  </p>
+
+  <h2>溯源五要素</h2>
+  <dl>
+    <dt>载体</dt><dd>{{ item.modality.name }}</dd>
+    <dt>媒介</dt><dd>{{ item.medium.name }}</dd>
+    <dt>采集时间</dt><dd>{{ item.collected_at.strftime('%Y-%m-%d %H:%M') }}</dd>
+    <dt>原文快照</dt><dd class="snapshot">{{ item.original_snapshot }}</dd>
+    <dt>信源 / 途径归因</dt>
+    <dd>{{ item.source.name if item.source else '—' }}{% if item.outlet %} · {{ item.outlet.name }}{% endif %}</dd>
+  </dl>
+
+  <h2>评级依据</h2>
+  {% if verification %}
+  <p>{{ verification.rationale }}</p>
+  <dl>
+    <dt>独立信源数 N</dt><dd>{{ verification.independent_source_count }}</dd>
+    <dt>信源可靠度 R</dt><dd>{{ verification.source_reliability or '—' }}</dd>
+    <dt>内容可信度</dt><dd>{{ verification.content_credibility or '—' }}</dd>
+    <dt>公式版本</dt><dd>{{ verification.formula_version or '—' }}</dd>
+  </dl>
+  <p class="muted">变量与结论分离（decision-01）：N、R 为事实查询，公式为确定性映射、版本化可重放。</p>
+  {% else %}
+  <div class="muted">暂无核实记录</div>
+  {% endif %}
+</body>
+</html>
