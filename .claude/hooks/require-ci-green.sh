@@ -15,7 +15,8 @@ grep -Eq -- '(-s|--status)[[:space:]]+["'\'']?(Done|Completed)' <<<"$cmd" || exi
 cd "${CLAUDE_PROJECT_DIR:-.}" || exit 2
 
 # 1. 未提交改动（backlog/ 元数据豁免——收尾提交在关任务之后）
-dirty=$(git status --porcelain | grep -v -E '^[^ ]*[ ]?backlog/' || true)
+# porcelain 行为「XY␣路径」；路径含非 ASCII/空格时被 C 转义引号包裹，豁免须容忍可选引号
+dirty=$(git status --porcelain | grep -v -E '^.. ?"?backlog/' || true)
 if [ -n "$dirty" ]; then
   echo "DoD#3 门禁：存在 backlog 之外的未提交改动——先提交并推送，CI 绿后再标终态。" >&2
   exit 2
