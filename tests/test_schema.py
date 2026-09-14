@@ -16,6 +16,8 @@ from iih.ledger.models import (
     ReviewDecisionEnum,
     Source,
     SourceType,
+    VerificationOutcome,
+    VerificationRecord,
 )
 
 
@@ -189,3 +191,85 @@ def test_review_decision_reject_with_reason(db_session) -> None:
     assert loaded.decision is ReviewDecisionEnum.REJECT
     assert loaded.reason_type is RejectionReasonEnum.IRRELEVANT
     assert loaded.matched_requirement_id is None
+
+
+def _seed_candidate_item(db_session, *, credit: str | None = "B") -> IntelligenceItem:
+    """预置一条 Candidate 态条目 + 单节点转引链，source.credit 可控。"""
+    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, credit=credit)
+    item = IntelligenceItem(
+        statement="W 公司公告：与 Z 集团签署合资协议",
+        status=ItemStatus.CANDIDATE,
+        mode=ItemMode.AUTOMATED,
+        medium=medium,
+        modality=modality,
+        collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
+        original_snapshot="正文",
+        source=source,
+    )
+    node = ProvenanceChainNode(
+        item=item,
+        source=source,
+        modality=modality,
+        medium=medium,
+        collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
+    )
+    db_session.add_all([source, item, node])
+    db_session.flush()
+    return item
+
+
+def test_verification_record_verified_roundtrip(db_session) -> None:
+    """IIH-01.03：核实评级记录落账（VERIFIED 路径，N/R/credibility/rating + 公式版本）。"""
+    item = _seed_candidate_item(db_session, credit="B")
+
+    record = VerificationRecord(
+        item=item,
+        outcome=VerificationOutcome.VERIFIED,
+        independent_source_count=1,
+        source_reliability="B",
+        content_credibility=2,
+        rating="B2",
+        formula_version="content_credibility_v1",
+        rationale="穿透转引链得独立信源 N=1，出处信源可靠度 R=B，公式出内容可信度 2",
+    )
+    db_session.add(record)
+    db_session.flush()
+
+    loaded = db_session.get(VerificationRecord, record.id)
+    assert loaded is not None
+    assert loaded.outcome is VerificationOutcome.VERIFIED
+    assert loaded.independent_source_count == 1
+    assert loaded.source_reliability == "B"
+    assert loaded.content_credibility == 2
+    assert loaded.rating == "B2"
+    assert loaded.formula_version == "content_credibility_v1"
+    assert loaded.item_id == item.id
+
+
+def test_verification_record_undetermined_roundtrip(db_session) -> None:
+    """IIH-01.03：核实评级记录落账（UNDETERMINED 路径，评级字段为空）。"""
+    item = _seed_candidate_item(db_session, credit=None)
+
+    record = VerificationRecord(
+        item=item,
+        outcome=VerificationOutcome.UNDETERMINED,
+        independent_source_count=1,
+        source_reliability=None,
+        content_credibility=None,
+        rating=None,
+        formula_version=None,
+        rationale="信源画像未设信用档，无法评定内容可信度",
+    )
+    db_session.add(record)
+    db_session.flush()
+
+    loaded = db_session.get(VerificationRecord, record.id)
+    assert loaded is not None
+    assert loaded.outcome is VerificationOutcome.UNDETERMINED
+    assert loaded.independent_source_count == 1
+    assert loaded.source_reliability is None
+    assert loaded.content_credibility is None
+    assert loaded.rating is None
+    assert loaded.formula_version is None

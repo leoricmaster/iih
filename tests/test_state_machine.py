@@ -11,6 +11,8 @@ from iih.ledger.models import (
     IntelligenceRequirementStatus,
     ItemMode,
     ItemStatus,
+    Medium,
+    Modality,
     Outlet,
     ProvenanceChainNode,
     RejectionReasonEnum,
@@ -18,6 +20,8 @@ from iih.ledger.models import (
     ReviewDecisionEnum,
     Source,
     SourceType,
+    VerificationOutcome,
+    VerificationRecord,
 )
 from iih.ledger.proposal import (
     IntelligenceItemNewPayload,
@@ -34,6 +38,8 @@ from iih.ledger.proposal import (
     ReviewProposal,
     SourceRegisterPayload,
     SourceRegisterProposal,
+    VerificationPayload,
+    VerificationProposal,
 )
 from iih.ledger.state_machine import ExecutionResult, ProposalRejectedError, StateMachineExecutor
 
@@ -754,3 +760,341 @@ def test_review_pass_rejects_non_active_requirement(db_session) -> None:
         )
 
     assert any("非激活态" in r for r in excinfo.value.reasons)
+
+
+# ---- IIH-01.03 核实评级 ----
+
+
+def _seed_candidate_with_credit(
+    db_session, *, credit: str | None = "B", status: ItemStatus = ItemStatus.CANDIDATE
+) -> IntelligenceItem:
+    """预置一条 Candidate 态条目 + 单节点转引链，source.credit 可控。"""
+    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, credit=credit)
+    item = IntelligenceItem(
+        statement="W 公司公告：与 Z 集团签署合资协议",
+        status=status,
+        mode=ItemMode.AUTOMATED,
+        medium=medium,
+        modality=modality,
+        collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
+        original_snapshot="正文",
+        source=source,
+    )
+    node = ProvenanceChainNode(
+        item=item,
+        source=source,
+        modality=modality,
+        medium=medium,
+        collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
+    )
+    db_session.add_all([source, item, node])
+    db_session.flush()
+    return item
+
+
+def test_verification_verified_transitions_candidate_to_verified(db_session) -> None:
+    """支撑 IIH-01.03 AC#1：VERIFIED 决策 Candidate → Verified + rating + Record。"""
+    item = _seed_candidate_with_credit(db_session, credit="B")
+
+    result = StateMachineExecutor().execute(
+        VerificationProposal(
+            payload=VerificationPayload(
+                item_id=item.id,
+                outcome=VerificationOutcome.VERIFIED,
+                independent_source_count=1,
+                source_reliability="B",
+                content_credibility=2,
+                rating="B2",
+            ),
+            rationale="穿透转引链得 N=1，R=B，公式出可信度 2",
+            formula_version="content_credibility_v1",
+        ),
+        session=db_session,
+    )
+
+    assert result.item_id == item.id
+    refreshed = db_session.get(IntelligenceItem, item.id)
+    assert refreshed is not None
+    assert refreshed.status is ItemStatus.VERIFIED
+    assert refreshed.rating == "B2"
+
+    records = db_session.scalars(
+        select(VerificationRecord).where(VerificationRecord.item_id == item.id)
+    ).all()
+    assert len(records) == 1
+    assert records[0].outcome is VerificationOutcome.VERIFIED
+    assert records[0].independent_source_count == 1
+    assert records[0].source_reliability == "B"
+    assert records[0].content_credibility == 2
+    assert records[0].rating == "B2"
+    assert records[0].formula_version == "content_credibility_v1"
+
+
+def test_verification_undetermined_transitions_candidate_to_undetermined(db_session) -> None:
+    """支撑 IIH-01.03 AC#2：UNDETERMINED → Undetermined + Record（评级字段空）。"""
+    item = _seed_candidate_with_credit(db_session, credit=None)
+
+    StateMachineExecutor().execute(
+        VerificationProposal(
+            payload=VerificationPayload(
+                item_id=item.id,
+                outcome=VerificationOutcome.UNDETERMINED,
+                independent_source_count=1,
+                source_reliability=None,
+                content_credibility=None,
+                rating=None,
+            ),
+            rationale="信源画像未设信用档，无法评定",
+            formula_version=None,
+        ),
+        session=db_session,
+    )
+
+    refreshed = db_session.get(IntelligenceItem, item.id)
+    assert refreshed is not None
+    assert refreshed.status is ItemStatus.UNDETERMINED
+    assert refreshed.rating is None
+
+    records = db_session.scalars(
+        select(VerificationRecord).where(VerificationRecord.item_id == item.id)
+    ).all()
+    assert len(records) == 1
+    assert records[0].outcome is VerificationOutcome.UNDETERMINED
+    assert records[0].source_reliability is None
+    assert records[0].content_credibility is None
+    assert records[0].rating is None
+    assert records[0].formula_version is None
+
+
+def test_verification_rejects_non_candidate_state(db_session) -> None:
+    """前置违反：非 Candidate 态不可核实。"""
+    item = _seed_candidate_with_credit(db_session, credit="B", status=ItemStatus.LEAD)
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            VerificationProposal(
+                payload=VerificationPayload(
+                    item_id=item.id,
+                    outcome=VerificationOutcome.VERIFIED,
+                    independent_source_count=1,
+                    source_reliability="B",
+                    content_credibility=2,
+                    rating="B2",
+                ),
+                rationale="x",
+                formula_version="content_credibility_v1",
+            ),
+            session=db_session,
+        )
+
+    assert any("前置违反" in r for r in excinfo.value.reasons)
+    assert db_session.get(IntelligenceItem, item.id).status is ItemStatus.LEAD
+
+
+def test_verification_rejects_unknown_item(db_session) -> None:
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            VerificationProposal(
+                payload=VerificationPayload(
+                    item_id=9999,
+                    outcome=VerificationOutcome.VERIFIED,
+                    independent_source_count=1,
+                    source_reliability="B",
+                    content_credibility=2,
+                    rating="B2",
+                ),
+                rationale="x",
+                formula_version="content_credibility_v1",
+            ),
+            session=db_session,
+        )
+
+    assert "情报条目不存在" in excinfo.value.reasons
+
+
+def test_verification_rejects_blank_rationale(db_session) -> None:
+    item = _seed_candidate_with_credit(db_session, credit="B")
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            VerificationProposal(
+                payload=VerificationPayload(
+                    item_id=item.id,
+                    outcome=VerificationOutcome.VERIFIED,
+                    independent_source_count=1,
+                    source_reliability="B",
+                    content_credibility=2,
+                    rating="B2",
+                ),
+                rationale=" ",
+                formula_version="content_credibility_v1",
+            ),
+            session=db_session,
+        )
+
+    assert "依据缺失" in excinfo.value.reasons
+
+
+def test_verification_verified_rejects_zero_sources(db_session) -> None:
+    """VERIFIED 时 N<1 驳回。"""
+    item = _seed_candidate_with_credit(db_session, credit="B")
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            VerificationProposal(
+                payload=VerificationPayload(
+                    item_id=item.id,
+                    outcome=VerificationOutcome.VERIFIED,
+                    independent_source_count=0,
+                    source_reliability="B",
+                    content_credibility=2,
+                    rating="B2",
+                ),
+                rationale="x",
+                formula_version="content_credibility_v1",
+            ),
+            session=db_session,
+        )
+
+    assert any("独立信源计数" in r for r in excinfo.value.reasons)
+
+
+def test_verification_verified_rejects_missing_reliability(db_session) -> None:
+    item = _seed_candidate_with_credit(db_session, credit="B")
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            VerificationProposal(
+                payload=VerificationPayload(
+                    item_id=item.id,
+                    outcome=VerificationOutcome.VERIFIED,
+                    independent_source_count=1,
+                    source_reliability=None,
+                    content_credibility=2,
+                    rating="B2",
+                ),
+                rationale="x",
+                formula_version="content_credibility_v1",
+            ),
+            session=db_session,
+        )
+
+    assert any("信源可靠度" in r for r in excinfo.value.reasons)
+
+
+def test_verification_verified_rejects_invalid_reliability(db_session) -> None:
+    item = _seed_candidate_with_credit(db_session, credit="B")
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            VerificationProposal(
+                payload=VerificationPayload(
+                    item_id=item.id,
+                    outcome=VerificationOutcome.VERIFIED,
+                    independent_source_count=1,
+                    source_reliability="X",
+                    content_credibility=2,
+                    rating="X2",
+                ),
+                rationale="x",
+                formula_version="content_credibility_v1",
+            ),
+            session=db_session,
+        )
+
+    assert any("信源可靠度非法" in r for r in excinfo.value.reasons)
+
+
+def test_verification_verified_rejects_missing_credibility(db_session) -> None:
+    item = _seed_candidate_with_credit(db_session, credit="B")
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            VerificationProposal(
+                payload=VerificationPayload(
+                    item_id=item.id,
+                    outcome=VerificationOutcome.VERIFIED,
+                    independent_source_count=1,
+                    source_reliability="B",
+                    content_credibility=None,
+                    rating="B2",
+                ),
+                rationale="x",
+                formula_version="content_credibility_v1",
+            ),
+            session=db_session,
+        )
+
+    assert any("内容可信度" in r for r in excinfo.value.reasons)
+
+
+def test_verification_verified_rejects_invalid_credibility(db_session) -> None:
+    item = _seed_candidate_with_credit(db_session, credit="B")
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            VerificationProposal(
+                payload=VerificationPayload(
+                    item_id=item.id,
+                    outcome=VerificationOutcome.VERIFIED,
+                    independent_source_count=1,
+                    source_reliability="B",
+                    content_credibility=7,
+                    rating="B7",
+                ),
+                rationale="x",
+                formula_version="content_credibility_v1",
+            ),
+            session=db_session,
+        )
+
+    assert any("内容可信度非法" in r for r in excinfo.value.reasons)
+
+
+def test_verification_verified_rejects_missing_rating(db_session) -> None:
+    item = _seed_candidate_with_credit(db_session, credit="B")
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            VerificationProposal(
+                payload=VerificationPayload(
+                    item_id=item.id,
+                    outcome=VerificationOutcome.VERIFIED,
+                    independent_source_count=1,
+                    source_reliability="B",
+                    content_credibility=2,
+                    rating=None,
+                ),
+                rationale="x",
+                formula_version="content_credibility_v1",
+            ),
+            session=db_session,
+        )
+
+    assert any("评级" in r for r in excinfo.value.reasons)
+
+
+def test_verification_undetermined_rejects_with_rating_fields(db_session) -> None:
+    """UNDETERMINED 不应含评级字段。"""
+    item = _seed_candidate_with_credit(db_session, credit=None)
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            VerificationProposal(
+                payload=VerificationPayload(
+                    item_id=item.id,
+                    outcome=VerificationOutcome.UNDETERMINED,
+                    independent_source_count=1,
+                    source_reliability="B",
+                    content_credibility=None,
+                    rating=None,
+                ),
+                rationale="x",
+                formula_version=None,
+            ),
+            session=db_session,
+        )
+
+    assert any("不应含信源可靠度" in r for r in excinfo.value.reasons)

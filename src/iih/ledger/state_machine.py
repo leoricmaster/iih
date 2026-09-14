@@ -22,6 +22,8 @@ from iih.ledger.models import (
     ReviewDecision,
     ReviewDecisionEnum,
     Source,
+    VerificationOutcome,
+    VerificationRecord,
 )
 from iih.ledger.proposal import (
     IntelligenceItemNewProposal,
@@ -32,6 +34,7 @@ from iih.ledger.proposal import (
     ProvenanceData,
     ReviewProposal,
     SourceRegisterProposal,
+    VerificationProposal,
 )
 
 
@@ -69,6 +72,8 @@ class StateMachineExecutor:
                 return self._execute_item_provenance_append(proposal, session)
             case ReviewProposal():
                 return self._execute_review(proposal, session)
+            case VerificationProposal():
+                return self._execute_verification(proposal, session)
             case _:
                 raise ProposalRejectedError([f"未知提案类型：{type(proposal).__name__}"])
 
@@ -426,6 +431,79 @@ class StateMachineExecutor:
             rationale=proposal.rationale,
         )
         session.add(decision)
+        session.flush()
+        item_id = item.id
+        session.commit()
+        return ExecutionResult(item_id=item_id)
+
+    # ---- IIH-01.03 核实评级 ----
+
+    def _execute_verification(
+        self, proposal: VerificationProposal, session: Session
+    ) -> ExecutionResult:
+        """核实评级：Candidate → Verified 或 Candidate → Undetermined（doc-02 §4.3、doc-06 §5）。
+
+        校验：item 存在 + 当前状态为 CANDIDATE（前置）+ 依据非空 + outcome 合法
+        + VERIFIED 时 N ≥ 1 + R ∈ {A–F} + credibility ∈ {1..6} + rating 非空
+        + UNDETERMINED 时 R/credibility/rating 均为空。
+        落账：状态迁移 + IntelligenceItem.rating（VERIFIED）+ VerificationRecord 记录
+        （依据 + 公式版本 + 变量快照持久化，满足 doc-08 #8 与 doc-04 §1 推理记录）。
+        """
+        payload = proposal.payload
+        reasons: list[str] = []
+
+        if not proposal.rationale.strip():
+            reasons.append("依据缺失")
+
+        item = session.get(IntelligenceItem, payload.item_id)
+        if item is None:
+            reasons.append("情报条目不存在")
+        elif item.status is not ItemStatus.CANDIDATE:
+            reasons.append(f"前置违反：当前状态 {item.status.value}，需 Candidate")
+
+        reliability_grades = {"A", "B", "C", "D", "E", "F"}
+        if payload.outcome is VerificationOutcome.VERIFIED:
+            if payload.independent_source_count < 1:
+                reasons.append("已核实决策缺少独立信源计数")
+            if payload.source_reliability is None:
+                reasons.append("已核实决策缺少信源可靠度")
+            elif payload.source_reliability not in reliability_grades:
+                reasons.append(f"信源可靠度非法：{payload.source_reliability}（须 A–F）")
+            if payload.content_credibility is None:
+                reasons.append("已核实决策缺少内容可信度")
+            elif not 1 <= payload.content_credibility <= 6:
+                reasons.append(f"内容可信度非法：{payload.content_credibility}（须 1–6）")
+            if not payload.rating:
+                reasons.append("已核实决策缺少评级")
+        else:  # UNDETERMINED
+            if payload.source_reliability is not None:
+                reasons.append("存疑决策不应含信源可靠度")
+            if payload.content_credibility is not None:
+                reasons.append("存疑决策不应含内容可信度")
+            if payload.rating is not None:
+                reasons.append("存疑决策不应含评级")
+
+        if reasons:
+            raise ProposalRejectedError(reasons)
+
+        assert item is not None
+        if payload.outcome is VerificationOutcome.VERIFIED:
+            item.status = ItemStatus.VERIFIED
+            item.rating = payload.rating
+        else:
+            item.status = ItemStatus.UNDETERMINED
+
+        record = VerificationRecord(
+            item=item,
+            outcome=payload.outcome,
+            independent_source_count=payload.independent_source_count,
+            source_reliability=payload.source_reliability,
+            content_credibility=payload.content_credibility,
+            rating=payload.rating,
+            formula_version=proposal.formula_version,
+            rationale=proposal.rationale,
+        )
+        session.add(record)
         session.flush()
         item_id = item.id
         session.commit()

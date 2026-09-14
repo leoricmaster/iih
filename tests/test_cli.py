@@ -23,6 +23,8 @@ from iih.ledger.models import (
     ProvenanceChainNode,
     Source,
     SourceType,
+    VerificationOutcome,
+    VerificationRecord,
 )
 from iih.ledger.state_machine import StateMachineExecutor
 
@@ -395,5 +397,116 @@ def test_cli_review_e2e_no_leads_skips(db_session, monkeypatch) -> None:
     monkeypatch.setattr("iih.cli.review.make_session_factory", lambda engine: fake_factory)
 
     rc = main(["review"])
+
+    assert rc == 0
+
+
+# ---- IIH-01.03 核实评级 CLI ----
+
+
+def _seed_candidate_for_verify(db_session, *, credit: str | None = "B") -> IntelligenceItem:
+    """预置一条 Candidate 态条目 + 单节点转引链，source.credit 可控。"""
+    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, credit=credit)
+    item = IntelligenceItem(
+        statement="W 公司公告：与 Z 集团签署合资协议",
+        status=ItemStatus.CANDIDATE,
+        mode=ItemMode.AUTOMATED,
+        medium=medium,
+        modality=modality,
+        collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
+        original_snapshot="正文",
+        source=source,
+    )
+    node = ProvenanceChainNode(
+        item=item,
+        source=source,
+        modality=modality,
+        medium=medium,
+        collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
+    )
+    db_session.add_all([source, item, node])
+    db_session.flush()
+    return item
+
+
+def test_cli_verify_e2e_verified_transitions_to_verified(db_session, monkeypatch) -> None:
+    """verify 子命令端到端：Candidate + credit=B → Verifier → executor → Verified + rating=B2。"""
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    item = _seed_candidate_for_verify(db_session, credit="B")
+    fake_engine = SimpleNamespace(dispose=lambda: None)
+
+    @contextmanager
+    def fake_factory():
+        yield db_session
+
+    monkeypatch.setattr("iih.cli.verify.make_engine", lambda settings: fake_engine)
+    monkeypatch.setattr("iih.cli.verify.make_session_factory", lambda engine: fake_factory)
+
+    rc = main(["verify"])
+
+    assert rc == 0
+    refreshed = db_session.get(IntelligenceItem, item.id)
+    assert refreshed is not None
+    assert refreshed.status is ItemStatus.VERIFIED
+    assert refreshed.rating == "B2"
+
+    records = db_session.scalars(
+        select(VerificationRecord).where(VerificationRecord.item_id == item.id)
+    ).all()
+    assert len(records) == 1
+    assert records[0].outcome is VerificationOutcome.VERIFIED
+    assert records[0].rating == "B2"
+
+
+def test_cli_verify_e2e_undetermined_transitions_to_undetermined(db_session, monkeypatch) -> None:
+    """verify 子命令端到端：Candidate + credit=None → Verifier → executor → Undetermined。"""
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    item = _seed_candidate_for_verify(db_session, credit=None)
+    fake_engine = SimpleNamespace(dispose=lambda: None)
+
+    @contextmanager
+    def fake_factory():
+        yield db_session
+
+    monkeypatch.setattr("iih.cli.verify.make_engine", lambda settings: fake_engine)
+    monkeypatch.setattr("iih.cli.verify.make_session_factory", lambda engine: fake_factory)
+
+    rc = main(["verify"])
+
+    assert rc == 0
+    refreshed = db_session.get(IntelligenceItem, item.id)
+    assert refreshed is not None
+    assert refreshed.status is ItemStatus.UNDETERMINED
+    assert refreshed.rating is None
+
+    records = db_session.scalars(
+        select(VerificationRecord).where(VerificationRecord.item_id == item.id)
+    ).all()
+    assert len(records) == 1
+    assert records[0].outcome is VerificationOutcome.UNDETERMINED
+    assert records[0].rating is None
+
+
+def test_cli_verify_e2e_no_candidates_skips(db_session, monkeypatch) -> None:
+    """无 Candidate 态条目时 verify 命令优雅退出。"""
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    fake_engine = SimpleNamespace(dispose=lambda: None)
+
+    @contextmanager
+    def fake_factory():
+        yield db_session
+
+    monkeypatch.setattr("iih.cli.verify.make_engine", lambda settings: fake_engine)
+    monkeypatch.setattr("iih.cli.verify.make_session_factory", lambda engine: fake_factory)
+
+    rc = main(["verify"])
 
     assert rc == 0

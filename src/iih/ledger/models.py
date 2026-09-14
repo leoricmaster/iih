@@ -63,6 +63,16 @@ class RejectionReasonEnum(enum.StrEnum):
     INVALID = "invalid"  # 无效：陈述不完整 / 非客观 / 纯评价
 
 
+class VerificationOutcome(enum.StrEnum):
+    """核实结果（doc-06 §5）：已核实 / 存疑。
+
+    已核实：完成评级落账；存疑：核实无法完成挂起（可设复核期，本里程碑暂缓）。
+    """
+
+    VERIFIED = "verified"  # 已核实：Candidate → Verified
+    UNDETERMINED = "undetermined"  # 存疑：Candidate → Undetermined
+
+
 class SourceType(enum.StrEnum):
     """信源类型（doc-04 §1）。"""
 
@@ -185,6 +195,9 @@ class IntelligenceItem(Base):
     review_decisions: Mapped[list["ReviewDecision"]] = relationship(
         back_populates="item", cascade="all, delete-orphan"
     )
+    verification_records: Mapped[list["VerificationRecord"]] = relationship(
+        back_populates="item", cascade="all, delete-orphan"
+    )
 
 
 class IntelligenceRequirement(Base):
@@ -265,3 +278,29 @@ class ReviewDecision(Base):
     matched_requirement: Mapped["IntelligenceRequirement | None"] = relationship(
         foreign_keys=[matched_requirement_id]
     )
+
+
+class VerificationRecord(Base):
+    """核实评级记录（doc-06 §5、doc-08 #8、doc-04 §1 推理记录）：每次核实落一条，附依据与公式版本。
+
+    已核实（Candidate → Verified）：outcome=VERIFIED，N/R/credibility/rating 必填，
+    formula_version 记公式版本。
+    存疑（Candidate → Undetermined）：outcome=UNDETERMINED，N 仍记（已穿透统计），
+    R/credibility/rating 为空。
+    核实依据 + 公式版本持久化以支撑可追溯与可重放（无溯源不落账、变量与结论分离 decision-01）。
+    """
+
+    __tablename__ = "verification_record"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("intelligence_item.id"), index=True)
+    outcome: Mapped[VerificationOutcome] = mapped_column(_sa_enum(VerificationOutcome))
+    independent_source_count: Mapped[int] = mapped_column(default=0)  # N：穿透转引链后的独立信源数
+    source_reliability: Mapped[str | None] = mapped_column(String(1))  # R：A–F；VERIFIED 必填
+    content_credibility: Mapped[int | None] = mapped_column()  # 1–6；VERIFIED 必填
+    rating: Mapped[str | None] = mapped_column(String(2))  # 如 "B2"；VERIFIED 必填
+    formula_version: Mapped[str | None] = mapped_column(String(50))  # 公式版本；UNDETERMINED 时为空
+    rationale: Mapped[str] = mapped_column(Text)  # 核实依据
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    item: Mapped["IntelligenceItem"] = relationship(back_populates="verification_records")

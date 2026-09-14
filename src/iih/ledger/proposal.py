@@ -5,7 +5,13 @@ from typing import ClassVar
 
 from pydantic import BaseModel
 
-from iih.ledger.models import ItemMode, RejectionReasonEnum, ReviewDecisionEnum, SourceType
+from iih.ledger.models import (
+    ItemMode,
+    RejectionReasonEnum,
+    ReviewDecisionEnum,
+    SourceType,
+    VerificationOutcome,
+)
 
 
 class ProvenanceData(BaseModel):
@@ -156,3 +162,35 @@ class ReviewProposal(Proposal):
     PROPOSAL_TYPE = "intelligence_item_review"
 
     payload: ReviewPayload
+
+
+# ---- IIH-01.03 核实评级 ----
+
+
+class VerificationPayload(BaseModel):
+    """「核实评级」产出：item_id + outcome + N/R/credibility/rating。
+
+    VERIFIED：N ≥ 1 + R（A–F）+ credibility（1–6）+ rating（如 "B2"）必填。
+    UNDETERMINED：R/credibility/rating 为空（N 仍记，已穿透统计）；公式版本为空。
+    """
+
+    item_id: int
+    outcome: VerificationOutcome
+    independent_source_count: int  # N：穿透转引链后的独立信源数
+    source_reliability: str | None = None  # R：A–F；VERIFIED 必填
+    content_credibility: int | None = None  # 1–6；VERIFIED 必填
+    rating: str | None = None  # 如 "B2"；VERIFIED 必填
+
+
+class VerificationProposal(Proposal):
+    """提案类型「核实评级」：Candidate → Verified 或 Undetermined（doc-02 §4.3、doc-06 §5）。
+
+    核实评级含公式判定，formula_version 记入提案顶层（继承自 Proposal.formula_version）；
+    无独立 provenance 字段（核实非采集动作，溯源五要素已在条目新建时落账）。
+    依据 + 公式版本 + 变量快照（N/R/credibility/rating）落账到 VerificationRecord 表，
+    满足 doc-08 #8 与 doc-04 §1 推理记录字段定义。
+    """
+
+    PROPOSAL_TYPE = "intelligence_item_verification"
+
+    payload: VerificationPayload
