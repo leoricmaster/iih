@@ -5,12 +5,14 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import select
 
-from iih.ledger.models import IntelligenceItem, ItemMode, ItemStatus, Outlet, Source
+from iih.ledger.models import IntelligenceItem, ItemMode, ItemStatus, Outlet, Source, SourceType
 from iih.ledger.proposal import (
     IntelligenceItemNewPayload,
     IntelligenceItemNewProposal,
     Proposal,
     ProvenanceData,
+    SourceRegisterPayload,
+    SourceRegisterProposal,
 )
 from iih.ledger.state_machine import ExecutionResult, ProposalRejectedError, StateMachineExecutor
 
@@ -127,3 +129,81 @@ def test_existing_source_and_outlet_are_reused(db_session) -> None:
 def test_rejects_unknown_proposal_type(db_session) -> None:
     with pytest.raises(ProposalRejectedError):
         StateMachineExecutor().execute(Proposal(rationale="无类型提案"), session=db_session)
+
+
+# ---- IIH-01.07 种子信源登记 ----
+
+
+def make_register_proposal(**overrides) -> SourceRegisterProposal:
+    """构造一份字段齐备的「种子信源登记」提案；kwargs 覆盖用于制造缺陷。"""
+    payload_fields = {
+        "source_name": "W 公司",
+        "source_type": SourceType.COMPANY,
+        "outlet_name": "官网",
+        "outlet_entry": "https://w-mining.example/news",
+    } | overrides.pop("payload", {})
+    top_fields = {"rationale": "人工登记（decision-05 通道一）"} | overrides
+    return SourceRegisterProposal(payload=SourceRegisterPayload(**payload_fields), **top_fields)
+
+
+def test_source_register_lands_confirmed_with_internet_outlet(db_session) -> None:
+    """支撑 IIH-01.07 AC#1：登记落账 confirmed=True、credit=None、途径挂 internet。"""
+    result = StateMachineExecutor().execute(make_register_proposal(), session=db_session)
+
+    assert result.source_id is not None
+    source = db_session.get(Source, result.source_id)
+    assert source is not None
+    assert source.name == "W 公司"
+    assert source.type is SourceType.COMPANY
+    assert source.confirmed is True
+    assert source.credit is None  # 信用档由 IIH-01.06 信用计算器首次更新时设
+    assert len(source.outlets) == 1
+    outlet = source.outlets[0]
+    assert outlet.name == "官网"
+    assert outlet.entry == "https://w-mining.example/news"
+    assert outlet.medium.code == "internet"
+
+
+def test_source_register_rejects_blank_fields(db_session) -> None:
+    """支撑 IIH-01.07 AC#2：记账层字段完整性校验，缺失即驳回、无落账。"""
+    proposal = make_register_proposal(
+        payload={"source_name": " ", "outlet_name": " ", "outlet_entry": " "},
+        rationale=" ",
+    )
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(proposal, session=db_session)
+
+    assert "主体名称缺失" in excinfo.value.reasons
+    assert "途径名缺失" in excinfo.value.reasons
+    assert "采集入口缺失" in excinfo.value.reasons
+    assert "依据缺失" in excinfo.value.reasons
+    assert db_session.scalars(select(Source)).first() is None
+    assert db_session.scalars(select(Outlet)).first() is None
+
+
+def test_source_register_rejects_duplicate_source_name(db_session) -> None:
+    StateMachineExecutor().execute(make_register_proposal(), session=db_session)
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            make_register_proposal(payload={"outlet_name": "公众号"}), session=db_session
+        )
+
+    assert any("信源名已存在" in reason for reason in excinfo.value.reasons)
+    sources = db_session.scalars(select(Source).where(Source.name == "W 公司")).unique().all()
+    assert len(sources) == 1  # 不新增重复信源
+
+
+def test_source_register_rejects_when_internet_medium_missing(db_session) -> None:
+    """媒介引用不可解析：internet seed 缺失时驳回（环境异常兜底）。"""
+    from iih.ledger.models import Medium
+
+    db_session.query(Medium).where(Medium.code == "internet").delete()
+    db_session.flush()
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(make_register_proposal(), session=db_session)
+
+    assert any("internet" in reason for reason in excinfo.value.reasons)
+    assert db_session.scalars(select(Source)).first() is None

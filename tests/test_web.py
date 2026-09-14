@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from conftest import make_fake_llm
-from iih.ledger.models import IntelligenceItem, ItemStatus
+from iih.ledger.models import IntelligenceItem, ItemStatus, Outlet, Source, SourceType
 from iih.web.app import create_app
 from iih.web.deps import get_session
 
@@ -76,3 +76,104 @@ def test_submit_shows_rejection_reasons(client: TestClient, db_session, w_attrib
         )
 
     assert "溯源缺失：信源归因" in response.text
+
+
+# ---- IIH-01.07 信源库页 ----
+
+
+@pytest.fixture
+def sources_client(db_session) -> TestClient:
+    """信源库页客户端：不需要 LLM（登记不经智能体）。"""
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: db_session
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+def test_sources_page_lists_confirmed_sources(sources_client: TestClient) -> None:
+    response = sources_client.get("/sources")
+
+    assert response.status_code == 200
+    assert "信源库" in response.text
+    assert "登记信源" in response.text
+    for label in ("公司", "政府", "组织", "媒体", "人物", "其他"):
+        assert label in response.text  # 类型下拉 6 项
+
+
+def test_register_lands_source_and_outlet_end_to_end(
+    sources_client: TestClient, db_session
+) -> None:
+    """对应 IIH-01.07 AC#1：登记主体「W 公司」+ 首条途径（官网 · 互联网）→ 列表两栏可见。"""
+    response = sources_client.post(
+        "/sources",
+        data={
+            "source_name": "W 公司",
+            "source_type": "company",
+            "outlet_name": "官网",
+            "outlet_entry": "https://w-mining.example/news",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "W 公司" in response.text  # 列表主体栏可见
+    assert "官网" in response.text  # 列表途径栏可见
+
+    sources = db_session.scalars(select(Source).where(Source.name == "W 公司")).unique().all()
+    assert len(sources) == 1
+    assert sources[0].confirmed is True
+    assert sources[0].type is SourceType.COMPANY
+    assert sources[0].credit is None
+    outlets = (
+        db_session.scalars(select(Outlet).where(Outlet.source_id == sources[0].id)).unique().all()
+    )
+    assert len(outlets) == 1
+    assert outlets[0].name == "官网"
+    assert outlets[0].entry == "https://w-mining.example/news"
+    assert outlets[0].medium.code == "internet"
+
+
+def test_register_with_missing_fields_is_blocked(sources_client: TestClient, db_session) -> None:
+    """对应 IIH-01.07 AC#2：必填字段缺失 → 表单拦截、不落账。"""
+    response = sources_client.post(
+        "/sources",
+        data={
+            "source_name": "",
+            "source_type": "",
+            "outlet_name": "",
+            "outlet_entry": "",
+        },
+    )
+
+    assert response.status_code == 200  # 重渲染表单并提示
+    assert "请填写主体名称" in response.text
+    assert "请选择类型" in response.text
+    assert "请填写途径名" in response.text
+    assert "请填写采集入口" in response.text
+    assert db_session.scalars(select(Source)).first() is None  # 不落账
+
+
+def test_register_shows_rejection_reasons(sources_client: TestClient, db_session) -> None:
+    """状态机驳回（信源名重复）→ 原因回显表单页。"""
+    sources_client.post(
+        "/sources",
+        data={
+            "source_name": "W 公司",
+            "source_type": "company",
+            "outlet_name": "官网",
+            "outlet_entry": "https://w-mining.example/news",
+        },
+    )
+    response = sources_client.post(
+        "/sources",
+        data={
+            "source_name": "W 公司",
+            "source_type": "company",
+            "outlet_name": "公众号",
+            "outlet_entry": "公众号 ID：w-official",
+        },
+    )
+
+    assert "信源名已存在" in response.text
+    sources = db_session.scalars(select(Source).where(Source.name == "W 公司")).unique().all()
+    assert len(sources) == 1  # 第二次登记被驳回，未新增

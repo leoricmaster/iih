@@ -47,3 +47,24 @@ class IntelligenceItemNewProposal(Proposal):
 
     payload: IntelligenceItemNewPayload
     provenance: ProvenanceData
+
+
+class SourceRegisterPayload(BaseModel):
+    """「种子信源登记」产出：主体字段 + 首条互联网途径字段（doc-07 §2.1、原型信源库页）。"""
+
+    source_name: str  # 主体名称
+    source_type: SourceType
+    outlet_name: str  # 途径名（如「官网」）
+    outlet_entry: str  # 采集入口：网址 / RSS / 账号 ID
+
+
+class SourceRegisterProposal(Proposal):
+    """提案类型「种子信源登记」：双通道确认制通道一 · 人工登记（decision-05）。
+
+    信源登记非情报产出，溯源五要素不适用——本提案无 provenance、无 formula_version。
+    校验由状态机执行器执行：字段完整 + medium=internet + 信源名唯一 + 同主体途径名唯一。
+    """
+
+    PROPOSAL_TYPE = "source_register"
+
+    payload: SourceRegisterPayload

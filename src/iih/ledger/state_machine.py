@@ -21,6 +21,7 @@ from iih.ledger.proposal import (
     IntelligenceItemNewProposal,
     Proposal,
     ProvenanceData,
+    SourceRegisterProposal,
 )
 
 
@@ -36,7 +37,8 @@ class ProposalRejectedError(Exception):
 class ExecutionResult:
     """落账结果。"""
 
-    item_id: int
+    item_id: int | None = None
+    source_id: int | None = None
 
 
 class StateMachineExecutor:
@@ -46,6 +48,8 @@ class StateMachineExecutor:
         match proposal:
             case IntelligenceItemNewProposal():
                 return self._execute_item_new(proposal, session)
+            case SourceRegisterProposal():
+                return self._execute_source_register(proposal, session)
             case _:
                 raise ProposalRejectedError([f"未知提案类型：{type(proposal).__name__}"])
 
@@ -138,3 +142,54 @@ class StateMachineExecutor:
             outlet = Outlet(source=source, name=provenance.outlet_name, medium=medium)
             session.add(outlet)
         return outlet
+
+    def _execute_source_register(
+        self, proposal: SourceRegisterProposal, session: Session
+    ) -> ExecutionResult:
+        """种子信源登记（decision-05 通道一）：新主体 + 首条互联网途径。
+
+        校验：字段完整 + medium=internet 解析 + 信源名唯一；
+        落账 Source.confirmed=True、credit=None。本任务范围仅新建主体；
+        为既有主体补途径留待后续。
+        """
+        reasons = self._validate_register_completeness(proposal)
+        if reasons:
+            raise ProposalRejectedError(reasons)
+
+        payload = proposal.payload
+        medium = session.scalars(select(Medium).where(Medium.code == "internet")).first()
+        if medium is None:
+            raise ProposalRejectedError(["媒介引用不可解析：internet"])
+
+        existing = session.scalars(select(Source).where(Source.name == payload.source_name)).first()
+        if existing is not None:
+            raise ProposalRejectedError([f"信源名已存在：{payload.source_name}"])
+
+        source = Source(
+            name=payload.source_name, type=payload.source_type, confirmed=True, credit=None
+        )
+        outlet = Outlet(
+            source=source,
+            name=payload.outlet_name,
+            entry=payload.outlet_entry,
+            medium=medium,
+        )
+        session.add_all([source, outlet])
+        session.flush()
+        source_id = source.id
+        session.commit()
+        return ExecutionResult(source_id=source_id)
+
+    def _validate_register_completeness(self, proposal: SourceRegisterProposal) -> list[str]:
+        """字段完整性校验：4 字段非空白。source_type 已是枚举，无需校验。"""
+        reasons: list[str] = []
+        payload = proposal.payload
+        if not payload.source_name.strip():
+            reasons.append("主体名称缺失")
+        if not payload.outlet_name.strip():
+            reasons.append("途径名缺失")
+        if not payload.outlet_entry.strip():
+            reasons.append("采集入口缺失")
+        if not proposal.rationale.strip():
+            reasons.append("依据缺失")
+        return reasons
