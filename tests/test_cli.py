@@ -395,6 +395,7 @@ def test_cli_review_e2e_no_leads_skips(db_session, monkeypatch) -> None:
 
     monkeypatch.setattr("iih.cli.review.make_engine", lambda settings: fake_engine)
     monkeypatch.setattr("iih.cli.review.make_session_factory", lambda engine: fake_factory)
+    monkeypatch.setattr("iih.cli.review.make_llm_client", lambda settings: None)  # 无 Lead 不触 LLM
 
     rc = main(["review"])
 
