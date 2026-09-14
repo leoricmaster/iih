@@ -48,9 +48,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(["item_id"], ["intelligence_item.id"]),
-        sa.ForeignKeyConstraint(
-            ["matched_requirement_id"], ["intelligence_requirement.id"]
-        ),
+        sa.ForeignKeyConstraint(["matched_requirement_id"], ["intelligence_requirement.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(

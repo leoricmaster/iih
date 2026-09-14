@@ -117,21 +117,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(
-        "uq_intelligence_item_content_fingerprint", table_name="intelligence_item"
-    )
-    op.drop_index(
-        op.f("ix_intelligence_item_content_fingerprint"), table_name="intelligence_item"
-    )
+    op.drop_index("uq_intelligence_item_content_fingerprint", table_name="intelligence_item")
+    op.drop_index(op.f("ix_intelligence_item_content_fingerprint"), table_name="intelligence_item")
     op.drop_column("intelligence_item", "original_url")
     op.drop_column("intelligence_item", "content_fingerprint")
 
-    op.drop_index(
-        op.f("ix_provenance_chain_node_item_id"), table_name="provenance_chain_node"
-    )
+    op.drop_index(op.f("ix_provenance_chain_node_item_id"), table_name="provenance_chain_node")
     op.drop_table("provenance_chain_node")
 
-    op.drop_index(
-        op.f("ix_intelligence_requirement_status"), table_name="intelligence_requirement"
-    )
+    op.drop_index(op.f("ix_intelligence_requirement_status"), table_name="intelligence_requirement")
     op.drop_table("intelligence_requirement")
