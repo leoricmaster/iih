@@ -45,6 +45,24 @@ class IntelligenceRequirementStatus(enum.StrEnum):
     CLOSED = "closed"  # 关闭：需求满足或撤销
 
 
+class ReviewDecisionEnum(enum.StrEnum):
+    """审查决策（doc-06 §4）：通过为候选 / 否决为噪音。"""
+
+    PASS = "pass"  # 通过：Lead → Candidate
+    REJECT = "reject"  # 否决：Lead → Noise
+
+
+class RejectionReasonEnum(enum.StrEnum):
+    """审查否决理由（doc-06 §4）：不相关 / 重复 / 无效。
+
+    本里程碑最简：仅产出 IRRELEVANT 与 INVALID；DUPLICATE 留枚举位以备事件同一性加厚。
+    """
+
+    IRRELEVANT = "irrelevant"  # 不相关：与激活情报需求无关
+    DUPLICATE = "duplicate"  # 重复：同源纯重复（事件同一性加厚后启用）
+    INVALID = "invalid"  # 无效：陈述不完整 / 非客观 / 纯评价
+
+
 class SourceType(enum.StrEnum):
     """信源类型（doc-04 §1）。"""
 
@@ -164,6 +182,9 @@ class IntelligenceItem(Base):
     provenance_nodes: Mapped[list["ProvenanceChainNode"]] = relationship(
         back_populates="item", cascade="all, delete-orphan"
     )
+    review_decisions: Mapped[list["ReviewDecision"]] = relationship(
+        back_populates="item", cascade="all, delete-orphan"
+    )
 
 
 class IntelligenceRequirement(Base):
@@ -218,3 +239,29 @@ class ProvenanceChainNode(Base):
     outlet: Mapped["Outlet | None"] = relationship(foreign_keys=[outlet_id])
     modality: Mapped["Modality"] = relationship()
     medium: Mapped["Medium"] = relationship()
+
+
+class ReviewDecision(Base):
+    """审查决策记录（doc-06 §4、doc-08 #8）：每次审查落一条，附依据。
+
+    通过为候选（Lead → Candidate）：matched_requirement_id 必填，reason_type 为空。
+    否决为噪音（Lead → Noise）：reason_type 必填，matched_requirement_id 为空。
+    审查依据持久化以支撑可追溯（无溯源不落账）。
+    """
+
+    __tablename__ = "review_decision"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("intelligence_item.id"), index=True)
+    decision: Mapped[ReviewDecisionEnum] = mapped_column(_sa_enum(ReviewDecisionEnum))
+    reason_type: Mapped[RejectionReasonEnum | None] = mapped_column(_sa_enum(RejectionReasonEnum))
+    matched_requirement_id: Mapped[int | None] = mapped_column(
+        ForeignKey("intelligence_requirement.id")
+    )
+    rationale: Mapped[str] = mapped_column(Text)  # 审查依据
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    item: Mapped["IntelligenceItem"] = relationship(back_populates="review_decisions")
+    matched_requirement: Mapped["IntelligenceRequirement | None"] = relationship(
+        foreign_keys=[matched_requirement_id]
+    )

@@ -4,6 +4,7 @@
 - ir-create --name ... --spec ...       情报需求登记（落账 Draft）
 - ir-activate <id>                       情报需求激活（Draft → Active）
 - collect                                自动拉取：Director→fetcher→Collector→executor
+- review                                 批量审查 Lead 态条目：Reviewer→executor
 
 无 [project.scripts] 注册；通过 `python -m iih.cli` 调用。
 """
@@ -14,6 +15,7 @@ from collections.abc import Sequence
 
 from iih.cli.collect import run as run_collect
 from iih.cli.ir import ir_activate, ir_create
+from iih.cli.review import run as run_review
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -33,6 +35,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     p_collect = sub.add_parser("collect", help="自动拉取互联网信源")
     p_collect.set_defaults(func=run_collect)
+
+    p_review = sub.add_parser("review", help="批量审查 Lead 态条目")
+    p_review.set_defaults(func=run_review)
 
     args = parser.parse_args(argv)
     return args.func(args)

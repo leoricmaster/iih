@@ -1,13 +1,14 @@
-"""CLI 端到端集成测试（IIH-01.08 AC#1/#2）。
+"""CLI 端到端集成测试（IIH-01.08 AC#1/#2、IIH-01.02 AC#1/#2）。
 
 通过直接调 iih.cli.main(argv=[...]) 跑子命令；mock fetcher 与 LLM。
 """
 
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 from sqlalchemy import select
 
-from conftest import make_fake_llm_extraction
+from conftest import make_fake_llm_extraction, make_fake_llm_review
 from iih.cli import main
 from iih.ledger.models import (
     IntelligenceItem,
@@ -17,6 +18,7 @@ from iih.ledger.models import (
     ItemStatus,
     LlmCall,
     Medium,
+    Modality,
     Outlet,
     ProvenanceChainNode,
     Source,
@@ -255,7 +257,10 @@ def test_cli_ir_activate_e2e_transitions_to_active(db_session, monkeypatch) -> N
     rc = main(["ir-activate", str(ir.id)])
 
     assert rc == 0
-    assert db_session.get(IntelligenceRequirement, ir.id).status is IntelligenceRequirementStatus.ACTIVE
+    assert (
+        db_session.get(IntelligenceRequirement, ir.id).status
+        is IntelligenceRequirementStatus.ACTIVE
+    )
 
 
 def test_cli_collect_e2e_produces_lead(db_session, monkeypatch, w_extraction) -> None:
@@ -291,3 +296,104 @@ def test_cli_collect_e2e_produces_lead(db_session, monkeypatch, w_extraction) ->
     assert item.source.name == "W 公司"
     assert item.outlet.name == "官网"
     assert item.original_url == "https://w-mining.example/news"
+
+
+# ---- IIH-01.02 线索审查过滤 CLI ----
+
+
+def _seed_lead_for_review(db_session) -> IntelligenceItem:
+    """预置一条 Lead 态条目 + 激活 IR（复用 _seed 与 _seed_active_ir）。"""
+    _seed(db_session)
+    _seed_active_ir(db_session)
+    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    source = db_session.scalars(select(Source).where(Source.name == "W 公司")).one()
+    item = IntelligenceItem(
+        statement="W 公司公告：与 Z 集团签署合资协议",
+        status=ItemStatus.LEAD,
+        mode=ItemMode.AUTOMATED,
+        medium=medium,
+        modality=db_session.scalars(select(Modality).where(Modality.code == "webpage")).one(),
+        collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
+        original_snapshot="正文",
+        source=source,
+        content_fingerprint="z" * 64,
+        original_url="https://w-mining.example/news",
+    )
+    db_session.add(item)
+    db_session.flush()
+    return item
+
+
+def test_cli_review_e2e_pass_transitions_to_candidate(
+    db_session, monkeypatch, w_review_pass_factory
+) -> None:
+    """review 子命令端到端：Lead → Reviewer → executor → Candidate。"""
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    item = _seed_lead_for_review(db_session)
+    ir = db_session.scalars(select(IntelligenceRequirement)).one()
+    judgment = w_review_pass_factory(matched_requirement_id=ir.id)
+    fake_llm = make_fake_llm_review(judgment)
+    fake_engine = SimpleNamespace(dispose=lambda: None)
+
+    @contextmanager
+    def fake_factory():
+        yield db_session
+
+    monkeypatch.setattr("iih.cli.review.make_engine", lambda settings: fake_engine)
+    monkeypatch.setattr("iih.cli.review.make_session_factory", lambda engine: fake_factory)
+    monkeypatch.setattr("iih.cli.review.make_llm_client", lambda settings: fake_llm)
+
+    rc = main(["review"])
+
+    assert rc == 0
+    refreshed = db_session.get(IntelligenceItem, item.id)
+    assert refreshed is not None
+    assert refreshed.status is ItemStatus.CANDIDATE
+
+
+def test_cli_review_e2e_reject_transitions_to_noise(
+    db_session, monkeypatch, w_review_reject_irrelevant
+) -> None:
+    """review 子命令端到端：Lead → Reviewer → executor → Noise（否决附理由）。"""
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    item = _seed_lead_for_review(db_session)
+    fake_llm = make_fake_llm_review(w_review_reject_irrelevant)
+    fake_engine = SimpleNamespace(dispose=lambda: None)
+
+    @contextmanager
+    def fake_factory():
+        yield db_session
+
+    monkeypatch.setattr("iih.cli.review.make_engine", lambda settings: fake_engine)
+    monkeypatch.setattr("iih.cli.review.make_session_factory", lambda engine: fake_factory)
+    monkeypatch.setattr("iih.cli.review.make_llm_client", lambda settings: fake_llm)
+
+    rc = main(["review"])
+
+    assert rc == 0
+    refreshed = db_session.get(IntelligenceItem, item.id)
+    assert refreshed is not None
+    assert refreshed.status is ItemStatus.NOISE
+
+
+def test_cli_review_e2e_no_leads_skips(db_session, monkeypatch) -> None:
+    """无 Lead 态条目时 review 命令优雅退出。"""
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    fake_engine = SimpleNamespace(dispose=lambda: None)
+
+    @contextmanager
+    def fake_factory():
+        yield db_session
+
+    monkeypatch.setattr("iih.cli.review.make_engine", lambda settings: fake_engine)
+    monkeypatch.setattr("iih.cli.review.make_session_factory", lambda engine: fake_factory)
+
+    rc = main(["review"])
+
+    assert rc == 0

@@ -13,6 +13,9 @@ from iih.ledger.models import (
     ItemStatus,
     Outlet,
     ProvenanceChainNode,
+    RejectionReasonEnum,
+    ReviewDecision,
+    ReviewDecisionEnum,
     Source,
     SourceType,
 )
@@ -27,6 +30,8 @@ from iih.ledger.proposal import (
     ItemProvenanceAppendProposal,
     Proposal,
     ProvenanceData,
+    ReviewPayload,
+    ReviewProposal,
     SourceRegisterPayload,
     SourceRegisterProposal,
 )
@@ -495,3 +500,257 @@ def test_item_provenance_append_rejects_duplicate_node(db_session) -> None:
         )
 
     assert "转引链节点已存在" in excinfo.value.reasons
+
+
+# ---- IIH-01.02 线索审查过滤 ----
+
+
+def _seed_lead_with_active_ir(db_session) -> tuple[IntelligenceItem, IntelligenceRequirement]:
+    """预置一条 Lead 态条目 + 激活情报需求，返回 (item, ir)。"""
+    from iih.ledger.models import Medium, Modality
+
+    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True)
+    ir = IntelligenceRequirement(
+        name="跟踪 W 公司",
+        content_spec="主题：矿卡、订单、战略",
+        status=IntelligenceRequirementStatus.ACTIVE,
+    )
+    item = IntelligenceItem(
+        statement="W 公司公告：与 Z 集团签署合资协议",
+        status=ItemStatus.LEAD,
+        mode=ItemMode.AUTOMATED,
+        medium=medium,
+        modality=modality,
+        collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
+        original_snapshot="正文",
+        source=source,
+    )
+    db_session.add_all([ir, item])
+    db_session.flush()
+    return item, ir
+
+
+def test_review_pass_transitions_lead_to_candidate(db_session) -> None:
+    """支撑 IIH-01.02 AC#1：通过决策 Lead → Candidate + ReviewDecision 落账。"""
+    item, ir = _seed_lead_with_active_ir(db_session)
+
+    result = StateMachineExecutor().execute(
+        ReviewProposal(
+            payload=ReviewPayload(
+                item_id=item.id,
+                decision=ReviewDecisionEnum.PASS,
+                reason_type=None,
+                matched_requirement_id=ir.id,
+            ),
+            rationale="陈述主题命中激活需求",
+        ),
+        session=db_session,
+    )
+
+    assert result.item_id == item.id
+    refreshed = db_session.get(IntelligenceItem, item.id)
+    assert refreshed is not None
+    assert refreshed.status is ItemStatus.CANDIDATE
+
+    decisions = db_session.scalars(
+        select(ReviewDecision).where(ReviewDecision.item_id == item.id)
+    ).all()
+    assert len(decisions) == 1
+    assert decisions[0].decision is ReviewDecisionEnum.PASS
+    assert decisions[0].reason_type is None
+    assert decisions[0].matched_requirement_id == ir.id
+    assert decisions[0].rationale == "陈述主题命中激活需求"
+
+
+def test_review_reject_transitions_lead_to_noise(db_session) -> None:
+    """支撑 IIH-01.02 AC#2：否决决策 Lead → Noise + ReviewDecision 附理由落账。"""
+    item, _ir = _seed_lead_with_active_ir(db_session)
+
+    StateMachineExecutor().execute(
+        ReviewProposal(
+            payload=ReviewPayload(
+                item_id=item.id,
+                decision=ReviewDecisionEnum.REJECT,
+                reason_type=RejectionReasonEnum.IRRELEVANT,
+                matched_requirement_id=None,
+            ),
+            rationale="陈述与激活需求主题不相关",
+        ),
+        session=db_session,
+    )
+
+    refreshed = db_session.get(IntelligenceItem, item.id)
+    assert refreshed is not None
+    assert refreshed.status is ItemStatus.NOISE
+
+    decisions = db_session.scalars(
+        select(ReviewDecision).where(ReviewDecision.item_id == item.id)
+    ).all()
+    assert len(decisions) == 1
+    assert decisions[0].decision is ReviewDecisionEnum.REJECT
+    assert decisions[0].reason_type is RejectionReasonEnum.IRRELEVANT
+    assert decisions[0].matched_requirement_id is None
+    assert decisions[0].rationale == "陈述与激活需求主题不相关"
+
+
+def test_review_rejects_non_lead_state(db_session) -> None:
+    """前置违反：非 Lead 态不可审查。"""
+    item, ir = _seed_lead_with_active_ir(db_session)
+    item.status = ItemStatus.CANDIDATE
+    db_session.flush()
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            ReviewProposal(
+                payload=ReviewPayload(
+                    item_id=item.id,
+                    decision=ReviewDecisionEnum.PASS,
+                    matched_requirement_id=ir.id,
+                ),
+                rationale="x",
+            ),
+            session=db_session,
+        )
+
+    assert any("前置违反" in r for r in excinfo.value.reasons)
+    # 状态不变
+    assert db_session.get(IntelligenceItem, item.id).status is ItemStatus.CANDIDATE
+
+
+def test_review_rejects_unknown_item(db_session) -> None:
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            ReviewProposal(
+                payload=ReviewPayload(
+                    item_id=9999,
+                    decision=ReviewDecisionEnum.REJECT,
+                    reason_type=RejectionReasonEnum.IRRELEVANT,
+                ),
+                rationale="x",
+            ),
+            session=db_session,
+        )
+
+    assert "情报条目不存在" in excinfo.value.reasons
+
+
+def test_review_rejects_blank_rationale(db_session) -> None:
+    item, ir = _seed_lead_with_active_ir(db_session)
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            ReviewProposal(
+                payload=ReviewPayload(
+                    item_id=item.id,
+                    decision=ReviewDecisionEnum.PASS,
+                    matched_requirement_id=ir.id,
+                ),
+                rationale=" ",
+            ),
+            session=db_session,
+        )
+
+    assert "依据缺失" in excinfo.value.reasons
+
+
+def test_review_pass_rejects_without_matched_requirement(db_session) -> None:
+    """PASS 决策必须填 matched_requirement_id。"""
+    item, _ir = _seed_lead_with_active_ir(db_session)
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            ReviewProposal(
+                payload=ReviewPayload(
+                    item_id=item.id,
+                    decision=ReviewDecisionEnum.PASS,
+                    matched_requirement_id=None,
+                ),
+                rationale="x",
+            ),
+            session=db_session,
+        )
+
+    assert "通过决策缺少匹配的情报需求" in excinfo.value.reasons
+
+
+def test_review_reject_rejects_without_reason_type(db_session) -> None:
+    """REJECT 决策必须填 reason_type。"""
+    item, _ir = _seed_lead_with_active_ir(db_session)
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            ReviewProposal(
+                payload=ReviewPayload(
+                    item_id=item.id,
+                    decision=ReviewDecisionEnum.REJECT,
+                    reason_type=None,
+                ),
+                rationale="x",
+            ),
+            session=db_session,
+        )
+
+    assert "否决决策缺少理由类型" in excinfo.value.reasons
+
+
+def test_review_pass_rejects_unknown_requirement(db_session) -> None:
+    """PASS 时 matched_requirement 不存在驳回。"""
+    item, _ir = _seed_lead_with_active_ir(db_session)
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            ReviewProposal(
+                payload=ReviewPayload(
+                    item_id=item.id,
+                    decision=ReviewDecisionEnum.PASS,
+                    matched_requirement_id=9999,
+                ),
+                rationale="x",
+            ),
+            session=db_session,
+        )
+
+    assert "匹配的情报需求不存在" in excinfo.value.reasons
+
+
+def test_review_pass_rejects_non_active_requirement(db_session) -> None:
+    """PASS 时 matched_requirement 非 ACTIVE 驳回（如 Draft / Paused / Closed）。"""
+    from iih.ledger.models import Medium, Modality
+
+    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True)
+    ir = IntelligenceRequirement(
+        name="跟踪 W 公司",
+        content_spec="主题",
+        status=IntelligenceRequirementStatus.DRAFT,
+    )
+    item = IntelligenceItem(
+        statement="陈述",
+        status=ItemStatus.LEAD,
+        mode=ItemMode.AUTOMATED,
+        medium=medium,
+        modality=modality,
+        collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
+        original_snapshot="x",
+        source=source,
+    )
+    db_session.add_all([ir, item])
+    db_session.flush()
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            ReviewProposal(
+                payload=ReviewPayload(
+                    item_id=item.id,
+                    decision=ReviewDecisionEnum.PASS,
+                    matched_requirement_id=ir.id,
+                ),
+                rationale="x",
+            ),
+            session=db_session,
+        )
+
+    assert any("非激活态" in r for r in excinfo.value.reasons)

@@ -11,6 +11,9 @@ from iih.ledger.models import (
     Medium,
     Modality,
     ProvenanceChainNode,
+    RejectionReasonEnum,
+    ReviewDecision,
+    ReviewDecisionEnum,
     Source,
     SourceType,
 )
@@ -109,3 +112,80 @@ def test_provenance_chain_node_roundtrip(db_session) -> None:
     assert loaded.source.name == "W 公司"
     assert loaded.medium.code == "internet"
     assert loaded.modality.code == "webpage"
+
+
+def test_review_decision_roundtrip(db_session) -> None:
+    """IIH-01.02：审查决策记录落账（PASS 路径，附依据 + matched_requirement）。"""
+    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True)
+    ir = IntelligenceRequirement(
+        name="跟踪 W 公司",
+        content_spec="主题：矿卡、订单、战略",
+        status=IntelligenceRequirementStatus.ACTIVE,
+    )
+    item = IntelligenceItem(
+        statement="W 公司公告：与 Z 集团签署合资协议",
+        status=ItemStatus.LEAD,
+        mode=ItemMode.AUTOMATED,
+        medium=medium,
+        modality=modality,
+        collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
+        original_snapshot="正文",
+        source=source,
+    )
+    db_session.add_all([ir, item])
+    db_session.flush()
+
+    decision = ReviewDecision(
+        item=item,
+        decision=ReviewDecisionEnum.PASS,
+        reason_type=None,
+        matched_requirement_id=ir.id,
+        rationale="陈述主题命中激活需求",
+    )
+    db_session.add(decision)
+    db_session.flush()
+
+    loaded = db_session.get(ReviewDecision, decision.id)
+    assert loaded is not None
+    assert loaded.decision is ReviewDecisionEnum.PASS
+    assert loaded.reason_type is None
+    assert loaded.matched_requirement_id == ir.id
+    assert loaded.rationale == "陈述主题命中激活需求"
+    assert loaded.item_id == item.id
+
+
+def test_review_decision_reject_with_reason(db_session) -> None:
+    """IIH-01.02：REJECT 路径落账（reason_type 必填，matched_requirement 为空）。"""
+    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True)
+    item = IntelligenceItem(
+        statement="某行业概况：今年市场整体平稳",
+        status=ItemStatus.LEAD,
+        mode=ItemMode.AUTOMATED,
+        medium=medium,
+        modality=modality,
+        collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
+        original_snapshot="正文",
+        source=source,
+    )
+    db_session.add(item)
+    db_session.flush()
+
+    decision = ReviewDecision(
+        item=item,
+        decision=ReviewDecisionEnum.REJECT,
+        reason_type=RejectionReasonEnum.IRRELEVANT,
+        matched_requirement_id=None,
+        rationale="陈述与激活需求主题不相关",
+    )
+    db_session.add(decision)
+    db_session.flush()
+
+    loaded = db_session.get(ReviewDecision, decision.id)
+    assert loaded is not None
+    assert loaded.decision is ReviewDecisionEnum.REJECT
+    assert loaded.reason_type is RejectionReasonEnum.IRRELEVANT
+    assert loaded.matched_requirement_id is None

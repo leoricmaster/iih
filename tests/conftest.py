@@ -10,6 +10,7 @@ from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session
 
 from iih.agents.collector import AttributionResult, StatementExtractionResult
+from iih.agents.reviewer import ReviewJudgmentResult
 from iih.config import get_settings
 
 TEST_DB_NAME = "iih_test"
@@ -49,6 +50,23 @@ def make_fake_llm_extraction(
     return SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
 
 
+def make_fake_llm_review(
+    judgment: ReviewJudgmentResult, prompt_tokens: int = 150, completion_tokens: int = 70
+):
+    """instructor 替身：返回 ReviewJudgmentResult。"""
+
+    class Completions:
+        def create_with_completion(self, *, response_model, messages, **kwargs):
+            assert response_model is ReviewJudgmentResult
+            return judgment, SimpleNamespace(
+                usage=SimpleNamespace(
+                    prompt_tokens=prompt_tokens, completion_tokens=completion_tokens
+                )
+            )
+
+    return SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+
+
 @pytest.fixture
 def w_attribution() -> AttributionResult:
     return AttributionResult(
@@ -75,6 +93,41 @@ def w_extraction() -> StatementExtractionResult:
 @pytest.fixture
 def fake_extraction_llm(w_extraction: StatementExtractionResult):
     return make_fake_llm_extraction(w_extraction)
+
+
+@pytest.fixture
+def w_review_pass_factory():
+    """工厂：构造通过路径的 ReviewJudgmentResult，需传入实际 IR id。"""
+
+    def _make(matched_requirement_id: int) -> ReviewJudgmentResult:
+        return ReviewJudgmentResult(
+            decision="pass",
+            reason_type=None,
+            matched_requirement_id=matched_requirement_id,
+            rationale="陈述主题为 W 公司合资，命中激活需求「跟踪 W 公司」",
+        )
+
+    return _make
+
+
+@pytest.fixture
+def w_review_reject_irrelevant() -> ReviewJudgmentResult:
+    return ReviewJudgmentResult(
+        decision="reject",
+        reason_type="irrelevant",
+        matched_requirement_id=None,
+        rationale="陈述与所有激活需求主题不相关",
+    )
+
+
+@pytest.fixture
+def w_review_reject_invalid() -> ReviewJudgmentResult:
+    return ReviewJudgmentResult(
+        decision="reject",
+        reason_type="invalid",
+        matched_requirement_id=None,
+        rationale="陈述为纯评价，非客观事实",
+    )
 
 
 @pytest.fixture(scope="session")

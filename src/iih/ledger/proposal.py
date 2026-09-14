@@ -5,7 +5,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel
 
-from iih.ledger.models import ItemMode, SourceType
+from iih.ledger.models import ItemMode, RejectionReasonEnum, ReviewDecisionEnum, SourceType
 
 
 class ProvenanceData(BaseModel):
@@ -129,3 +129,30 @@ class ItemProvenanceAppendProposal(Proposal):
     PROPOSAL_TYPE = "item_provenance_append"
 
     payload: ItemProvenanceAppendPayload
+
+
+# ---- IIH-01.02 线索审查过滤 ----
+
+
+class ReviewPayload(BaseModel):
+    """「审查决策」产出：item_id + decision + reason_type（否决）+ matched_requirement_id（通过）。
+
+    本里程碑最简：相关性 + 有效性初筛；事件同一性（DUPLICATE）与实体归一暂缓。
+    """
+
+    item_id: int
+    decision: ReviewDecisionEnum
+    reason_type: RejectionReasonEnum | None = None  # REJECT 时必填
+    matched_requirement_id: int | None = None  # PASS 时必填
+
+
+class ReviewProposal(Proposal):
+    """提案类型「审查决策」：迁移 Lead → Candidate（PASS）或 Lead → Noise（REJECT）（doc-02 §4.3）。
+
+    审查非情报产出，无 provenance、无 formula_version；依据记入 rationale，
+    落账时持久化到 ReviewDecision 表以满足 doc-08 #8「智能体产出附依据，无溯源不落账」。
+    """
+
+    PROPOSAL_TYPE = "intelligence_item_review"
+
+    payload: ReviewPayload

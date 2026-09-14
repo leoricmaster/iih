@@ -1,0 +1,127 @@
+"""审查智能体 Reviewer（doc-06 §4）· 最简版：相关性 + 有效性初筛。
+
+读 Lead 态条目，对激活情报需求判断相关性，并做有效性初筛；产出审查提案——
+通过为候选（PASS）或否决为噪音（REJECT）附理由。落账由状态机执行器执行（本智能体不直接写账）。
+
+范围外（后续里程碑加厚）：事件同一性（DUPLICATE 否决路径）、实体归一、图连通度参考变量。
+"""
+
+from openai.types.completion import CompletionUsage
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from iih.ledger.models import (
+    IntelligenceItem,
+    IntelligenceRequirement,
+    IntelligenceRequirementStatus,
+    LlmCall,
+    RejectionReasonEnum,
+    ReviewDecisionEnum,
+)
+from iih.ledger.proposal import ReviewPayload, ReviewProposal
+
+REVIEW_SYSTEM_PROMPT = """你是情报审查智能体。
+给定一条线索（陈述）与若干激活情报需求（id + 内容规格），判断该线索是否应放行进入核实。
+
+判断两维度：
+1. 相关性：陈述是否命中任一激活情报需求的主题 / 关键词 / 信源偏好 / 时效范围；
+2. 有效性：陈述是否客观、完整、非纯评价、非噪音。
+
+输出要求：
+- decision：pass（通过为候选）或 reject（否决为噪音）；
+- matched_requirement_id：通过时填命中的激活情报需求 id；否决时为 null；
+- reason_type：否决时填理由枚举——
+  * irrelevant：与所有激活需求均不相关；
+  * invalid：陈述不完整 / 非客观 / 纯评价 / 噪音；
+  通过时为 null；
+- rationale：一句话审查依据，将记入提案的「依据」。
+
+边界：本里程碑不做事件同一性（duplicate）判定；如判定为同源纯重复，按 irrelevant 或 invalid 给理由。
+"""
+
+
+class ReviewJudgmentResult(BaseModel):
+    """LLM 结构化审查输出（instructor 按此 schema 校验）。"""
+
+    decision: ReviewDecisionEnum = Field(description="pass 或 reject")
+    reason_type: RejectionReasonEnum | None = Field(
+        default=None, description="否决理由：irrelevant/invalid；通过时为 null"
+    )
+    matched_requirement_id: int | None = Field(
+        default=None, description="通过时命中的激活情报需求 id；否决时为 null"
+    )
+    rationale: str = Field(description="一句话审查依据")
+
+
+class Reviewer:
+    """审查智能体执行器（判断层）：无状态、输出提案。"""
+
+    AGENT_NAME = "reviewer"
+
+    def __init__(self, llm, session: Session, model: str) -> None:
+        self.llm = llm
+        self.session = session
+        self.model = model
+
+    def review(self, item: IntelligenceItem) -> ReviewProposal:
+        """对一条 Lead 态条目产出审查提案。
+
+        无激活情报需求时直接否决为 IRRELEVANT（无需求即无相关性），不调 LLM、不计量。
+        有激活需求时调 LLM 判断，产出 PASS 或 REJECT 提案。
+        """
+        active_irs = list(
+            self.session.scalars(
+                select(IntelligenceRequirement).where(
+                    IntelligenceRequirement.status == IntelligenceRequirementStatus.ACTIVE
+                )
+            )
+        )
+
+        if not active_irs:
+            return ReviewProposal(
+                payload=ReviewPayload(
+                    item_id=item.id,
+                    decision=ReviewDecisionEnum.REJECT,
+                    reason_type=RejectionReasonEnum.IRRELEVANT,
+                    matched_requirement_id=None,
+                ),
+                rationale="无激活情报需求，无法判定相关性",
+            )
+
+        ir_block = "\n".join(f"- #{ir.id}：{ir.name}（{ir.content_spec}）" for ir in active_irs)
+        judgment, completion = self.llm.chat.completions.create_with_completion(
+            response_model=ReviewJudgmentResult,
+            messages=[
+                {"role": "system", "content": REVIEW_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": f"线索陈述：{item.statement}\n\n激活情报需求：\n{ir_block}",
+                },
+            ],
+            model=self.model,
+        )
+        self._meter(target="item_review", usage=completion.usage)
+
+        return ReviewProposal(
+            payload=ReviewPayload(
+                item_id=item.id,
+                decision=judgment.decision,
+                reason_type=judgment.reason_type,
+                matched_requirement_id=judgment.matched_requirement_id,
+            ),
+            rationale=judgment.rationale,
+        )
+
+    def _meter(self, *, target: str, usage: CompletionUsage) -> None:
+        """调用计量即时入账：LLM 成本在调用时已发生，与提案成败无关（技术架构 §1）。"""
+        self.session.add(
+            LlmCall(
+                agent=self.AGENT_NAME,
+                target=target,
+                model=self.model,
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+            )
+        )
+        self.session.commit()

@@ -19,6 +19,8 @@ from iih.ledger.models import (
     Modality,
     Outlet,
     ProvenanceChainNode,
+    ReviewDecision,
+    ReviewDecisionEnum,
     Source,
 )
 from iih.ledger.proposal import (
@@ -28,6 +30,7 @@ from iih.ledger.proposal import (
     ItemProvenanceAppendProposal,
     Proposal,
     ProvenanceData,
+    ReviewProposal,
     SourceRegisterProposal,
 )
 
@@ -64,6 +67,8 @@ class StateMachineExecutor:
                 return self._execute_ir_activate(proposal, session)
             case ItemProvenanceAppendProposal():
                 return self._execute_item_provenance_append(proposal, session)
+            case ReviewProposal():
+                return self._execute_review(proposal, session)
             case _:
                 raise ProposalRejectedError([f"未知提案类型：{type(proposal).__name__}"])
 
@@ -365,3 +370,63 @@ class StateMachineExecutor:
         session.flush()
         session.commit()
         return ExecutionResult(item_id=item.id)
+
+    # ---- IIH-01.02 线索审查过滤 ----
+
+    def _execute_review(self, proposal: ReviewProposal, session: Session) -> ExecutionResult:
+        """审查决策：Lead → Candidate（PASS）或 Lead → Noise（REJECT）（doc-02 §4.3、doc-06 §4）。
+
+        校验：item 存在 + 当前状态为 LEAD（前置）+ 依据非空 + decision 合法
+        + PASS 时 matched_requirement_id 必填且需求存在且状态为 ACTIVE
+        + REJECT 时 reason_type 必填。
+        落账：状态迁移 + ReviewDecision 记录（依据持久化，满足 doc-08 #8）。
+        """
+        payload = proposal.payload
+        reasons: list[str] = []
+
+        if not proposal.rationale.strip():
+            reasons.append("依据缺失")
+
+        item = session.get(IntelligenceItem, payload.item_id)
+        if item is None:
+            reasons.append("情报条目不存在")
+        elif item.status is not ItemStatus.LEAD:
+            reasons.append(f"前置违反：当前状态 {item.status.value}，需 Lead")
+
+        matched_requirement: IntelligenceRequirement | None = None
+        if payload.decision is ReviewDecisionEnum.PASS:
+            if payload.matched_requirement_id is None:
+                reasons.append("通过决策缺少匹配的情报需求")
+            else:
+                matched_requirement = session.get(
+                    IntelligenceRequirement, payload.matched_requirement_id
+                )
+                if matched_requirement is None:
+                    reasons.append("匹配的情报需求不存在")
+                elif matched_requirement.status is not IntelligenceRequirementStatus.ACTIVE:
+                    reasons.append(f"匹配的情报需求非激活态：{matched_requirement.status.value}")
+        else:  # REJECT
+            if payload.reason_type is None:
+                reasons.append("否决决策缺少理由类型")
+
+        if reasons:
+            raise ProposalRejectedError(reasons)
+
+        assert item is not None
+        if payload.decision is ReviewDecisionEnum.PASS:
+            item.status = ItemStatus.CANDIDATE
+        else:
+            item.status = ItemStatus.NOISE
+
+        decision = ReviewDecision(
+            item=item,
+            decision=payload.decision,
+            reason_type=payload.reason_type,
+            matched_requirement=matched_requirement,
+            rationale=proposal.rationale,
+        )
+        session.add(decision)
+        session.flush()
+        item_id = item.id
+        session.commit()
+        return ExecutionResult(item_id=item_id)
