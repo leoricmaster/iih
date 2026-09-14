@@ -1,10 +1,10 @@
 ---
 id: IIH-01.05
 title: 一键类型化反馈
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-11 01:41'
-updated_date: '2026-09-11 08:59'
+updated_date: '2026-09-14 11:01'
 labels:
   - product
   - ui
@@ -37,3 +37,23 @@ ordinal: 8000
 <!-- DOD:BEGIN -->
 - [ ] #1 符合 doc-08 通用 DoD（完成定义与豁免规则）
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. 模型：FeedbackType 六类型枚举 + Feedback 表（item_id/feedback_type/reason/created_at，doc-04 §1），条目挂 feedbacks 关系；豁免「评价方」（单消费方前提，doc-07 §1，comment 留痕）
+2. 反馈路由（记账层新模块 ledger/feedback_router.py，doc-05 §4）：submit 校验（条目存在、事实错误理由必填、空理由默认「快捷 · {类型}」）→ 落账；六类型分流表（doc-02 §6：处置/信用/配置/迭代），信用通路消费归 IIH-01.06
+3. Alembic 迁移：feedback 表
+4. Web：POST /items/{id}/feedback（成功 303 回来源页，失败渲染详情页带错误）；收件箱行内一键反馈（五类型直发 + 事实错误跳详情补理由）；详情页反馈表单（六类型 + 理由，事实错误必填）+ 反馈记录内联（doc-07 §3）
+5. 测试：路由单测（默认理由/事实错误必填拦截/分流表全类型）+ Web 用例（AC#1 一键有效默认理由落账且分流含信用通路；AC#2 事实错误无理由拦截不落账、补理由后可提交；无效类型/404）
+6. 本地门禁 ruff/mypy/pytest-cov 对齐 CI 口径，push 后 CI 绿再收尾
+<!-- SECTION:PLAN:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-09-14 11:01
+---
+豁免留痕（doc-08 豁免规则）：Feedback 表豁免「评价方」字段——单消费方前提（doc-07 §1），同 IntelligenceRequirement 豁免「提出方」先例；反馈目标本任务仅情报条目，命题反馈待命题实体落地后开放。
+---
+<!-- COMMENTS:END -->

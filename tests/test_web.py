@@ -1,4 +1,4 @@
-"""Web 页单测（doc-07 §3、原型）：录入素材、信源库、收件箱与条目详情。"""
+"""Web 页单测（doc-07 §3、§5、原型）：录入素材、信源库、收件箱、条目详情与反馈。"""
 
 from datetime import UTC, datetime
 
@@ -9,6 +9,8 @@ from sqlalchemy import select
 from conftest import make_fake_llm
 from iih.ledger.formula import CONTENT_CREDIBILITY_FORMULA_VERSION
 from iih.ledger.models import (
+    Feedback,
+    FeedbackType,
     IntelligenceItem,
     ItemMode,
     ItemStatus,
@@ -315,3 +317,107 @@ def test_item_detail_returns_404_for_unknown_item(inbox_client: TestClient) -> N
     response = inbox_client.get("/items/9999")
 
     assert response.status_code == 404
+
+
+# ---- IIH-01.05 一键类型化反馈 ----
+
+
+def test_quick_feedback_from_inbox_card_lands_with_default_reason(
+    inbox_client: TestClient, db_session
+) -> None:
+    """对应 IIH-01.05 AC#1：收件箱卡片一键「有效」→ 落账、默认理由「快捷 · 有效」、回来源页。"""
+    item = _seed_verified_item(db_session)
+
+    response = inbox_client.post(
+        f"/items/{item.id}/feedback",
+        data={"feedback_type": "valid"},
+        headers={"referer": "http://testserver/"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "http://testserver/"
+    feedback = db_session.scalars(select(Feedback)).unique().one()
+    assert feedback.item_id == item.id
+    assert feedback.feedback_type is FeedbackType.VALID
+    assert feedback.reason == "快捷 · 有效"
+
+
+def test_factual_error_without_reason_blocked_on_detail(
+    inbox_client: TestClient, db_session
+) -> None:
+    """对应 IIH-01.05 AC#2：详情页选「事实错误」未填理由 → 校验拦截不落账；补理由后可提交。"""
+    item = _seed_verified_item(db_session)
+
+    blocked = inbox_client.post(
+        f"/items/{item.id}/feedback", data={"feedback_type": "factual_error", "reason": " "}
+    )
+
+    assert "事实错误反馈必须填写理由" in blocked.text
+    assert db_session.scalars(select(Feedback)).unique().first() is None
+
+    submitted = inbox_client.post(
+        f"/items/{item.id}/feedback",
+        data={"feedback_type": "factual_error", "reason": "合资协议从未签署"},
+        follow_redirects=False,
+    )
+
+    assert submitted.status_code == 303
+    feedback = db_session.scalars(select(Feedback)).unique().one()
+    assert feedback.feedback_type is FeedbackType.FACTUAL_ERROR
+    assert feedback.reason == "合资协议从未签署"
+
+
+def test_feedback_with_unknown_type_rejected(inbox_client: TestClient, db_session) -> None:
+    item = _seed_verified_item(db_session)
+
+    response = inbox_client.post(
+        f"/items/{item.id}/feedback", data={"feedback_type": "great", "reason": "x"}
+    )
+
+    assert "未知反馈类型：great" in response.text
+    assert db_session.scalars(select(Feedback)).unique().first() is None
+
+
+def test_feedback_to_unknown_item_returns_404(inbox_client: TestClient) -> None:
+    response = inbox_client.post(
+        "/items/9999/feedback", data={"feedback_type": "valid"}, follow_redirects=False
+    )
+
+    assert response.status_code == 404
+
+
+def test_item_detail_shows_feedback_form_and_records(inbox_client: TestClient, db_session) -> None:
+    """详情页反馈表单六类型可选；反馈记录内联在详情（doc-07 §3）。"""
+    item = _seed_verified_item(db_session)
+    db_session.add(Feedback(item=item, feedback_type=FeedbackType.VALID, reason="快捷 · 有效"))
+    db_session.flush()
+
+    response = inbox_client.get(f"/items/{item.id}")
+
+    assert response.status_code == 200
+    assert "反馈" in response.text
+    for option in (
+        "valid",
+        "factual_error",
+        "duplicate_noise",
+        "irrelevant",
+        "outdated",
+        "rating_dispute",
+    ):
+        assert f'value="{option}"' in response.text
+    assert "反馈记录" in response.text
+    assert "快捷 · 有效" in response.text
+
+
+def test_inbox_offers_one_click_feedback_entry(inbox_client: TestClient, db_session) -> None:
+    """收件箱卡片一键反馈：五类型直发 + 事实错误跳详情补理由（doc-07 §5）。"""
+    item = _seed_verified_item(db_session)
+
+    response = inbox_client.get("/")
+
+    assert response.status_code == 200
+    assert f'action="/items/{item.id}/feedback"' in response.text
+    for button_type in ("valid", "duplicate_noise", "irrelevant", "outdated", "rating_dispute"):
+        assert f'name="feedback_type" value="{button_type}"' in response.text
+    assert f'href="/items/{item.id}#feedback"' in response.text  # 事实错误跳详情

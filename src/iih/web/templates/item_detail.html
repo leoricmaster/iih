@@ -16,6 +16,14 @@
     dd { margin: 0.15rem 0 0 0; }
     .snapshot { white-space: pre-wrap; background: #f7f7f7; border: 1px solid #eee; border-radius: 4px; padding: 0.5rem; }
     .muted { color: #777; font-size: 0.85rem; }
+    .errors { color: #b22; }
+    .feedback-form select, .feedback-form textarea {
+      display: block; width: 100%; max-width: 480px; margin-top: 0.4rem; padding: 0.3rem;
+      font: inherit; box-sizing: border-box;
+    }
+    .feedback-form button { margin-top: 0.5rem; }
+    .feedback-list { list-style: none; padding: 0; }
+    .feedback-list li { padding: 0.3rem 0; border-bottom: 1px solid #eee; }
   </style>
 </head>
 <body>
@@ -48,6 +56,33 @@
   <p class="muted">变量与结论分离（decision-01）：N、R 为事实查询，公式为确定性映射、版本化可重放。</p>
   {% else %}
   <div class="muted">暂无核实记录</div>
+  {% endif %}
+
+  <h2 id="feedback">反馈</h2>
+  {% if errors %}
+  <ul class="errors">{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+  {% endif %}
+  <form method="post" action="/items/{{ item.id }}/feedback" class="feedback-form">
+    <select name="feedback_type">
+      {% for type, label in feedback_type_options %}
+      <option value="{{ type.value }}" {% if form_type == type.value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <textarea name="reason" rows="2" placeholder="理由（事实错误必填，其余默认「快捷 · {类型}」）">{{ form_reason }}</textarea>
+    <button type="submit">提交反馈</button>
+  </form>
+
+  {% if feedbacks %}
+  <dl>
+    <dt>反馈记录</dt>
+    <dd>
+      <ul class="feedback-list">
+        {% for feedback in feedbacks %}
+        <li>{{ feedback_type_labels[feedback.feedback_type] }} · {{ feedback.reason }} · {{ feedback.created_at.strftime('%Y-%m-%d %H:%M') }}</li>
+        {% endfor %}
+      </ul>
+    </dd>
+  </dl>
   {% endif %}
 </body>
 </html>

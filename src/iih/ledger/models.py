@@ -73,6 +73,17 @@ class VerificationOutcome(enum.StrEnum):
     UNDETERMINED = "undetermined"  # 存疑：Candidate → Undetermined
 
 
+class FeedbackType(enum.StrEnum):
+    """反馈六类型（术语表 §七、doc-02 §6）。"""
+
+    VALID = "valid"  # 有效
+    FACTUAL_ERROR = "factual_error"  # 事实错误
+    DUPLICATE_NOISE = "duplicate_noise"  # 重复 / 噪音
+    IRRELEVANT = "irrelevant"  # 不相关
+    OUTDATED = "outdated"  # 过期
+    RATING_DISPUTE = "rating_dispute"  # 评级异议
+
+
 class SourceType(enum.StrEnum):
     """信源类型（doc-04 §1）。"""
 
@@ -198,6 +209,9 @@ class IntelligenceItem(Base):
     verification_records: Mapped[list["VerificationRecord"]] = relationship(
         back_populates="item", cascade="all, delete-orphan"
     )
+    feedbacks: Mapped[list["Feedback"]] = relationship(
+        back_populates="item", cascade="all, delete-orphan"
+    )
 
 
 class IntelligenceRequirement(Base):
@@ -304,3 +318,21 @@ class VerificationRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     item: Mapped["IntelligenceItem"] = relationship(back_populates="verification_records")
+
+
+class Feedback(Base):
+    """反馈（doc-04 §1、doc-02 §6）：消费方对条目的类型化评价，经反馈路由分流。
+
+    本任务最简：目标仅情报条目（命题反馈待命题实体落地）；豁免「评价方」
+    （单消费方前提，doc-07 §1）——任务 comment 留痕。
+    """
+
+    __tablename__ = "feedback"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("intelligence_item.id"), index=True)
+    feedback_type: Mapped[FeedbackType] = mapped_column(_sa_enum(FeedbackType))
+    reason: Mapped[str] = mapped_column(Text)  # 理由：快捷反馈默认「快捷 · {类型}」
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    item: Mapped["IntelligenceItem"] = relationship(back_populates="feedbacks")
