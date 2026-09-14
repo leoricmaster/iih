@@ -4,7 +4,7 @@ title: 一键类型化反馈
 status: In Progress
 assignee: []
 created_date: '2026-09-11 01:41'
-updated_date: '2026-09-14 11:01'
+updated_date: '2026-09-14 11:07'
 labels:
   - product
   - ui
@@ -48,6 +48,12 @@ ordinal: 8000
 5. 测试：路由单测（默认理由/事实错误必填拦截/分流表全类型）+ Web 用例（AC#1 一键有效默认理由落账且分流含信用通路；AC#2 事实错误无理由拦截不落账、补理由后可提交；无效类型/404）
 6. 本地门禁 ruff/mypy/pytest-cov 对齐 CI 口径，push 后 CI 绿再收尾
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+实现落账：Feedback 表（六类型枚举）+ 反馈路由 ledger/feedback_router.py（submit 校验落账 + FEEDBACK_ROUTING 分流表，doc-02 §6）+ Web 入口（收件箱行内一键五类型直发、事实错误跳详情；详情页六类型表单、事实错误理由必填、反馈记录内联）+ 迁移 c3d4e5f6a7b8。本地门禁全绿：156 用例、覆盖率 94.95%、ruff/mypy/format 通过。
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 
