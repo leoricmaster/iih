@@ -1,10 +1,10 @@
 ---
 id: IIH-01.05
 title: 一键类型化反馈
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-11 01:41'
-updated_date: '2026-09-14 11:07'
+updated_date: '2026-09-14 11:12'
 labels:
   - product
   - ui
@@ -29,13 +29,13 @@ ordinal: 8000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Given 消费方在条目卡片 When 一键选择「有效」 Then 反馈落账，默认理由「快捷 · 有效」，路由分流到信用通路
-- [ ] #2 Given 消费方在详情页 When 选择「事实错误」但未填理由 Then 校验拦截，必填理由后方可提交
+- [x] #1 Given 消费方在条目卡片 When 一键选择「有效」 Then 反馈落账，默认理由「快捷 · 有效」，路由分流到信用通路
+- [x] #2 Given 消费方在详情页 When 选择「事实错误」但未填理由 Then 校验拦截，必填理由后方可提交
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 符合 doc-08 通用 DoD（完成定义与豁免规则）
+- [x] #1 符合 doc-08 通用 DoD（完成定义与豁免规则）
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -63,3 +63,9 @@ created: 2026-09-14 11:01
 豁免留痕（doc-08 豁免规则）：Feedback 表豁免「评价方」字段——单消费方前提（doc-07 §1），同 IntelligenceRequirement 豁免「提出方」先例；反馈目标本任务仅情报条目，命题反馈待命题实体落地后开放。
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+实现：Feedback 表（FeedbackType 六类型枚举，术语表 §七 English 命名）+ 迁移 c3d4e5f6a7b8 → 反馈路由（记账层新模块 ledger/feedback_router.py：submit 校验落账——条目存在、事实错误理由必填、空理由默认「快捷 · {类型}」（doc-07 §5 快捷口径）；FEEDBACK_ROUTING 分流表逐类型对齐领域模型 §6——仅有效/事实错误动信用，信用通路消费归 IIH-01.06）→ Web 入口（POST /items/{id}/feedback：成功 303 回来源页、失败回详情页带错误；收件箱行内一键五类型直发 + 事实错误跳详情补理由；详情页六类型表单、理由可补写、反馈记录内联 doc-07 §3）。AC↔测试映射：AC#1↔test_feedback_router::test_valid_quick_feedback_defaults_reason_and_routes_to_credit + test_web::test_quick_feedback_from_inbox_card_lands_with_default_reason（一键有效→默认理由「快捷 · 有效」落账、channels 含信用通路、303 回收件箱）；AC#2↔test_web::test_factual_error_without_reason_blocked_on_detail（无理由拦截不落账、补理由后提交成功）+ test_feedback_router::test_factual_error_without_reason_rejected（支撑）。验证：156 tests 全绿、覆盖率 94.95%（≥80%）、ruff/mypy/format 干净；实现 commit c748da1 推送后 CI（run 34836562244）全绿。豁免：Feedback 表豁免「评价方」字段（单消费方前提 doc-07 §1，同 01.08 提出方先例）comment 留痕；反馈目标本任务仅情报条目，命题反馈待命题实体落地。
+<!-- SECTION:FINAL_SUMMARY:END -->
