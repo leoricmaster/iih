@@ -116,12 +116,12 @@ def item_feedback(
     feedback_type: str = Form(""),
     reason: str = Form(""),
     session: Session = Depends(get_session),
-    llm=Depends(get_llm_client),
 ):
     """反馈提交：反馈路由校验落账并分流（doc-02 §6）；失败回详情页带错误，成功回来源页。
 
     审查异议（review_dispute）落账后携理由立即重审（doc-02 §6 处置通路）：
     重审通过回候选并即时核实；维持否决保持噪音；异议记录留存供迭代通路。
+    LLM 仅异议路径按需构造（其余反馈不依赖智能体，无凭据环境不可因依赖注入失败）。
     """
     item = session.get(IntelligenceItem, item_id)
     if item is None:
@@ -148,7 +148,9 @@ def item_feedback(
         )
 
     if type_enum is FeedbackType.REVIEW_DISPUTE:
-        err = _run_dispute_rereview(item=item, reason=reason, session=session, llm=llm)
+        err = _run_dispute_rereview(
+            item=item, reason=reason, session=session, llm=get_llm_client(request)
+        )
         if err is not None:
             return RedirectResponse(f"/items/{item_id}?err={quote_plus(err)}", status_code=303)
 
