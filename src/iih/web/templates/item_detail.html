@@ -52,7 +52,7 @@
 </div>
 {% elif item.status.value == 'verified' and latest_verification %}
 <div class="box"><h2>评级依据</h2>
-  <div>独立信源 {{ latest_verification.independent_source_count }} · 信源档 {{ latest_verification.source_reliability }} → 可信度 {{ latest_verification.content_credibility }}（{{ latest_verification.rating }}）</div>
+  <div>独立信源 {{ latest_verification.independent_source_count }} · 信源档 {{ latest_verification.source_reliability }} → {{ latest_verification.rating }}</div>
 </div>
 {% elif item.status.value == 'undetermined' %}
 <div class="box"><h2>存疑说明</h2>
