@@ -1,10 +1,10 @@
 ---
 id: IIH-01.13
 title: 原型还原与全链路 UI 化
-status: Done
+status: In Progress
 assignee: []
 created_date: '2026-09-14 12:16'
-updated_date: '2026-09-15 05:01'
+updated_date: '2026-09-15 05:07'
 labels:
   - product
   - web
@@ -74,6 +74,8 @@ ordinal: 14000
 
 <!-- SECTION:NOTES:BEGIN -->
 并单留痕（2026-09-15）：原 IIH-01.14、IIH-01.15 两张补救单经用户裁决多余，内容并入本单后归档（文件留 backlog/archive/tasks/）。验证证据：第一轮 commit 70227ae（CI 绿）、第二轮 commit 3fc9533（本地门禁全绿：ruff/mypy/pytest 246 通过覆盖 92.9%；CI run 34930686286 绿；8001 实例过各项 AC 的结构与服务端行为）。历史误建 IIH-02 亦归档。
+
+2026-09-15 用户裁决：本单保持打开，作为 MVP 验收收尾 vehicle——待用户完成 MVP 整体验收确认后才关闭；原 01.14/01.15 任务文件彻底删除（内容已并入本单描述，commits 70227ae / 3fc9533 留痕）。
 <!-- SECTION:NOTES:END -->
 
 ## Comments
