@@ -4,7 +4,7 @@ title: 原型还原与全链路 UI 化
 status: Done
 assignee: []
 created_date: '2026-09-14 12:16'
-updated_date: '2026-09-14 15:51'
+updated_date: '2026-09-15 05:01'
 labels:
   - product
   - web
@@ -22,7 +22,7 @@ ordinal: 14000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-把既有流水线全能力经浏览器可达，按 doc-07 §3 还原原型，支撑 IIH-01 全程浏览器验收。
+把既有流水线全能力经浏览器可达，按 doc-07 §3 还原原型，支撑 IIH-01 全程浏览器验收；后续各轮验收补救均并入本单（2026-09-15 裁决：验收补救不开新单，归本单到底）。
 
 范围：
 1. 全站壳：三组导航（消费/探究/管理，未开通项置灰）、收件箱为首页、「录入素材」全局按钮。
@@ -30,6 +30,10 @@ ordinal: 14000
 3. 流水线 UI 化：抽取 run_round、后台自动循环（可配可关）、「立即运行一轮」按钮。
 
 范围外：探究组页面（研究课题/命题/图谱）、推送通道、分发记录/警报、附件上传（IIH-01.09–11）、调度节奏配置。
+
+验收补救第一轮（原 IIH-01.14 并入，commit 70227ae）：两跳采集（入口页选链→文章页抽取，选链/抽取 temperature=0、链接候选确定性预排序）、原文快照改存 MinIO（内容寻址键 + CSP 沙箱回放）、审查异议重审闭环（噪音态专属、理由必填、携理由重审）、需求表单 placeholder 引导、种子数据 seed 命令（版本化 dev.json 幂等落账）。
+
+验收补救第二轮（原 IIH-01.15 并入，commit 3fc9533）：信源库/情报需求表可拖列宽（localStorage 按页记忆）、登记信源与新建需求收成折叠面板（校验失败自动展开）+表单紧凑化（主体/初始评级）、需求页删分组标题改单表按状态序、立即运行移顶栏常驻、采集抽取补事件时间（正文明确日期才填、naive 按 UTC）、评级依据并一行、反馈区重构（收件箱一键 / 详情单表单、事实错误条件必填）。
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -65,6 +69,12 @@ ordinal: 14000
 6. **测试**：web 各页 GET/POST 路径（含筛选、需求动作迁移、画像页）；pipeline run_round 用 fake LLM 走全链；后台循环配置（0=不启动）与 app 集成冒烟。门禁同 CI（ruff/mypy src/pytest-cov≥80）。
 7. **验收环境**：compose 重建镜像，配合本地夹具页（/tmp/iih-acceptance）走用户旅程。
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+并单留痕（2026-09-15）：原 IIH-01.14、IIH-01.15 两张补救单经用户裁决多余，内容并入本单后归档（文件留 backlog/archive/tasks/）。验证证据：第一轮 commit 70227ae（CI 绿）、第二轮 commit 3fc9533（本地门禁全绿：ruff/mypy/pytest 246 通过覆盖 92.9%；CI run 34930686286 绿；8001 实例过各项 AC 的结构与服务端行为）。历史误建 IIH-02 亦归档。
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 
@@ -127,5 +137,5 @@ created: 2026-09-14 15:51
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-全站壳+六页面还原原型；流水线抽取 run_round + 后台自动循环 + 「立即运行一轮」；情报需求全生命周期迁移补齐（暂停/恢复/关闭）；存疑补救闭环（收件箱指向、画像补设/调整信用档、重新核实回流）与试采集预览；初始信用档登记必填（核心并入 doc-04 §2.3，decision-09 解散）；页面文案产品化。浏览器验收偏差 #1–#9 全部留痕并修复；214 用例通过、覆盖 94%；单子类型修订为 chore（无新用户能力，属交付形态改变）。
+原型还原与全链路 UI 化，含两轮验收补救并单（两跳采集/快照 MinIO/异议重审/seed、列宽拖拽/折叠面板/单表/顶栏运行/事件时间抽取/评级一行/反馈单表单）；commit 70227ae、3fc9533，CI 绿。
 <!-- SECTION:FINAL_SUMMARY:END -->
