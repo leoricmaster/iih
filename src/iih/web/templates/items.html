@@ -23,7 +23,7 @@
     <tr><th>陈述</th><th>评级</th><th>独立信源</th><th>状态</th><th>出处信源</th><th>媒介</th><th>采集模式</th><th>事件时间</th></tr>
     {% for item in items %}
     <tr>
-      <td><a href="/items/{{ item.id }}">{{ item.statement }}</a>{% if item.mode.value == 'manual' %} <span class="pill">人工提交</span>{% endif %}</td>
+      <td><a class="stmtline" href="/items/{{ item.id }}">{{ item.statement }}</a>{% if item.mode.value == 'manual' %} <span class="pill">人工提交</span>{% endif %}</td>
       <td>{% if item.rating %}<span class="pill rating">{{ item.rating }}</span>{% else %}<span class="pill dashed">未评级</span>{% endif %}</td>
       <td>{% if verifications.get(item.id) %}×{{ verifications[item.id].independent_source_count }}{% else %}—{% endif %}</td>
       <td><span class="pill {{ 'dashed' if item.retracted }}">{{ status_labels[item.status] }}{{ ' · 作废' if item.retracted }}</span></td>

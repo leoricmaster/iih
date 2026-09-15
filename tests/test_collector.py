@@ -9,10 +9,16 @@ from conftest import (
     FakeSnapshotStore,
     make_fake_llm,
     make_fake_llm_collect,
+    make_fake_llm_manual,
     make_selection_article,
     make_selection_self,
 )
-from iih.agents.collector import Collector, StatementExtractionResult
+from iih.agents.collector import (
+    Collector,
+    ManualExtractionResult,
+    ManualStatement,
+    StatementExtractionResult,
+)
 from iih.agents.director import CollectionTask
 from iih.ledger.models import (
     IntelligenceItem,
@@ -36,15 +42,16 @@ STATEMENT = "W 公司渠道大会：下一代电驱矿卡计划 2027Q2 量产"
 
 
 def test_manual_submission_builds_lead_proposal_with_metering(db_session, w_attribution) -> None:
-    """支撑 IIH-01.01 AC#1：采集智能体归因补记信源与途径，组装线索提案。"""
+    """支撑 IIH-01.01 AC#1：纪要抽取陈述 + 归因补记信源与途径，组装线索提案。"""
     collector = Collector(
         llm=make_fake_llm(w_attribution, prompt_tokens=120, completion_tokens=60),
         session=db_session,
         model="deepseek-chat",
     )
 
-    proposal = collector.submit_manual(medium_code="meeting_discussion", statement=STATEMENT)
-    result = StateMachineExecutor().execute(proposal, session=db_session)
+    proposals = collector.submit_manual(medium_code="meeting_discussion", statement=STATEMENT)
+    assert len(proposals) == 1
+    result = StateMachineExecutor().execute(proposals[0], session=db_session)
 
     item = db_session.get(IntelligenceItem, result.item_id)
     assert item is not None
@@ -59,25 +66,75 @@ def test_manual_submission_builds_lead_proposal_with_metering(db_session, w_attr
     assert item.source is not None and item.source.name == "W 公司"
     assert item.source.confirmed is False  # 新信源待确认（decision-05）
     assert item.outlet is not None and item.outlet.name == "渠道大会现场"
-    assert proposal.rationale == "陈述主体为 W 公司，发布场景为渠道大会"
+    assert (
+        proposals[0].rationale == "纪要中的客观要点（归因：陈述主体为 W 公司，发布场景为渠道大会）"
+    )
 
-    # LLM 调用计量入账：智能体/对象/token/时间/模型
+    # LLM 调用计量入账：抽取 + 归因各一笔（智能体/对象/token/时间/模型）
     calls = db_session.scalars(select(LlmCall)).all()
-    assert len(calls) == 1
-    assert calls[0].agent == "collector"
-    assert calls[0].model == "deepseek-chat"
-    assert calls[0].prompt_tokens == 120
-    assert calls[0].completion_tokens == 60
+    assert len(calls) == 2
+    assert all(c.agent == "collector" and c.model == "deepseek-chat" for c in calls)
+    assert all(c.prompt_tokens == 120 and c.completion_tokens == 60 for c in calls)
+
+
+def test_manual_submission_extracts_multiple_statements(db_session, w_attribution) -> None:
+    """纪要多条陈述：一次提交 → 每条陈述一个线索，共享归因与快照（doc-07 §2.3）。"""
+    minutes = f"{STATEMENT}。\n李总另提到：2027 年研发投入翻倍。"
+    extraction = ManualExtractionResult(
+        statements=[
+            ManualStatement(statement=STATEMENT, rationale="第一条要点"),
+            ManualStatement(
+                statement="李总提到：2027 年研发投入翻倍",
+                event_time=datetime(2027, 1, 1),
+                rationale="第二条要点",
+            ),
+        ]
+    )
+    collector = Collector(
+        llm=make_fake_llm_manual(extraction, w_attribution),
+        session=db_session,
+        model="deepseek-chat",
+    )
+
+    proposals = collector.submit_manual(medium_code="meeting_discussion", statement=minutes)
+    assert len(proposals) == 2
+
+    items = []
+    for proposal in proposals:
+        result = StateMachineExecutor().execute(proposal, session=db_session)
+        items.append(db_session.get(IntelligenceItem, result.item_id))
+
+    assert [i.statement for i in items] == [STATEMENT, "李总提到：2027 年研发投入翻倍"]
+    assert items[0].event_time is None
+    assert items[1].event_time == datetime(2027, 1, 1, tzinfo=UTC)
+    assert {i.content_fingerprint for i in items}.__len__() == 2  # 指纹按陈述区分
+    assert all(i.original_snapshot == minutes for i in items)  # 快照 = 提交全文
+    assert all(i.source.name == "W 公司" and i.outlet.name == "渠道大会现场" for i in items)
+    assert len(db_session.scalars(select(Source)).unique().all()) == 1  # 归因一次、信源复用
+
+
+def test_manual_submission_without_intelligence_skips_attribution(
+    db_session, w_attribution
+) -> None:
+    """抽取为空：不调归因、不产提案（计量只记抽取一笔）。"""
+    collector = Collector(
+        llm=make_fake_llm_manual(ManualExtractionResult(statements=[]), w_attribution),
+        session=db_session,
+        model="deepseek-chat",
+    )
+
+    assert collector.submit_manual(medium_code="meeting_discussion", statement="寒暄闲聊") == []
+    assert len(db_session.scalars(select(LlmCall)).all()) == 1
 
 
 def test_manual_submission_without_outlet(db_session, w_attribution) -> None:
     attribution = w_attribution.model_copy(update={"outlet_name": None})
     collector = Collector(llm=make_fake_llm(attribution), session=db_session, model="deepseek-chat")
 
-    proposal = collector.submit_manual(medium_code="industry_exchange", statement=STATEMENT)
+    proposals = collector.submit_manual(medium_code="industry_exchange", statement=STATEMENT)
 
-    assert proposal.provenance.outlet_name is None
-    result = StateMachineExecutor().execute(proposal, session=db_session)
+    assert proposals[0].provenance.outlet_name is None
+    result = StateMachineExecutor().execute(proposals[0], session=db_session)
     item = db_session.get(IntelligenceItem, result.item_id)
     assert item is not None and item.outlet is None
     assert item.medium.code == "industry_exchange"
@@ -94,10 +151,10 @@ def test_reuses_source_across_submissions(db_session, fake_llm) -> None:
     collector = Collector(llm=fake_llm, session=db_session, model="deepseek-chat")
     executor = StateMachineExecutor()
     for statement in (STATEMENT, STATEMENT + "（补充）"):
-        executor.execute(
-            collector.submit_manual(medium_code="meeting_discussion", statement=statement),
-            session=db_session,
-        )
+        for proposal in collector.submit_manual(
+            medium_code="meeting_discussion", statement=statement
+        ):
+            executor.execute(proposal, session=db_session)
 
     assert len(db_session.scalars(select(Source)).unique().all()) == 1
 

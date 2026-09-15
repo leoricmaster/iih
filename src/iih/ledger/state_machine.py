@@ -152,6 +152,15 @@ class StateMachineExecutor:
                 else None
             )
 
+        if proposal.payload.content_fingerprint:
+            duplicate = session.scalars(
+                select(IntelligenceItem.id).where(
+                    IntelligenceItem.content_fingerprint == proposal.payload.content_fingerprint
+                )
+            ).first()
+            if duplicate is not None:
+                raise ProposalRejectedError([f"陈述与既有条目 #{duplicate} 内容重复，未重复落账"])
+
         item = IntelligenceItem(
             statement=proposal.payload.statement,
             status=ItemStatus.LEAD,  # 状态前置 [*] → 线索（doc-02 §4.3）

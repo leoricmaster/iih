@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 from iih.agents.collector import (
     ArticleSelectionResult,
     AttributionResult,
+    ManualExtractionResult,
+    ManualStatement,
     StatementExtractionResult,
 )
 from iih.agents.reviewer import ReviewJudgmentResult
@@ -21,15 +23,41 @@ from iih.config import get_settings
 TEST_DB_NAME = "iih_test"
 
 
+def make_manual_extraction(*statements: str) -> ManualExtractionResult:
+    """纪要抽取替身：给定若干陈述文本（均无事件时间）。"""
+    return ManualExtractionResult(
+        statements=[ManualStatement(statement=s, rationale="纪要中的客观要点") for s in statements]
+    )
+
+
+def make_fake_llm_manual(
+    extraction: ManualExtractionResult,
+    attribution: AttributionResult,
+    prompt_tokens: int = 120,
+    completion_tokens: int = 60,
+):
+    """instructor 替身：人工路径分发（纪要抽取 / 归因）。"""
+    return _make_dispatch_llm(
+        {ManualExtractionResult: extraction, AttributionResult: attribution},
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+    )
+
+
 def make_fake_llm(
     attribution: AttributionResult, prompt_tokens: int = 120, completion_tokens: int = 60
 ):
-    """instructor 客户端替身：chat.completions.create_with_completion 返回 (归因, 补全)。"""
+    """instructor 客户端替身：人工路径——抽取为恒等（提交文本整体作为一条陈述）+ 归因。"""
 
     class Completions:
         def create_with_completion(self, *, response_model, messages, **kwargs):
-            assert response_model is AttributionResult
-            return attribution, SimpleNamespace(
+            if response_model is ManualExtractionResult:
+                user = next(m["content"] for m in messages if m["role"] == "user")
+                result: object = make_manual_extraction(user.split("素材文本：\n", 1)[1])
+            else:
+                assert response_model is AttributionResult
+                result = attribution
+            return result, SimpleNamespace(
                 usage=SimpleNamespace(
                     prompt_tokens=prompt_tokens, completion_tokens=completion_tokens
                 )

@@ -339,6 +339,19 @@ def test_automated_item_new_lands_lead_with_fingerprint_and_initial_node(db_sess
     assert nodes[0].outlet.name == "官网"
 
 
+def test_item_new_rejects_duplicate_fingerprint(db_session) -> None:
+    """内容指纹与既有条目重复：驳回不落账（人工纪要重复提交的落账层校验）。"""
+    seed_confirmed_w_outlet(db_session)
+    executor = StateMachineExecutor()
+    first = executor.execute(make_automated_proposal(), session=db_session)
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        executor.execute(make_automated_proposal(), session=db_session)
+
+    assert any("内容重复" in r and f"#{first.item_id}" in r for r in excinfo.value.reasons)
+    assert len(db_session.scalars(select(IntelligenceItem)).all()) == 1
+
+
 def test_automated_item_new_rejects_unconfirmed_source(db_session) -> None:
     """AUTOMATED 模式：信源未 confirmed 驳回（保护已登记信源边界）。"""
     source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=False)

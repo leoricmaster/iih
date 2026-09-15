@@ -11,11 +11,13 @@ from conftest import (
     FakeSnapshotStore,
     make_fake_llm,
     make_fake_llm_dispatch,
+    make_fake_llm_manual,
     make_fake_llm_review,
+    make_manual_extraction,
     make_selection_article,
     make_selection_self,
 )
-from iih.agents.collector import StatementExtractionResult
+from iih.agents.collector import ManualExtractionResult, StatementExtractionResult
 from iih.agents.reviewer import ReviewJudgmentResult
 from iih.ledger.credit import SOURCE_CREDIT_FORMULA_VERSION
 from iih.ledger.formula import CONTENT_CREDIBILITY_FORMULA_VERSION
@@ -77,10 +79,46 @@ def test_submit_lands_lead_end_to_end(client: TestClient, db_session) -> None:
 
     assert response.status_code == 200
     assert STATEMENT in response.text  # 近期人工提交列表可见
+    assert "已提交：抽取陈述 1 条，进入流水线" in response.text  # 成功 toast
     items = db_session.scalars(select(IntelligenceItem)).all()
     assert len(items) == 1
     assert items[0].status is ItemStatus.LEAD
     assert items[0].source is not None and items[0].source.name == "W 公司"
+
+
+def test_submit_extracts_multiple_statements(db_session, w_attribution) -> None:
+    """纪要多条陈述：一次提交落账多条线索，toast 回显条数（doc-07 §2.3）。"""
+    other = "李总提到：2027 年研发投入翻倍"
+    app = create_app()
+    app.state.llm = make_fake_llm_manual(make_manual_extraction(STATEMENT, other), w_attribution)
+    app.dependency_overrides[get_session] = lambda: db_session
+    with TestClient(app) as multi_client:
+        response = multi_client.post(
+            "/submissions",
+            data={"medium_code": "meeting_discussion", "statement": f"{STATEMENT}。\n{other}。"},
+            follow_redirects=True,
+        )
+
+    assert response.status_code == 200
+    assert "已提交：抽取陈述 2 条，进入流水线" in response.text
+    items = db_session.scalars(select(IntelligenceItem)).all()
+    assert len(items) == 2
+    assert {i.statement for i in items} == {STATEMENT, other}
+    assert all(i.status is ItemStatus.LEAD for i in items)
+
+
+def test_submit_without_intelligence_reports_error(db_session, w_attribution) -> None:
+    """抽取为空：回显错误、不落账。"""
+    app = create_app()
+    app.state.llm = make_fake_llm_manual(ManualExtractionResult(statements=[]), w_attribution)
+    app.dependency_overrides[get_session] = lambda: db_session
+    with TestClient(app) as empty_client:
+        response = empty_client.post(
+            "/submissions", data={"medium_code": "meeting_discussion", "statement": "寒暄闲聊"}
+        )
+
+    assert "未能从提交文本中识别出情报陈述" in response.text
+    assert db_session.scalars(select(IntelligenceItem)).first() is None
 
 
 def test_submit_with_missing_fields_is_blocked(client: TestClient, db_session) -> None:
@@ -89,7 +127,7 @@ def test_submit_with_missing_fields_is_blocked(client: TestClient, db_session) -
 
     assert response.status_code == 200  # 重渲染表单并提示
     assert "请选择媒介" in response.text
-    assert "请填写陈述内容" in response.text
+    assert "请填写纪要内容" in response.text
     assert db_session.scalars(select(IntelligenceItem)).first() is None  # 不生成提案
 
 

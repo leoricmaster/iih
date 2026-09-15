@@ -1,7 +1,7 @@
 """采集智能体 Collector（doc-06 §3）· 最简归因版：人工提交路径 + 自动拉取路径。
 
-人工提交不经定向任务化，直接从陈述 + 媒介推断信源与途径，组装溯源五要素，
-产出「情报条目新建」提案；落账由状态机执行器执行（本智能体不直接写账）。
+人工提交不经定向任务化：文字纪要经 LLM 抽取陈述 + 归因信源与途径（溯源五要素），
+每条陈述一个「情报条目新建」提案；落账由状态机执行器执行（本智能体不直接写账）。
 范围：仅文字载体（附件管线 IIH-01.09~11、实体提及 IIH-01.12 另行剥离）。
 
 自动拉取（IIH-01.15 两跳）：入口页选链 → 抓文章页 → 文章页抽陈述；
@@ -98,6 +98,33 @@ class StatementExtractionResult(BaseModel):
     rationale: str = Field(description="一句话抽取依据")
 
 
+MANUAL_EXTRACTION_SYSTEM_PROMPT = """你是情报采集智能体的陈述抽取模块。
+给定一段人工录入的素材文本（会议 / 访谈纪要、当场记录的要点）与其媒介，
+识别其中全部有情报价值的客观陈述。
+
+要求：
+- statements：客观陈述句列表，每条独立可判定、描述事实而非评价；同义合并、按原文顺序；
+  超过 10 条时只取情报价值最高的 10 条；无情报价值内容返回空列表；
+- 每条 event_time：该事实的发生日期（ISO 格式，如 2026-08-30），文本无明确日期依据则留空，不得编造；
+- 每条 rationale：一句话抽取依据。"""
+
+
+class ManualStatement(BaseModel):
+    """纪要抽取出的单条陈述。"""
+
+    statement: str = Field(description="客观陈述句")
+    event_time: datetime | None = Field(
+        default=None, description="该事实的发生日期；文本无明确日期依据则留空"
+    )
+    rationale: str = Field(description="一句话抽取依据")
+
+
+class ManualExtractionResult(BaseModel):
+    """LLM 结构化纪要抽取输出（一次提交 → 多条陈述）。"""
+
+    statements: list[ManualStatement] = Field(default_factory=list, description="抽取的陈述列表")
+
+
 def _as_utc(value: datetime | None) -> datetime | None:
     """LLM 输出的 naive 时间按 UTC 入账（库内时间戳一律 aware UTC）。"""
     if value is not None and value.tzinfo is None:
@@ -115,11 +142,31 @@ class Collector:
         self.session = session
         self.model = model
 
-    def submit_manual(self, *, medium_code: str, statement: str) -> IntelligenceItemNewProposal:
-        """人工提交路径：陈述 + 媒介 → LLM 最简归因 → 线索提案（doc-07 §2.3）。"""
+    def submit_manual(
+        self, *, medium_code: str, statement: str
+    ) -> list[IntelligenceItemNewProposal]:
+        """人工提交路径：文字纪要 → LLM 抽取陈述 + 最简归因 → 每条陈述一个线索提案（doc-07 §2.3）。
+
+        抽取为空（无情报价值）不调归因，返回空列表。
+        """
         medium = self.session.scalars(select(Medium).where(Medium.code == medium_code)).first()
         if medium is None:
             raise ValueError(f"媒介不存在：{medium_code}")
+
+        extraction, completion = self.llm.chat.completions.create_with_completion(
+            response_model=ManualExtractionResult,
+            messages=[
+                {"role": "system", "content": MANUAL_EXTRACTION_SYSTEM_PROMPT},
+                {"role": "user", "content": f"媒介：{medium.name}\n素材文本：\n{statement}"},
+            ],
+            model=self.model,
+            temperature=0,  # 抽取需可复现：同输入应同输出
+        )
+        self._meter(target="manual_submission", usage=completion.usage)
+
+        statements = [s for s in extraction.statements if s.statement.strip()]
+        if not statements:
+            return []
 
         attribution, completion = self.llm.chat.completions.create_with_completion(
             response_model=AttributionResult,
@@ -131,22 +178,28 @@ class Collector:
         )
         self._meter(target="manual_submission", usage=completion.usage)
 
-        return IntelligenceItemNewProposal(
-            payload=IntelligenceItemNewPayload(
-                statement=statement,
-                mode=ItemMode.MANUAL,
-            ),
-            provenance=ProvenanceData(
-                modality_code="text",  # 本故事范围：仅文字载体
-                medium_code=medium_code,
-                collected_at=datetime.now(UTC),
-                original_snapshot=statement,  # 文字载体：原文快照 = 提交文本
-                source_name=attribution.source_name,
-                source_type=attribution.source_type,
-                outlet_name=attribution.outlet_name or None,
-            ),
-            rationale=attribution.rationale,
-        )
+        collected_at = datetime.now(UTC)
+        return [
+            IntelligenceItemNewProposal(
+                payload=IntelligenceItemNewPayload(
+                    statement=s.statement.strip(),
+                    mode=ItemMode.MANUAL,
+                    event_time=_as_utc(s.event_time),
+                    content_fingerprint=fingerprint(s.statement.strip()),
+                ),
+                provenance=ProvenanceData(
+                    modality_code="text",  # 本故事范围：仅文字载体
+                    medium_code=medium_code,
+                    collected_at=collected_at,
+                    original_snapshot=statement,  # 文字载体：原文快照 = 提交文本
+                    source_name=attribution.source_name,
+                    source_type=attribution.source_type,
+                    outlet_name=attribution.outlet_name or None,
+                ),
+                rationale=f"{s.rationale}（归因：{attribution.rationale}）",
+            )
+            for s in statements
+        ]
 
     def collect_outlet(
         self,
