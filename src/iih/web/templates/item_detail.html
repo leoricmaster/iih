@@ -23,7 +23,7 @@
     <span class="muted">信源{{ item.rating[0] }} · 可信度{{ item.rating[1:] }}</span>{% endif %}
     {% if latest_verification %}<span class="pill">独立信源 ×{{ latest_verification.independent_source_count }}</span>{% endif %}
   </div>
-  <div class="muted">出处 {% if item.source %}<a href="/sources/{{ item.source.id }}">{{ item.source.name }}</a>{% else %}—{% endif %} · 事件时间 {{ item.event_time | dtstr('%Y-%m-%d') if item.event_time else '—' }} · 采集 {{ item.collected_at | dtstr }} · {{ item.medium.name }} / {{ item.modality.name }} · {{ '自动拉取' if item.mode.value == 'automated' else '人工提交' }}</div>
+  <div class="muted">出处 {% if item.source %}<a href="/sources/{{ item.source.id }}">{{ item.source.name }}</a>{% else %}—{% endif %} · 事件时间 {{ item.event_time | dtstr('%Y-%m-%d') if item.event_time else '—' }} · 采集 {{ item.collected_at | dtstr }} · {{ item.medium.name }} · {{ '自动拉取' if item.mode.value == 'automated' else '人工提交' }}</div>
   <h3 style="margin-top:10px">状态迁移</h3>
   <div class="muted">{% for label, at in trail %}{{ label }}<span class="muted">（{{ at | dtstr if at else '—' }}）</span>{% if not loop.last %} <span class="arrow">→</span> {% endif %}{% endfor %}</div>
 </div>
@@ -52,7 +52,7 @@
 </div>
 {% elif item.status.value == 'verified' and latest_verification %}
 <div class="box"><h2>评级依据</h2>
-  <div>{{ latest_verification.formula_version }}：N={{ latest_verification.independent_source_count }} · R={{ latest_verification.source_reliability }} → 可信度 {{ latest_verification.content_credibility }} → 评级 {{ latest_verification.rating }}</div>
+  <div>独立信源 {{ latest_verification.independent_source_count }} · 信源档 {{ latest_verification.source_reliability }} → 可信度 {{ latest_verification.content_credibility }}（{{ latest_verification.rating }}）</div>
 </div>
 {% elif item.status.value == 'undetermined' %}
 <div class="box"><h2>存疑说明</h2>
@@ -90,7 +90,7 @@
       {% endfor %}
     </div>
     <div class="field" style="margin-top:10px">
-      <label data-reason-label>理由（补写，可选）</label>
+      <label data-reason-label>理由（可选）</label>
       <textarea name="reason">{{ fb_reason or '' }}</textarea>
     </div>
     <button class="btn primary">提交反馈</button>

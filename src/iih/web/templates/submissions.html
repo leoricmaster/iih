@@ -23,7 +23,7 @@
   <div style="border-bottom:1px solid #eee;padding:8px 0">
     <a href="/items/{{ item.id }}">{{ item.statement }}</a>
     <span class="pill {{ 'dashed' if item.retracted }}">{{ status_labels[item.status] }}{{ ' · 作废' if item.retracted }}</span>
-    <span class="muted">{{ item.medium.name }} / {{ item.modality.name }} · {{ item.collected_at | dtstr }}</span>
+    <span class="muted">{{ item.medium.name }} · {{ item.collected_at | dtstr }}</span>
   </div>
   {% endfor %}
   {% else %}

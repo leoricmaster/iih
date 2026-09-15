@@ -92,11 +92,9 @@ details.box[open]>summary{margin-bottom:10px}
 table[data-resize] th{position:relative}
 .colhandle{position:absolute;right:-3px;top:0;bottom:0;width:7px;cursor:col-resize}
 .colhandle:hover{background:rgba(43,91,215,.25)}
-details.form-panel>summary{cursor:pointer;list-style:none;user-select:none;display:inline-block;border:1px solid #c9c9c9;background:#fff;border-radius:6px;padding:4px 12px;font-size:13px;color:#333}
-details.form-panel>summary::-webkit-details-marker{display:none}
-details.form-panel>summary::before{content:"＋ "}
-details.form-panel[open]>summary{margin-bottom:10px}
-details.form-panel[open]>summary::before{content:"－ "}
+.listbar{display:flex;align-items:center;gap:8px;margin:0 0 10px}
+.listbar-t{font-size:18px;font-weight:650}
+.listbar .acts{margin-left:auto;display:flex;gap:8px;align-items:center}
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 @media(max-width:860px){.grid3{grid-template-columns:1fr}}
 .fbtype input{position:absolute;opacity:0;pointer-events:none}

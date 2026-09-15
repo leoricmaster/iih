@@ -1,10 +1,17 @@
 {% extends "base.html" %}
 {% block title %}情报需求{% endblock %}
 {% block content %}
-<h1 class="page">情报需求</h1>
+<div class="listbar">
+  <span class="listbar-t">情报需求</span>
+  <span class="acts">
+    <form method="post" action="/pipeline/run">
+      <button class="btn primary" title="立即运行一轮：采集 → 审查 → 核实{% if pipeline_interval %}（后台每 {{ pipeline_interval // 60 }} 分钟自动运行）{% endif %}">▶ 立即运行</button>
+    </form>
+    <button type="button" class="btn" data-panel="register-panel">＋ 新建需求</button>
+  </span>
+</div>
 
-<details class="box form-panel"{{ ' open' if errors }}>
-  <summary>新建情报需求</summary>
+<details class="box form-panel" id="register-panel"{{ ' open' if errors }}>
   {% if errors %}{% for e in errors %}<div class="err">{{ e }}</div>{% endfor %}{% endif %}
   <form method="post" action="/requirements">
     <div class="field"><label>名称</label><input type="text" name="name" placeholder="例：长期跟踪某公司动态" value="{{ form_name or '' }}"></div>

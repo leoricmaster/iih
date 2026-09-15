@@ -1,3 +1,12 @@
+// 工具栏按钮开合表单面板（details 无 summary，由外部按钮控制开合）
+document.querySelectorAll("[data-panel]").forEach((btn) => {
+  const panel = document.getElementById(btn.dataset.panel);
+  if (!panel) return;
+  btn.addEventListener("click", () => {
+    panel.open = !panel.open;
+  });
+});
+
 // 表格列宽拖拽（data-resize 表格）：冻结初始列宽后可拖，宽度按页面路径记 localStorage
 (() => {
   document.querySelectorAll("table[data-resize]").forEach((table) => {
@@ -47,8 +56,8 @@
     const fe =
       form.querySelector("input[name=feedback_type]:checked")?.value === "factual_error";
     ta.required = fe;
-    ta.placeholder = fe ? "必填：请说明事实错误的依据" : "补写理由（可选）";
-    if (label) label.textContent = fe ? "理由（必填）" : "理由（补写，可选）";
+    ta.placeholder = fe ? "必填：请说明事实错误的依据" : "理由（可选）";
+    if (label) label.textContent = fe ? "理由（必填）" : "理由（可选）";
   };
   form.querySelectorAll("input[name=feedback_type]").forEach((r) =>
     r.addEventListener("change", sync)

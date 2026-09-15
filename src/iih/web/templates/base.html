@@ -34,9 +34,6 @@
 <div id="right">
 <header id="topbar">
   <div class="nav-actions">
-    <form method="post" action="/pipeline/run">
-      <button class="btn small primary" title="立即运行一轮：采集 → 审查 → 核实{% if pipeline_interval %}（后台每 {{ pipeline_interval // 60 }} 分钟自动运行）{% endif %}">▶ 立即运行</button>
-    </form>
     <details class="account">
       <summary>单账号 · lancer ▾</summary>
       <div class="menu">

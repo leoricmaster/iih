@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block title %}信源库{% endblock %}
 {% block content %}
-<h1 class="page">信源库</h1>
+<div class="listbar">
+  <span class="listbar-t">信源库</span>
+  <span class="acts"><button type="button" class="btn primary" data-panel="register-panel">＋ 登记信源</button></span>
+</div>
 
 {% if pending_sources %}
 <div class="box"><h2>待确认</h2>
@@ -14,8 +17,7 @@
 </div>
 {% endif %}
 
-<details class="box form-panel"{{ ' open' if errors }}>
-  <summary>登记信源</summary>
+<details class="box form-panel" id="register-panel"{{ ' open' if errors }}>
   {% if errors %}{% for e in errors %}<div class="err">{{ e }}</div>{% endfor %}{% endif %}
   <form method="post" action="/sources">
     <div class="grid3">
