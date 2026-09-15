@@ -95,6 +95,10 @@ table[data-resize] th{position:relative}
 .listbar{display:flex;align-items:center;gap:8px;margin:0 0 10px}
 .listbar-t{font-size:18px;font-weight:650}
 .listbar .acts{margin-left:auto;display:flex;gap:8px;align-items:center}
+dialog.modal{border:none;border-radius:10px;padding:0;box-shadow:0 12px 40px rgba(0,0,0,.18);width:min(560px,calc(100vw - 32px))}
+dialog.modal::backdrop{background:rgba(20,24,38,.35)}
+.modal-card{padding:16px 18px}
+.modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 @media(max-width:860px){.grid3{grid-template-columns:1fr}}
 .fbtype input{position:absolute;opacity:0;pointer-events:none}

@@ -1,9 +1,13 @@
-// 工具栏按钮开合表单面板（details 无 summary，由外部按钮控制开合）
+// 工具栏按钮开合模态弹窗（原生 dialog：ESC/点遮罩关闭，校验失败自动重开）
 document.querySelectorAll("[data-panel]").forEach((btn) => {
-  const panel = document.getElementById(btn.dataset.panel);
-  if (!panel) return;
-  btn.addEventListener("click", () => {
-    panel.open = !panel.open;
+  const dlg = document.getElementById(btn.dataset.panel);
+  if (dlg) btn.addEventListener("click", () => dlg.showModal());
+});
+document.querySelectorAll("dialog.modal").forEach((dlg) => {
+  if (dlg.dataset.open !== undefined) dlg.showModal();
+  dlg.querySelector("[data-close]")?.addEventListener("click", () => dlg.close());
+  dlg.addEventListener("click", (e) => {
+    if (e.target === dlg) dlg.close();
   });
 });
 

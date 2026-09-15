@@ -11,15 +11,18 @@
   </span>
 </div>
 
-<details class="box form-panel" id="register-panel"{{ ' open' if errors }}>
-  {% if errors %}{% for e in errors %}<div class="err">{{ e }}</div>{% endfor %}{% endif %}
-  <form method="post" action="/requirements">
-    <div class="field"><label>名称</label><input type="text" name="name" placeholder="例：长期跟踪某公司动态" value="{{ form_name or '' }}"></div>
-    <div class="field"><label>内容规格</label>
-      <textarea name="content_spec" rows="4" placeholder="自由文本，可按维度分行写：&#10;例1 主题：矿卡、电动化、订单与业绩&#10;例2 关注对象：W 公司及其竞争对手；一次信源优先&#10;例3 排除：招聘、营销活动；时效一周内">{{ form_spec or '' }}</textarea></div>
-    <button class="btn primary">创建</button>
-  </form>
-</details>
+<dialog class="modal" id="register-panel"{{ ' data-open' if errors }}>
+  <div class="modal-card">
+    <div class="modal-head"><b>新建需求</b><button type="button" class="btn small" data-close title="关闭">✕</button></div>
+    {% if errors %}{% for e in errors %}<div class="err">{{ e }}</div>{% endfor %}{% endif %}
+    <form method="post" action="/requirements">
+      <div class="field"><label>名称</label><input type="text" name="name" placeholder="例：长期跟踪某公司动态" value="{{ form_name or '' }}"></div>
+      <div class="field"><label>内容规格</label>
+        <textarea name="content_spec" rows="4" placeholder="自由文本，可按维度分行写：&#10;例1 主题：矿卡、电动化、订单与业绩&#10;例2 关注对象：W 公司及其竞争对手；一次信源优先&#10;例3 排除：招聘、营销活动；时效一周内">{{ form_spec or '' }}</textarea></div>
+      <button class="btn primary">创建</button>
+    </form>
+  </div>
+</dialog>
 
 <div class="box">
   {% if requirements %}
