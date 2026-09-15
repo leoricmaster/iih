@@ -757,7 +757,7 @@ def test_requirement_missing_fields_blocked(inbox_client: TestClient, db_session
 
 
 def test_requirement_full_lifecycle_via_browser(inbox_client: TestClient, db_session) -> None:
-    """草稿 → 激活 ⇄ 暂停 → 关闭（终态），迁移经提案落账（doc-02 §4.1）。"""
+    """草稿 → 激活 ⇄ 暂停 → 关闭 → 重开，迁移经提案落账（doc-02 §4.1）。"""
     ir_id = _create_ir_via_form(inbox_client)
 
     def status() -> IntelligenceRequirementStatus:
@@ -783,11 +783,11 @@ def test_requirement_full_lifecycle_via_browser(inbox_client: TestClient, db_ses
 
     closed = act("close")
     assert status() is IntelligenceRequirementStatus.CLOSED
-    assert 'name="action"' not in closed.text  # 终态无动作按钮
+    assert 'value="activate"' in closed.text  # 关闭态可重开
 
-    blocked = act("activate")  # 关闭为终态：再激活被驳回并回显
-    assert "前置违反" in blocked.text
-    assert status() is IntelligenceRequirementStatus.CLOSED
+    reopened = act("activate")  # 关闭 → 重开 → 激活
+    assert status() is IntelligenceRequirementStatus.ACTIVE
+    assert 'value="pause"' in reopened.text  # 回到激活态
 
 
 def test_requirement_spec_update_while_active(inbox_client: TestClient, db_session) -> None:
@@ -854,7 +854,200 @@ def test_requirement_detail_shows_collect_overview(inbox_client: TestClient, db_
     assert "采集概览" in detail.text
     assert "W 公司" in detail.text
     assert "官网" in detail.text
-    assert "所有激活需求共享" in detail.text
+    assert "覆盖全部信源" in detail.text
+
+
+# ---- IIH-03.01 需求级采集配置 ----
+
+
+def test_requirement_list_shows_config_columns(inbox_client: TestClient, db_session) -> None:
+    """列表页展示四项配置列：频率/事件时效/信源/生效窗口。"""
+    from datetime import date
+
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, credit="B")
+    ir_configured = IntelligenceRequirement(
+        name="高频跟踪",
+        content_spec="主题",
+        status=IntelligenceRequirementStatus.ACTIVE,
+        collection_frequency="1h",
+        event_freshness="7d",
+        valid_from=date(2026, 9, 15),
+        valid_until=date(2026, 12, 31),
+        sources=[source],
+    )
+    ir_default = IntelligenceRequirement(
+        name="默认",
+        content_spec="主题",
+        status=IntelligenceRequirementStatus.DRAFT,
+    )
+    db_session.add_all([source, ir_configured, ir_default])
+    db_session.flush()
+
+    listing = inbox_client.get("/requirements")
+
+    assert "频率" in listing.text
+    assert "事件时效" in listing.text
+    assert "信源" in listing.text
+    assert "生效窗口" in listing.text
+    assert "1h" in listing.text
+    assert "7d" in listing.text
+    assert "W 公司" in listing.text
+    assert "2026-12-31" in listing.text
+    assert "默认" in listing.text  # 未配置频率的 IR 显示默认
+    assert "不限" in listing.text
+    assert "全部" in listing.text
+    assert "常驻" in listing.text
+
+
+def test_requirement_detail_shows_config_row(inbox_client: TestClient, db_session) -> None:
+    """详情页头部展示四项配置行。"""
+    from datetime import date
+
+    ir = IntelligenceRequirement(
+        name="高频跟踪",
+        content_spec="主题",
+        status=IntelligenceRequirementStatus.ACTIVE,
+        collection_frequency="1h",
+        event_freshness="7d",
+        valid_until=date(2026, 12, 31),
+    )
+    db_session.add(ir)
+    db_session.flush()
+
+    detail = inbox_client.get(f"/requirements/{ir.id}")
+
+    assert "采集配置" in detail.text
+    assert "1h" in detail.text
+    assert "7d" in detail.text
+    assert "2026-12-31" in detail.text
+
+
+def test_requirement_create_with_config(inbox_client: TestClient, db_session) -> None:
+    """新建表单带四项配置：落账读取。"""
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, credit="B")
+    db_session.add(source)
+    db_session.flush()
+
+    response = inbox_client.post(
+        "/requirements",
+        data={
+            "name": "高频跟踪",
+            "content_spec": "主题",
+            "collection_frequency": "1h",
+            "event_freshness": "7d",
+            "valid_from": "2026-09-15",
+            "valid_until": "2026-12-31",
+            "source_ids": [str(source.id)],
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    ir_id = int(response.headers["location"].rsplit("/", 1)[-1])
+    ir = db_session.get(IntelligenceRequirement, ir_id)
+    assert ir is not None
+    assert ir.collection_frequency == "1h"
+    assert ir.event_freshness == "7d"
+    assert ir.valid_until.isoformat() == "2026-12-31"
+    assert len(ir.sources) == 1
+    assert ir.sources[0].name == "W 公司"
+
+
+def test_requirement_create_rejects_invalid_frequency(inbox_client: TestClient, db_session) -> None:
+    """新建表单：频率格式非法回显错误。"""
+    response = inbox_client.post(
+        "/requirements",
+        data={"name": "test", "content_spec": "主题", "collection_frequency": "一周内"},
+    )
+
+    assert "采集频率格式非法" in response.text
+    assert db_session.scalars(select(IntelligenceRequirement)).first() is None
+
+
+def test_requirement_config_update_while_active(inbox_client: TestClient, db_session) -> None:
+    """激活态可编辑采集配置，落账读取。"""
+    from datetime import date
+
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, credit="B")
+    ir = IntelligenceRequirement(
+        name="跟踪",
+        content_spec="主题",
+        status=IntelligenceRequirementStatus.ACTIVE,
+    )
+    db_session.add_all([source, ir])
+    db_session.flush()
+
+    response = inbox_client.post(
+        f"/requirements/{ir.id}/config",
+        data={
+            "collection_frequency": "6h",
+            "event_freshness": "24h",
+            "valid_from": "2026-09-15",
+            "valid_until": "2026-12-31",
+            "source_ids": [str(source.id)],
+        },
+        follow_redirects=True,
+    )
+
+    assert "采集配置已保存" in response.text
+    db_session.expire_all()
+    refreshed = db_session.get(IntelligenceRequirement, ir.id)
+    assert refreshed is not None
+    assert refreshed.collection_frequency == "6h"
+    assert refreshed.event_freshness == "24h"
+    assert refreshed.valid_from == date(2026, 9, 15)
+    assert refreshed.valid_until == date(2026, 12, 31)
+    assert len(refreshed.sources) == 1
+
+
+def test_requirement_config_update_blocked_when_not_active(
+    inbox_client: TestClient, db_session
+) -> None:
+    """非激活态不可编辑采集配置。"""
+    ir = IntelligenceRequirement(
+        name="test", content_spec="主题", status=IntelligenceRequirementStatus.DRAFT
+    )
+    db_session.add(ir)
+    db_session.flush()
+
+    response = inbox_client.post(
+        f"/requirements/{ir.id}/config",
+        data={"collection_frequency": "1h"},
+        follow_redirects=True,
+    )
+
+    assert "仅激活态可编辑采集配置" in response.text
+    db_session.expire_all()
+    refreshed = db_session.get(IntelligenceRequirement, ir.id)
+    assert refreshed is not None
+    assert refreshed.collection_frequency is None
+
+
+def test_requirement_config_update_empty_valid_until_means_standing(
+    inbox_client: TestClient, db_session
+) -> None:
+    """截止日留空 = 常驻：提交空 valid_until 清空既有截止日。"""
+    from datetime import date
+
+    ir = IntelligenceRequirement(
+        name="test",
+        content_spec="主题",
+        status=IntelligenceRequirementStatus.ACTIVE,
+        valid_until=date(2026, 12, 31),
+    )
+    db_session.add(ir)
+    db_session.flush()
+
+    inbox_client.post(
+        f"/requirements/{ir.id}/config",
+        data={"valid_until": ""},
+        follow_redirects=True,
+    )
+
+    db_session.expire_all()
+    refreshed = db_session.get(IntelligenceRequirement, ir.id)
+    assert refreshed is not None
+    assert refreshed.valid_until is None
 
 
 # ---- IIH-01.13 信源画像页 ----
@@ -1243,7 +1436,7 @@ def test_requirement_probe_previews_without_landing(db_session, monkeypatch, w_e
         response = client.post(f"/requirements/{ir_id}/probe")
 
     assert response.status_code == 200
-    assert "配置自检" in response.text
+    assert "采集概览" in response.text
     assert w_extraction.statement in response.text
     assert w_extraction.rationale in response.text
     assert "预判 · 命中" in response.text
@@ -1305,6 +1498,24 @@ def test_requirement_probe_without_outlets_shows_hint(db_session) -> None:
 
     assert response.status_code == 200
     assert "无已登记互联网途径" in response.text
+
+
+def test_requirement_probe_blocked_for_non_active(db_session) -> None:
+    """非激活态（如关闭）不允许试采集，回显错误且不触 LLM。"""
+    ir = IntelligenceRequirement(
+        name="跟踪 W 公司",
+        content_spec="主题：矿卡",
+        status=IntelligenceRequirementStatus.CLOSED,
+    )
+    db_session.add(ir)
+    db_session.flush()
+    app = _probe_app(db_session, object())
+
+    with TestClient(app) as client:
+        response = client.post(f"/requirements/{ir.id}/probe")
+
+    assert response.status_code == 200
+    assert "仅激活态可试采集" in response.text
 
 
 # ---- IIH-01.15 快照对象存档与详情呈现 / IIH-01.16 需求表单引导 ----

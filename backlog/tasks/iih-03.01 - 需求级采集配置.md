@@ -1,9 +1,11 @@
 ---
 id: IIH-03.01
 title: 需求级采集配置
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-09-15 07:46'
+updated_date: '2026-09-15 10:03'
 labels:
   - product
   - pipeline
@@ -13,10 +15,10 @@ references:
   - doc-02 §4.1
   - IIH-01
   - IIH-01.13
+parent_task_id: IIH-03
 priority: medium
 type: feature
 ordinal: 16001
-parent_task_id: IIH-03
 ---
 
 ## Description
@@ -52,3 +54,9 @@ parent_task_id: IIH-03
 <!-- DOD:BEGIN -->
 - [ ] #1 符合 doc-08 通用 DoD（完成定义与豁免规则）
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. 工具函数 parse_duration_to_seconds（Nh/Nd/Nw/Nm） 2. 模型字段+迁移（频率/时效/生效起止/last_collected_at + M-N 关联表） 3. Register payload 扩展与状态机校验 4. Director 调度差异化（到期关闭+due 过滤+信源绑定过滤） 5. Pipeline 更新 last_collected_at 6. Reviewer 时效否决 7. Web UI 列表四列+详情配置行+编辑表单+新建表单+配置更新端点 8. CLI ir-create 可选参数 9. 种子数据示例配置 10. 文档同步 doc-02/doc-04 11. 测试覆盖 12. 本地门禁与 Docker 重建
+<!-- SECTION:PLAN:END -->

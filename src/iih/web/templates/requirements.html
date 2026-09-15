@@ -19,21 +19,44 @@
       <div class="field"><label>名称</label><input type="text" name="name" placeholder="例：长期跟踪某公司动态" value="{{ form_name or '' }}"></div>
       <div class="field"><label>内容规格</label>
         <textarea name="content_spec" rows="4" placeholder="自由文本，可按维度分行写：&#10;例1 主题：矿卡、电动化、订单与业绩&#10;例2 关注对象：W 公司及其竞争对手；一次信源优先&#10;例3 排除：招聘、营销活动；时效一周内">{{ form_spec or '' }}</textarea></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px">
+        <div class="field" style="margin:0"><label>采集频率</label><input type="text" name="collection_frequency" placeholder="1h / 24h / 6h；留空 = 默认" value="{{ form_frequency or '' }}"></div>
+        <div class="field" style="margin:0"><label>事件时效</label><input type="text" name="event_freshness" placeholder="7d / 24h；留空 = 不限" value="{{ form_freshness or '' }}"></div>
+      </div>
+      <div class="field"><label>信源绑定</label>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          {% for s in confirmed_sources %}
+          <label style="display:flex;gap:4px;align-items:center;font-size:12.5px;color:#666"><input type="checkbox" name="source_ids" value="{{ s.id }}"{{ ' checked' if s.id in form_source_ids }}>{{ s.name }}</label>
+          {% endfor %}
+        </div>
+        <div class="muted" style="margin-top:4px">不勾选 = 全部信源；仅过滤自动采集，人工录入不受限</div>
+      </div>
+      <div class="field"><label>生效窗口</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="date" name="valid_from" value="{{ form_valid_from or '' }}" style="flex:1;min-width:140px">
+          <span class="muted">至</span>
+          <input type="date" name="valid_until" value="{{ form_valid_until or '' }}" style="flex:1;min-width:140px">
+        </div>
+        <div class="muted" style="margin-top:4px">截止日留空 = 常驻（不自动关闭）；到期日当天自动关闭</div>
+      </div>
       <button class="btn primary">创建</button>
     </form>
   </div>
 </dialog>
 
-<div class="box">
+<div class="box table-box">
   {% if requirements %}
   <table data-resize>
-    <tr><th>需求</th><th>状态</th><th>命中</th><th>创建时间</th></tr>
+    <tr><th>需求</th><th>频率</th><th>事件时效</th><th>信源</th><th>生效窗口</th><th>状态</th><th>命中</th></tr>
     {% for r in requirements %}
     <tr>
       <td><a href="/requirements/{{ r.id }}">{{ r.name }}</a></td>
+      <td class="muted">{{ r.collection_frequency or '默认' }}</td>
+      <td class="muted">{{ r.event_freshness or '不限' }}</td>
+      <td class="muted">{{ format_sources(r) }}</td>
+      <td class="muted">{{ format_window(r) }}</td>
       <td><span class="pill">{{ status_labels[r.status] }}</span></td>
       <td class="muted">{{ hit_counts.get(r.id, 0) }}</td>
-      <td class="muted">{{ r.created_at | dtstr }}</td>
     </tr>
     {% endfor %}
   </table>

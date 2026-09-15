@@ -1,12 +1,13 @@
 """情报需求页（doc-07 §3，原型「情报需求」页）：列表 + 详情 + 声明与生命周期动作。
 
 迁移经提案落账（doc-02 §4.1：确认激活 / 挂起 / 恢复 / 关闭）；
-内容规格微调为消费方配置编辑（非智能体写入，直接更新字段）。
+内容规格微调与采集配置编辑为消费方配置编辑（非智能体写入，直接更新字段）。
 配置自检（试采集预览）：逐途径抓取→抽取→按本需求审查预判，不落账。
 覆盖度量（已分发/已消费）待分发记录里程碑加厚，本页以命中计数近似。
 """
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -19,6 +20,7 @@ from iih.agents.collector import Collector
 from iih.agents.director import CollectionTask
 from iih.agents.reviewer import Reviewer
 from iih.config import get_settings
+from iih.ledger.duration import parse_duration_to_seconds
 from iih.ledger.models import (
     IntelligenceItem,
     IntelligenceRequirement,
@@ -102,6 +104,40 @@ def _collect_outlets(session: Session) -> list[Outlet]:
     return [o for o in outlets if o.medium is not None and o.medium.code == "internet" and o.entry]
 
 
+def _confirmed_sources(session: Session) -> list[Source]:
+    """已确认信源列表（用于信源绑定 checkbox）。"""
+    return list(
+        session.scalars(select(Source).where(Source.confirmed.is_(True)).order_by(Source.name))
+    )
+
+
+def _format_valid_window(ir: IntelligenceRequirement) -> str:
+    """生效窗口展示：起止任一可空。"""
+    if ir.valid_from is None and ir.valid_until is None:
+        return "常驻"
+    parts: list[str] = []
+    parts.append(ir.valid_from.isoformat() if ir.valid_from else "—")
+    parts.append(ir.valid_until.isoformat() if ir.valid_until else "不限")
+    return " ~ ".join(parts)
+
+
+def _format_sources(ir: IntelligenceRequirement) -> str:
+    """信源绑定展示：空=全部。"""
+    if not ir.sources:
+        return "全部"
+    return "、".join(s.name for s in ir.sources)
+
+
+def _parse_date(s: str | None) -> date | None:
+    """日期文本解析；空或非法返回 None。"""
+    if not s or not s.strip():
+        return None
+    try:
+        return date.fromisoformat(s.strip())
+    except ValueError:
+        return None
+
+
 @router.get("/requirements")
 def requirements_page(request: Request, session: Session = Depends(get_session)):
     requirements = list(
@@ -124,6 +160,9 @@ def requirements_page(request: Request, session: Session = Depends(get_session))
             "hit_counts": hit_counts,
             "status_labels": IR_STATUS_LABELS,
             "item_status_labels": STATUS_LABELS,
+            "confirmed_sources": _confirmed_sources(session),
+            "format_window": _format_valid_window,
+            "format_sources": _format_sources,
         },
     )
 
@@ -133,14 +172,36 @@ def requirement_create(
     request: Request,
     name: str = Form(""),
     content_spec: str = Form(""),
+    collection_frequency: str = Form(""),
+    event_freshness: str = Form(""),
+    valid_from: str = Form(""),
+    valid_until: str = Form(""),
+    source_ids: list[int] = Form([]),
     session: Session = Depends(get_session),
 ):
-    """新建情报需求：[*] → 草稿 Draft（doc-02 §4.1）。"""
+    """新建情报需求：[*] → 草稿 Draft（doc-02 §4.1）+ 需求级采集配置（IIH-03.01）。"""
     errors: list[str] = []
     if not name.strip():
         errors.append("请填写需求名称")
     if not content_spec.strip():
         errors.append("请填写内容规格")
+    frequency = collection_frequency.strip() or None
+    freshness = event_freshness.strip() or None
+    if frequency and parse_duration_to_seconds(frequency) is None:
+        errors.append(f"采集频率格式非法：{frequency}（须 Nh/Nd/Nw/Nm）")
+    if freshness and parse_duration_to_seconds(freshness) is None:
+        errors.append(f"事件时效格式非法：{freshness}（须 Nh/Nd/Nw/Nm）")
+    v_from = _parse_date(valid_from)
+    v_until = _parse_date(valid_until)
+    if v_from and v_until and v_until < v_from:
+        errors.append("生效窗口结束日早于起始日")
+    bound_sources: list[Source] = []
+    for sid in source_ids:
+        src = session.get(Source, sid)
+        if src is None or not src.confirmed:
+            errors.append(f"信源不可绑定：{sid}")
+        else:
+            bound_sources.append(src)
 
     if errors:
         requirements = list(session.scalars(select(IntelligenceRequirement)))
@@ -155,15 +216,29 @@ def requirement_create(
                 "hit_counts": {r.id: len(_hit_item_ids(session, r.id)) for r in requirements},
                 "status_labels": IR_STATUS_LABELS,
                 "item_status_labels": STATUS_LABELS,
+                "confirmed_sources": _confirmed_sources(session),
+                "format_window": _format_valid_window,
+                "format_sources": _format_sources,
                 "errors": errors,
                 "form_name": name,
                 "form_spec": content_spec,
+                "form_frequency": collection_frequency,
+                "form_freshness": event_freshness,
+                "form_valid_from": valid_from,
+                "form_valid_until": valid_until,
+                "form_source_ids": source_ids,
             },
         )
 
     proposal = IntelligenceRequirementRegisterProposal(
         payload=IntelligenceRequirementRegisterPayload(
-            name=name.strip(), content_spec=content_spec.strip()
+            name=name.strip(),
+            content_spec=content_spec.strip(),
+            collection_frequency=frequency,
+            event_freshness=freshness,
+            valid_from=v_from,
+            valid_until=v_until,
+            source_ids=[s.id for s in bound_sources],
         ),
         rationale="Web 登记（消费方声明）",
     )
@@ -209,6 +284,9 @@ def _render_detail(
             "item_status_labels": STATUS_LABELS,
             "hit_items": _hit_items(session, requirement_id),
             "collect_outlets": _collect_outlets(session),
+            "confirmed_sources": _confirmed_sources(session),
+            "format_window": _format_valid_window,
+            "format_sources": _format_sources,
             "errors": errors or [],
             "flash": flash,
             "probe_results": probe_results,
@@ -267,6 +345,58 @@ def requirement_spec_update(
     return redirect_with_flash(f"/requirements/{requirement_id}", "内容规格已保存")
 
 
+@router.post("/requirements/{requirement_id}/config")
+def requirement_config_update(
+    requirement_id: int,
+    request: Request,
+    collection_frequency: str = Form(""),
+    event_freshness: str = Form(""),
+    valid_from: str = Form(""),
+    valid_until: str = Form(""),
+    source_ids: list[int] = Form([]),
+    session: Session = Depends(get_session),
+):
+    """采集配置编辑（IIH-03.01）：频率/事件时效/生效窗口/信源绑定，直接更新字段。
+
+    与 spec_update 同模式：消费方配置编辑非智能体写入，激活态可改。
+    """
+    ir = session.get(IntelligenceRequirement, requirement_id)
+    if ir is None:
+        raise HTTPException(status_code=404, detail="情报需求不存在")
+    if ir.status is not IntelligenceRequirementStatus.ACTIVE:
+        return _render_detail(request, session, requirement_id, errors=["仅激活态可编辑采集配置"])
+
+    errors: list[str] = []
+    frequency = collection_frequency.strip() or None
+    freshness = event_freshness.strip() or None
+    if frequency and parse_duration_to_seconds(frequency) is None:
+        errors.append(f"采集频率格式非法：{frequency}（须 Nh/Nd/Nw/Nm）")
+    if freshness and parse_duration_to_seconds(freshness) is None:
+        errors.append(f"事件时效格式非法：{freshness}（须 Nh/Nd/Nw/Nm）")
+    v_from = _parse_date(valid_from)
+    v_until = _parse_date(valid_until)
+    if v_from and v_until and v_until < v_from:
+        errors.append("生效窗口结束日早于起始日")
+    bound_sources: list[Source] = []
+    for sid in source_ids:
+        src = session.get(Source, sid)
+        if src is None or not src.confirmed:
+            errors.append(f"信源不可绑定：{sid}")
+        else:
+            bound_sources.append(src)
+
+    if errors:
+        return _render_detail(request, session, requirement_id, errors=errors)
+
+    ir.collection_frequency = frequency
+    ir.event_freshness = freshness
+    ir.valid_from = v_from
+    ir.valid_until = v_until
+    ir.sources = bound_sources
+    session.commit()
+    return redirect_with_flash(f"/requirements/{requirement_id}", "采集配置已保存")
+
+
 # ---- 配置自检（试采集预览 · 不落账，IIH-01.13 偏差 #7） ----
 
 
@@ -315,6 +445,13 @@ def requirement_probe(
     ir = session.get(IntelligenceRequirement, requirement_id)
     if ir is None:
         raise HTTPException(status_code=404, detail="情报需求不存在")
+    if ir.status is not IntelligenceRequirementStatus.ACTIVE:
+        return _render_detail(
+            request,
+            session,
+            requirement_id,
+            errors=["仅激活态可试采集"],
+        )
 
     outlets = _internet_outlets(session)
     if not outlets:

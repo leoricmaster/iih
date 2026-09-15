@@ -431,6 +431,123 @@ def test_ir_register_rejects_blank_fields(db_session) -> None:
     assert db_session.scalars(select(IntelligenceRequirement)).first() is None
 
 
+def test_ir_register_with_collection_config_lands(db_session) -> None:
+    """IIH-03.01：登记带四项采集配置，落账读取。"""
+    from datetime import date
+
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, credit="B")
+    db_session.add(source)
+    db_session.flush()
+
+    proposal = IntelligenceRequirementRegisterProposal(
+        payload=IntelligenceRequirementRegisterPayload(
+            name="高频跟踪",
+            content_spec="主题",
+            collection_frequency="1h",
+            event_freshness="7d",
+            valid_from=date(2026, 9, 15),
+            valid_until=date(2026, 12, 31),
+            source_ids=[source.id],
+        ),
+        rationale="消费方声明",
+    )
+
+    result = StateMachineExecutor().execute(proposal, session=db_session)
+
+    ir = db_session.get(IntelligenceRequirement, result.requirement_id)
+    assert ir is not None
+    assert ir.collection_frequency == "1h"
+    assert ir.event_freshness == "7d"
+    assert ir.valid_from == date(2026, 9, 15)
+    assert ir.valid_until == date(2026, 12, 31)
+    assert len(ir.sources) == 1
+    assert ir.sources[0].name == "W 公司"
+
+
+def test_ir_register_rejects_invalid_frequency_format(db_session) -> None:
+    """IIH-03.01：频率格式非法驳回。"""
+    proposal = IntelligenceRequirementRegisterProposal(
+        payload=IntelligenceRequirementRegisterPayload(
+            name="test", content_spec="主题", collection_frequency="一周内"
+        ),
+        rationale="消费方声明",
+    )
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(proposal, session=db_session)
+
+    assert any("采集频率格式非法" in r for r in excinfo.value.reasons)
+
+
+def test_ir_register_rejects_invalid_freshness_format(db_session) -> None:
+    """IIH-03.01：时效格式非法驳回。"""
+    proposal = IntelligenceRequirementRegisterProposal(
+        payload=IntelligenceRequirementRegisterPayload(
+            name="test", content_spec="主题", event_freshness="abc"
+        ),
+        rationale="消费方声明",
+    )
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(proposal, session=db_session)
+
+    assert any("事件时效格式非法" in r for r in excinfo.value.reasons)
+
+
+def test_ir_register_rejects_valid_until_before_valid_from(db_session) -> None:
+    """IIH-03.01：生效窗口结束日早于起始日驳回。"""
+    from datetime import date
+
+    proposal = IntelligenceRequirementRegisterProposal(
+        payload=IntelligenceRequirementRegisterPayload(
+            name="test",
+            content_spec="主题",
+            valid_from=date(2026, 12, 31),
+            valid_until=date(2026, 9, 15),
+        ),
+        rationale="消费方声明",
+    )
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(proposal, session=db_session)
+
+    assert "生效窗口结束日早于起始日" in excinfo.value.reasons
+
+
+def test_ir_register_rejects_unconfirmed_source_binding(db_session) -> None:
+    """IIH-03.01：信源绑定未确认信源驳回（decision-05 边界）。"""
+    source = Source(name="待确认", type=SourceType.COMPANY, confirmed=False)
+    db_session.add(source)
+    db_session.flush()
+
+    proposal = IntelligenceRequirementRegisterProposal(
+        payload=IntelligenceRequirementRegisterPayload(
+            name="test", content_spec="主题", source_ids=[source.id]
+        ),
+        rationale="消费方声明",
+    )
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(proposal, session=db_session)
+
+    assert any("信源未确认" in r for r in excinfo.value.reasons)
+
+
+def test_ir_register_rejects_nonexistent_source_id(db_session) -> None:
+    """IIH-03.01：source_id 不存在驳回。"""
+    proposal = IntelligenceRequirementRegisterProposal(
+        payload=IntelligenceRequirementRegisterPayload(
+            name="test", content_spec="主题", source_ids=[9999]
+        ),
+        rationale="消费方声明",
+    )
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(proposal, session=db_session)
+
+    assert any("信源不存在" in r for r in excinfo.value.reasons)
+
+
 def test_ir_activate_transitions_draft_to_active(db_session) -> None:
     """情报需求激活：Draft → Active。"""
     ir = IntelligenceRequirement(name="跟踪 W 公司", content_spec="主题：矿卡")
@@ -452,8 +569,8 @@ def test_ir_activate_transitions_draft_to_active(db_session) -> None:
     )
 
 
-def test_ir_activate_rejects_non_draft_state(db_session) -> None:
-    """情报需求激活：非 Draft 前置违反驳回。"""
+def test_ir_activate_rejects_non_draft_non_closed_state(db_session) -> None:
+    """情报需求激活：非 Draft 且非 Closed 前置违反驳回。"""
     ir = IntelligenceRequirement(
         name="跟踪 W 公司", content_spec="主题", status=IntelligenceRequirementStatus.ACTIVE
     )
@@ -470,6 +587,29 @@ def test_ir_activate_rejects_non_draft_state(db_session) -> None:
         )
 
     assert any("前置违反" in r for r in excinfo.value.reasons)
+    assert (
+        db_session.get(IntelligenceRequirement, ir.id).status
+        is IntelligenceRequirementStatus.ACTIVE
+    )
+
+
+def test_ir_activate_reopens_from_closed(db_session) -> None:
+    """情报需求重开：Closed → Active（doc-02 §4.1 关闭可重开）。"""
+    ir = IntelligenceRequirement(
+        name="跟踪 W 公司", content_spec="主题", status=IntelligenceRequirementStatus.CLOSED
+    )
+    db_session.add(ir)
+    db_session.flush()
+
+    result = StateMachineExecutor().execute(
+        IntelligenceRequirementActivateProposal(
+            payload=IntelligenceRequirementActivatePayload(requirement_id=ir.id),
+            rationale="消费方重新激活",
+        ),
+        session=db_session,
+    )
+
+    assert result.requirement_id == ir.id
     assert (
         db_session.get(IntelligenceRequirement, ir.id).status
         is IntelligenceRequirementStatus.ACTIVE

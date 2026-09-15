@@ -9,6 +9,7 @@
 
 <div class="box"><h2>{{ ir.name }} <span class="pill">{{ status_labels[ir.status] }}</span></h2>
   <div class="muted">创建于 {{ ir.created_at | dtstr }}</div>
+  <div class="muted" style="margin-top:4px">频率：{{ ir.collection_frequency or '默认' }} · 事件时效：{{ ir.event_freshness or '不限' }} · 信源：{{ format_sources(ir) }} · 生效窗口：{{ format_window(ir) }}</div>
   <div class="fbrow" style="margin-top:8px">
     {% if ir.status.value == 'draft' %}
     <form method="post" action="/requirements/{{ ir.id }}/action"><input type="hidden" name="action" value="activate"><button class="btn small primary">激活</button></form>
@@ -18,6 +19,8 @@
     {% elif ir.status.value == 'paused' %}
     <form method="post" action="/requirements/{{ ir.id }}/action"><input type="hidden" name="action" value="resume"><button class="btn small">恢复</button></form>
     <form method="post" action="/requirements/{{ ir.id }}/action"><input type="hidden" name="action" value="close"><button class="btn small">关闭</button></form>
+    {% elif ir.status.value == 'closed' %}
+    <form method="post" action="/requirements/{{ ir.id }}/action"><input type="hidden" name="action" value="activate"><button class="btn small primary">重开</button></form>
     {% endif %}
   </div>
 </div>
@@ -33,8 +36,39 @@
   {% endif %}
 </div>
 
+<div class="box"><h2>采集配置</h2>
+  {% if ir.status.value == 'active' %}
+  <form method="post" action="/requirements/{{ ir.id }}/config">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px">
+      <div class="field" style="margin:0"><label>采集频率</label><input type="text" name="collection_frequency" placeholder="1h / 24h / 6h；留空 = 默认" value="{{ ir.collection_frequency or '' }}"></div>
+      <div class="field" style="margin:0"><label>事件时效</label><input type="text" name="event_freshness" placeholder="7d / 24h；留空 = 不限" value="{{ ir.event_freshness or '' }}"></div>
+    </div>
+    <div class="field"><label>信源绑定</label>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        {% for s in confirmed_sources %}
+        <label style="display:flex;gap:4px;align-items:center;font-size:12.5px;color:#666"><input type="checkbox" name="source_ids" value="{{ s.id }}"{{ ' checked' if s in ir.sources }}>{{ s.name }}</label>
+        {% endfor %}
+      </div>
+      <div class="muted" style="margin-top:4px">不勾选 = 全部信源；仅过滤自动采集，人工录入不受限</div>
+    </div>
+    <div class="field"><label>生效窗口</label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="date" name="valid_from" value="{{ ir.valid_from.isoformat() if ir.valid_from else '' }}" style="flex:1;min-width:140px">
+        <span class="muted">至</span>
+        <input type="date" name="valid_until" value="{{ ir.valid_until.isoformat() if ir.valid_until else '' }}" style="flex:1;min-width:140px" placeholder="留空 = 常驻">
+      </div>
+      <div class="muted" style="margin-top:4px">截止日留空 = 常驻（不自动关闭）；到期日当天自动关闭</div>
+    </div>
+    <button class="btn primary">保存</button>
+  </form>
+  {% else %}
+  <div class="muted">频率：{{ ir.collection_frequency or '默认' }} · 事件时效：{{ ir.event_freshness or '不限' }}</div>
+  <div class="muted" style="margin-top:4px">信源：{{ format_sources(ir) }} · 生效窗口：{{ format_window(ir) }}</div>
+  {% endif %}
+</div>
+
 <div class="box"><h2>采集概览</h2>
-  <div class="muted">{% if pipeline_interval %}每 {{ pipeline_interval // 60 }} 分钟{% else %}手动触发{% endif %} · {{ collect_outlets|length }} 个互联网途径 · 所有激活需求共享</div>
+  <div class="muted">{% if pipeline_interval %}全局每 {{ pipeline_interval // 60 }} 分钟{% else %}手动触发{% endif %} · {{ collect_outlets|length }} 个互联网途径 · {% if ir.sources %}本需求已绑定 {{ ir.sources|length }} 个信源{% else %}覆盖全部信源{% endif %}{% if ir.last_collected_at %} · 上次采集 {{ ir.last_collected_at | dtstr }}{% endif %}</div>
   {% if collect_outlets %}
   <div style="margin-top:6px">
     {% for o in collect_outlets %}
@@ -44,40 +78,43 @@
   {% else %}
   <div class="empty" style="margin-top:6px">暂无可用互联网途径</div>
   {% endif %}
-</div>
-
-<div class="box"><h2>配置自检</h2>
-  <form method="post" action="/requirements/{{ ir.id }}/probe">
-    <button class="btn small primary">▶ 试采</button>
-    <span class="muted">不产生正式条目</span>
-  </form>
-  {% if probe_results is not none %}
-  {% if probe_results %}
-  {% for r in probe_results %}
-  <div style="border-bottom:1px solid #eee;padding:9px 0">
-    <div><b>{{ r.source_name }} · {{ r.outlet_name }}</b> <span class="muted">{{ r.url }}</span></div>
-    {% if r.article_url %}<div class="muted">选链：{{ r.article_url }}</div>{% endif %}
-    {% if r.fetch_error %}
-    <div class="err" style="margin-top:4px">抓取失败：{{ r.fetch_error }}</div>
-    {% elif r.extraction_note %}
-    <div class="muted" style="margin-top:4px">{{ r.extraction_note }}</div>
+  <div style="margin-top:10px;border-top:1px solid #eee;padding-top:10px">
+    {% if ir.status.value == 'active' %}
+    <form method="post" action="/requirements/{{ ir.id }}/probe" style="display:inline-block">
+      <button class="btn small primary">▶ 试采</button>
+    </form>
+    <span class="muted" style="margin-left:6px">逐途径预览抽取与审查预判，不产生正式条目</span>
     {% else %}
-    <div style="margin:4px 0">「{{ r.statement }}」</div>
-    <div class="muted">抽取依据：{{ r.extraction_rationale }}</div>
-    {% if r.decision == 'pass' %}
-    <div style="margin-top:4px"><span class="pill">预判 · 命中</span> <span class="muted">{{ r.judgment_rationale }}</span></div>
-    {% elif r.decision == 'reject' %}
-    <div style="margin-top:4px"><span class="pill dashed">预判 · 否决（{{ r.reason_type }}）</span> <span class="muted">{{ r.judgment_rationale }}</span></div>
+    <div class="muted">仅激活态可试采</div>
+    {% endif %}
+    {% if probe_results is not none %}
+    {% if probe_results %}
+    {% for r in probe_results %}
+    <div style="border-bottom:1px solid #eee;padding:9px 0">
+      <div><b>{{ r.source_name }} · {{ r.outlet_name }}</b> <span class="muted">{{ r.url }}</span></div>
+      {% if r.article_url %}<div class="muted">选链：{{ r.article_url }}</div>{% endif %}
+      {% if r.fetch_error %}
+      <div class="err" style="margin-top:4px">抓取失败：{{ r.fetch_error }}</div>
+      {% elif r.extraction_note %}
+      <div class="muted" style="margin-top:4px">{{ r.extraction_note }}</div>
+      {% else %}
+      <div style="margin:4px 0">「{{ r.statement }}」</div>
+      <div class="muted">抽取依据：{{ r.extraction_rationale }}</div>
+      {% if r.decision == 'pass' %}
+      <div style="margin-top:4px"><span class="pill">预判 · 命中</span> <span class="muted">{{ r.judgment_rationale }}</span></div>
+      {% elif r.decision == 'reject' %}
+      <div style="margin-top:4px"><span class="pill dashed">预判 · 否决（{{ r.reason_type }}）</span> <span class="muted">{{ r.judgment_rationale }}</span></div>
+      {% else %}
+      <div class="err" style="margin-top:4px">审查预判失败：{{ r.judge_error }}</div>
+      {% endif %}
+      {% endif %}
+    </div>
+    {% endfor %}
     {% else %}
-    <div class="err" style="margin-top:4px">审查预判失败：{{ r.judge_error }}</div>
+    <div class="empty" style="margin-top:8px">无已登记互联网途径</div>
     {% endif %}
     {% endif %}
   </div>
-  {% endfor %}
-  {% else %}
-  <div class="empty" style="margin-top:8px">无已登记互联网途径</div>
-  {% endif %}
-  {% endif %}
 </div>
 
 <div class="box"><h2>命中条目</h2>

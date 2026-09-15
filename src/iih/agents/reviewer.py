@@ -1,16 +1,22 @@
-"""审查智能体 Reviewer（doc-06 §4）· 最简版：相关性 + 有效性初筛。
+"""审查智能体 Reviewer（doc-06 §4）· 相关性 + 有效性初筛 + 事件时效否决（IIH-03.01）。
 
 读 Lead 态条目，对激活情报需求判断相关性，并做有效性初筛；产出审查提案——
 通过为候选（PASS）或否决为噪音（REJECT）附理由。落账由状态机执行器执行（本智能体不直接写账）。
 
+事件时效否决（IIH-03.01）：IR 配置 event_freshness 时，item.event_time 早于时效边界的
+IR 从候选列表移除；全部 IR 过期或无激活 IR → 直接 REJECT IRRELEVANT。
+
 范围外（后续里程碑加厚）：事件同一性（DUPLICATE 否决路径）、实体归一、图连通度参考变量。
 """
+
+from datetime import UTC, datetime, timedelta
 
 from openai.types.completion import CompletionUsage
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from iih.ledger.duration import parse_duration_to_seconds
 from iih.ledger.models import (
     IntelligenceItem,
     IntelligenceRequirement,
@@ -69,7 +75,9 @@ class Reviewer:
         """对一条 Lead 态条目产出审查提案；异议重审时携 dispute_note（doc-02 §6）。
 
         无激活情报需求时直接否决为 IRRELEVANT（无需求即无相关性），不调 LLM、不计量。
-        有激活需求时调 LLM 判断，产出 PASS 或 REJECT 提案。
+        事件时效否决（IIH-03.01）：item.event_time 早于 IR 时效边界的 IR 从候选列表移除；
+        全部 IR 过期 → 直接 REJECT IRRELEVANT。
+        其余情形调 LLM 判断，产出 PASS 或 REJECT 提案。
         """
         active_irs = list(
             self.session.scalars(
@@ -90,9 +98,21 @@ class Reviewer:
                 rationale="无激活情报需求，无法判定相关性",
             )
 
+        fresh_irs = self._filter_by_freshness(active_irs, item)
+        if not fresh_irs:
+            return ReviewProposal(
+                payload=ReviewPayload(
+                    item_id=item.id,
+                    decision=ReviewDecisionEnum.REJECT,
+                    reason_type=RejectionReasonEnum.IRRELEVANT,
+                    matched_requirement_id=None,
+                ),
+                rationale="全部激活需求均因事件时效过期不匹配",
+            )
+
         judgment = self.judge_statement(
             statement=item.statement,
-            requirements=active_irs,
+            requirements=fresh_irs,
             target="item_review",
             dispute_note=dispute_note,
         )
@@ -106,6 +126,33 @@ class Reviewer:
             ),
             rationale=judgment.rationale,
         )
+
+    def _filter_by_freshness(
+        self, irs: list[IntelligenceRequirement], item: IntelligenceItem
+    ) -> list[IntelligenceRequirement]:
+        """事件时效过滤（IIH-03.01）：IR 配 event_freshness 且 item.event_time 早于时效边界则移除。
+
+        IR.event_freshness 为空 → 不限时效，保留；
+        item.event_time 为空 → 不卡时效（无事件时间不否决），保留。
+        """
+        if item.event_time is None:
+            return irs
+        now = datetime.now(UTC)
+        event_time = item.event_time
+        if event_time.tzinfo is None:
+            event_time = event_time.replace(tzinfo=UTC)
+        result: list[IntelligenceRequirement] = []
+        for ir in irs:
+            if not ir.event_freshness:
+                result.append(ir)
+                continue
+            seconds = parse_duration_to_seconds(ir.event_freshness)
+            if seconds is None:
+                result.append(ir)  # 解析失败的配置降级为不限
+                continue
+            if event_time + timedelta(seconds=seconds) >= now:
+                result.append(ir)
+        return result
 
     def judge_statement(
         self,

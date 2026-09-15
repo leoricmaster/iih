@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import select
 
@@ -75,6 +75,47 @@ def test_intelligence_requirement_roundtrip(db_session) -> None:
     assert loaded is not None
     assert loaded.name == "跟踪 W 公司"
     assert loaded.status is IntelligenceRequirementStatus.DRAFT
+
+
+def test_intelligence_requirement_collection_config_roundtrip(db_session) -> None:
+    """IIH-03.01：需求级采集配置字段落账与读取。"""
+    ir = IntelligenceRequirement(
+        name="高频跟踪",
+        content_spec="主题",
+        collection_frequency="1h",
+        event_freshness="7d",
+        valid_from=date(2026, 9, 15),
+        valid_until=date(2026, 12, 31),
+        last_collected_at=datetime(2026, 9, 15, 8, 0, tzinfo=UTC),
+    )
+    db_session.add(ir)
+    db_session.flush()
+
+    loaded = db_session.get(IntelligenceRequirement, ir.id)
+    assert loaded is not None
+    assert loaded.collection_frequency == "1h"
+    assert loaded.event_freshness == "7d"
+    assert loaded.valid_from == date(2026, 9, 15)
+    assert loaded.valid_until == date(2026, 12, 31)
+    assert loaded.last_collected_at == datetime(2026, 9, 15, 8, 0, tzinfo=UTC)
+
+
+def test_intelligence_requirement_source_binding_roundtrip(db_session) -> None:
+    """IIH-03.01：情报需求-信源 M-N 绑定落账。"""
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, credit="B")
+    ir = IntelligenceRequirement(name="跟踪 W 公司", content_spec="主题", sources=[source])
+    db_session.add_all([source, ir])
+    db_session.flush()
+
+    loaded = db_session.get(IntelligenceRequirement, ir.id)
+    assert loaded is not None
+    assert len(loaded.sources) == 1
+    assert loaded.sources[0].name == "W 公司"
+
+    bound = db_session.get(Source, source.id)
+    assert bound is not None
+    assert len(bound.bound_requirements) == 1
+    assert bound.bound_requirements[0].id == ir.id
 
 
 def test_provenance_chain_node_roundtrip(db_session) -> None:

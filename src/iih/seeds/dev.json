@@ -10,8 +10,18 @@
   ],
   "requirements": [
     {
-      "name": "长期跟踪三一公司动态",
+      "name": "高频跟踪三一公司动态",
       "content_spec": "主题：财报、挖掘机、行业合作",
+      "collection_frequency": "1h",
+      "event_freshness": "7d",
+      "valid_until": "2026-12-31",
+      "source_ids": [],
+      "activate": true
+    },
+    {
+      "name": "低频背景扫描",
+      "content_spec": "主题：行业政策、宏观动态",
+      "collection_frequency": "24h",
       "activate": true
     }
   ]

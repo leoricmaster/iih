@@ -1,6 +1,6 @@
 """提案契约（技术架构 §5）：智能体对记账层的写入一律为提案——类型/产出/依据/溯源/公式版本。"""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import ClassVar
 
 from pydantic import BaseModel
@@ -87,17 +87,22 @@ class SourceRegisterProposal(Proposal):
 
 
 class IntelligenceRequirementRegisterPayload(BaseModel):
-    """「情报需求登记」产出：name + content_spec（doc-04 §1）。"""
+    """「情报需求登记」产出：name + content_spec + 需求级采集配置（IIH-03.01）。"""
 
     name: str
     content_spec: str  # 主题、关键词、信源偏好、时效要求等自由文本
+    collection_frequency: str | None = None  # "1h"/"24h"；空=继承全局间隔
+    event_freshness: str | None = None  # "7d"/"24h"；空=不限
+    valid_from: date | None = None  # 生效窗口起；空=常驻
+    valid_until: date | None = None  # 生效窗口止；空=常驻
+    source_ids: list[int] = []  # 信源绑定；空=全部已确认信源
 
 
 class IntelligenceRequirementRegisterProposal(Proposal):
     """提案类型「情报需求登记」：迁移 [*] → 草稿 Draft（doc-02 §4.1）。
 
     消费方登记非情报产出，无 provenance、无 formula_version。
-    本任务最简：豁免「提出方」（单消费方前提）与「生效窗口」（范围外含调度节奏）。
+    需求级采集配置（IIH-03.01）：频率/事件时效/生效窗口/信源绑定，校验合法性后落账。
     """
 
     PROPOSAL_TYPE = "intelligence_requirement_register"

@@ -32,6 +32,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     p_ir_create.add_argument(
         "--spec", required=True, help="内容规格（主题、关键词、信源偏好、时效）"
     )
+    p_ir_create.add_argument(
+        "--frequency", default="", help="采集频率（如 1h、24h；留空=继承全局）"
+    )
+    p_ir_create.add_argument("--freshness", default="", help="事件时效（如 7d、24h；留空=不限）")
+    p_ir_create.add_argument("--valid-from", default="", help="生效窗口起始日（YYYY-MM-DD）")
+    p_ir_create.add_argument("--valid-until", default="", help="生效窗口结束日（YYYY-MM-DD）")
+    p_ir_create.add_argument(
+        "--source-ids", default="", help="信源绑定 ID 列表（逗号分隔，仅已确认信源）"
+    )
     p_ir_create.set_defaults(func=ir_create)
 
     p_ir_activate = sub.add_parser("ir-activate", help="情报需求激活")

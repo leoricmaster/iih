@@ -71,7 +71,10 @@ def run_collect_stage(
     store: SnapshotStore | None = None,
     log: LogFn | None = None,
 ) -> None:
-    """采集段：Director 派单 → fetcher 抓取入口页 → Collector 两跳提案 → 执行器落账。"""
+    """采集段：Director 派单 → fetcher 抓取入口页 → Collector 两跳提案 → 执行器落账。
+
+    每个 IR 完成本轮全部途径采集后，更新 last_collected_at（IIH-03.01 调度差异化用）。
+    """
 
     def say(msg: str) -> None:
         if log is not None:
@@ -85,6 +88,7 @@ def run_collect_stage(
         return
 
     say(f"派单 {len(tasks)} 个采集任务。")
+    collected_requirement_ids: set[int] = set()
     for task in tasks:
         try:
             html = fetch(task.url)
@@ -127,6 +131,22 @@ def run_collect_stage(
             else:
                 summary.appended_nodes += 1
                 say(f"  [追加] {task.source_name}·{task.outlet_name}：转引链节点已追加")
+
+            collected_requirement_ids.add(task.requirement_id)
+
+    # IIH-03.01：本轮被派单过的 IR 更新 last_collected_at（一个 IR 一次）
+    if collected_requirement_ids:
+        from datetime import UTC, datetime
+
+        from iih.ledger.models import IntelligenceRequirement
+
+        with session_factory() as session:
+            now = datetime.now(UTC)
+            for ir_id in collected_requirement_ids:
+                ir = session.get(IntelligenceRequirement, ir_id)
+                if ir is not None:
+                    ir.last_collected_at = now
+            session.commit()
 
 
 def run_review_stage(

@@ -550,10 +550,22 @@ def test_cli_seed_lands_baseline_and_idempotent(db_session, monkeypatch) -> None
     assert source.confirmed is True
     assert source.credit == "C"
     assert source.outlets[0].entry == "https://www.sanygroup.com/"
-    ir = db_session.scalars(select(IntelligenceRequirement)).one()
-    assert ir.content_spec == "主题：财报、挖掘机、行业合作"
-    assert ir.status is IntelligenceRequirementStatus.ACTIVE
+    high_freq = db_session.scalars(
+        select(IntelligenceRequirement).where(
+            IntelligenceRequirement.name == "高频跟踪三一公司动态"
+        )
+    ).one()
+    assert high_freq.content_spec == "主题：财报、挖掘机、行业合作"
+    assert high_freq.status is IntelligenceRequirementStatus.ACTIVE
+    assert high_freq.collection_frequency == "1h"
+    assert high_freq.event_freshness == "7d"
+    assert high_freq.valid_until.isoformat() == "2026-12-31"
+    low_freq = db_session.scalars(
+        select(IntelligenceRequirement).where(IntelligenceRequirement.name == "低频背景扫描")
+    ).one()
+    assert low_freq.collection_frequency == "24h"
+    assert low_freq.status is IntelligenceRequirementStatus.ACTIVE
 
     assert main(["seed"]) == 0  # 幂等：同名跳过，不重复落账
     assert len(db_session.scalars(select(Source)).all()) == 1
-    assert len(db_session.scalars(select(IntelligenceRequirement)).all()) == 1
+    assert len(db_session.scalars(select(IntelligenceRequirement)).all()) == 2

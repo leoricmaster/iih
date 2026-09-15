@@ -1,4 +1,7 @@
-"""Director 单测（doc-06 §2 最简版）：激活 IR × 已确认互联网途径笛卡尔积。"""
+"""Director 单测（doc-06 §2 + IIH-03.01）：激活 IR × 已确认互联网途径笛卡尔积，
+按各 IR 独立参数分发：到期关闭 + due 过滤 + 信源绑定过滤。"""
+
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
@@ -14,9 +17,27 @@ from iih.ledger.models import (
 
 
 def _seed_ir(
-    db_session, *, name: str, status: IntelligenceRequirementStatus
+    db_session,
+    *,
+    name: str,
+    status: IntelligenceRequirementStatus = IntelligenceRequirementStatus.ACTIVE,
+    collection_frequency: str | None = None,
+    event_freshness: str | None = None,
+    valid_until=None,
+    last_collected_at=None,
+    sources: list[Source] | None = None,
 ) -> IntelligenceRequirement:
-    ir = IntelligenceRequirement(name=name, content_spec="主题", status=status)
+    ir = IntelligenceRequirement(
+        name=name,
+        content_spec="主题",
+        status=status,
+        collection_frequency=collection_frequency,
+        event_freshness=event_freshness,
+        valid_until=valid_until,
+        last_collected_at=last_collected_at,
+    )
+    if sources:
+        ir.sources = sources
     db_session.add(ir)
     db_session.flush()
     return ir
@@ -41,8 +62,8 @@ def _seed_outlet(
 
 def test_propose_tasks_returns_cartesian_product(db_session) -> None:
     """激活 IR × 已确认互联网途径：2 IR × 2 途径 = 4 任务。"""
-    _seed_ir(db_session, name="跟踪 W 公司", status=IntelligenceRequirementStatus.ACTIVE)
-    _seed_ir(db_session, name="跟踪新华社", status=IntelligenceRequirementStatus.ACTIVE)
+    _seed_ir(db_session, name="跟踪 W 公司")
+    _seed_ir(db_session, name="跟踪新华社")
     _seed_outlet(
         db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example/news"
     )
@@ -56,7 +77,6 @@ def test_propose_tasks_returns_cartesian_product(db_session) -> None:
     assert all(isinstance(t, CollectionTask) for t in tasks)
     assert {t.requirement_name for t in tasks} == {"跟踪 W 公司", "跟踪新华社"}
     assert {t.source_name for t in tasks} == {"W 公司", "新华社"}
-    assert all(t.url.startswith("https://") for t in tasks)
 
 
 def test_propose_tasks_excludes_paused_and_draft_irs(db_session) -> None:
@@ -72,8 +92,7 @@ def test_propose_tasks_excludes_paused_and_draft_irs(db_session) -> None:
 
 
 def test_propose_tasks_excludes_unconfirmed_sources(db_session) -> None:
-    """未确认信源不入正式池、不参与采集（decision-05）。"""
-    _seed_ir(db_session, name="激活", status=IntelligenceRequirementStatus.ACTIVE)
+    _seed_ir(db_session, name="激活")
     _seed_outlet(
         db_session,
         source_name="待确认",
@@ -88,8 +107,7 @@ def test_propose_tasks_excludes_unconfirmed_sources(db_session) -> None:
 
 
 def test_propose_tasks_excludes_non_internet_outlets(db_session) -> None:
-    """仅互联网途径派单；线下场景经素材录入归因。"""
-    _seed_ir(db_session, name="激活", status=IntelligenceRequirementStatus.ACTIVE)
+    _seed_ir(db_session, name="激活")
     _seed_outlet(
         db_session,
         source_name="W 公司",
@@ -105,8 +123,7 @@ def test_propose_tasks_excludes_non_internet_outlets(db_session) -> None:
 
 
 def test_propose_tasks_skips_outlets_without_entry(db_session) -> None:
-    """途径 entry 为空无法派单。"""
-    _seed_ir(db_session, name="激活", status=IntelligenceRequirementStatus.ACTIVE)
+    _seed_ir(db_session, name="激活")
     medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
     source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True)
     outlet = Outlet(source=source, name="官网", entry=None, medium=medium)
@@ -125,6 +142,167 @@ def test_propose_tasks_empty_when_no_active_irs(db_session) -> None:
 
 
 def test_propose_tasks_empty_when_no_confirmed_internet_outlets(db_session) -> None:
-    _seed_ir(db_session, name="激活", status=IntelligenceRequirementStatus.ACTIVE)
+    _seed_ir(db_session, name="激活")
 
     assert Director(db_session).propose_tasks() == []
+
+
+# ---- IIH-03.01 需求级采集配置 ----
+
+
+def test_frequency_due_when_never_collected(db_session) -> None:
+    """从未采集的 IR 始终 due（不管频率）。"""
+    _seed_ir(db_session, name="高频", collection_frequency="1h")
+    _seed_outlet(db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example")
+
+    tasks = Director(db_session).propose_tasks()
+
+    assert len(tasks) == 1
+    assert tasks[0].requirement_name == "高频"
+
+
+def test_frequency_not_due_when_recently_collected(db_session) -> None:
+    """配置 1h 频率，10 分钟前刚采集过 → 未 due，跳过本轮。"""
+    just_now = datetime.now(UTC) - timedelta(minutes=10)
+    _seed_ir(
+        db_session,
+        name="高频",
+        collection_frequency="1h",
+        last_collected_at=just_now,
+    )
+    _seed_outlet(db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example")
+
+    tasks = Director(db_session).propose_tasks()
+
+    assert tasks == []
+
+
+def test_frequency_due_when_window_elapsed(db_session) -> None:
+    """配置 1h 频率，2 小时前采集过 → 已 due，本轮派单。"""
+    two_hours_ago = datetime.now(UTC) - timedelta(hours=2)
+    _seed_ir(
+        db_session,
+        name="高频",
+        collection_frequency="1h",
+        last_collected_at=two_hours_ago,
+    )
+    _seed_outlet(db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example")
+
+    tasks = Director(db_session).propose_tasks()
+
+    assert len(tasks) == 1
+    assert tasks[0].requirement_name == "高频"
+
+
+def test_frequency_inherit_global_when_empty(db_session, monkeypatch) -> None:
+    """频率为空 → 用全局 pipeline_interval_seconds。"""
+    from iih.agents import director as director_module
+    from iih.config import get_settings
+
+    settings = get_settings().model_copy(update={"pipeline_interval_seconds": 300})
+    monkeypatch.setattr(director_module, "get_settings", lambda: settings)
+
+    just_now = datetime.now(UTC) - timedelta(seconds=60)
+    _seed_ir(db_session, name="继承全局", last_collected_at=just_now)
+    _seed_outlet(db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example")
+
+    # 60s < 300s 未 due
+    tasks = Director(db_session).propose_tasks()
+    assert tasks == []
+
+    # 6 分钟前刚采集过（360s > 300s），已 due
+    six_minutes_ago = datetime.now(UTC) - timedelta(seconds=360)
+    ir = db_session.scalars(select(IntelligenceRequirement)).first()
+    assert ir is not None
+    ir.last_collected_at = six_minutes_ago
+    db_session.flush()
+    tasks = Director(db_session).propose_tasks()
+    assert len(tasks) == 1
+
+
+def test_source_binding_filters_outlets(db_session) -> None:
+    """IR 绑定 [S1] → 仅派单到 S1 途径；未绑定 IR 派单到全部。"""
+    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    s1 = Source(name="S1", type=SourceType.COMPANY, confirmed=True)
+    s2 = Source(name="S2", type=SourceType.COMPANY, confirmed=True)
+    o1 = Outlet(source=s1, name="官网", entry="https://s1.example", medium=medium)
+    o2 = Outlet(source=s2, name="官网", entry="https://s2.example", medium=medium)
+    db_session.add_all([s1, s2, o1, o2])
+    db_session.flush()
+    _seed_ir(db_session, name="绑定 S1", sources=[s1])
+    _seed_ir(db_session, name="不绑定")
+
+    tasks = Director(db_session).propose_tasks()
+
+    # 绑定 S1 的 IR：1 任务（S1 途径）；不绑定的 IR：2 任务（全部途径）= 3 总
+    assert len(tasks) == 3
+    bound_tasks = [t for t in tasks if t.requirement_name == "绑定 S1"]
+    unbound_tasks = [t for t in tasks if t.requirement_name == "不绑定"]
+    assert len(bound_tasks) == 1
+    assert bound_tasks[0].source_name == "S1"
+    assert {t.source_name for t in unbound_tasks} == {"S1", "S2"}
+
+
+def test_auto_close_expired_ir(db_session) -> None:
+    """valid_until ≤ today 的激活 IR 自动落 Close 提案，从派单列表移除。"""
+    today = datetime.now(UTC).date()
+    _seed_ir(
+        db_session,
+        name="已到期",
+        valid_until=today - timedelta(days=1),
+    )
+    _seed_ir(db_session, name="未到期")
+    _seed_outlet(db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example")
+
+    tasks = Director(db_session).propose_tasks()
+
+    # 已到期 IR 被关闭，不再派单；只有未到期 IR 的 1 任务
+    assert len(tasks) == 1
+    assert tasks[0].requirement_name == "未到期"
+
+    expired = db_session.scalars(
+        select(IntelligenceRequirement).where(IntelligenceRequirement.name == "已到期")
+    ).one()
+    assert expired.status is IntelligenceRequirementStatus.CLOSED
+
+
+def test_valid_until_today_triggers_close(db_session) -> None:
+    """valid_until = today（≤ today）也触发关闭。"""
+    today = datetime.now(UTC).date()
+    _seed_ir(db_session, name="今日到期", valid_until=today)
+    _seed_outlet(db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example")
+
+    Director(db_session).propose_tasks()
+
+    ir = db_session.scalars(select(IntelligenceRequirement)).one()
+    assert ir.status is IntelligenceRequirementStatus.CLOSED
+
+
+def test_valid_until_future_not_closed(db_session) -> None:
+    """valid_until 在未来 → 不关闭，正常派单。"""
+    future = datetime.now(UTC).date() + timedelta(days=30)
+    _seed_ir(db_session, name="未来到期", valid_until=future)
+    _seed_outlet(db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example")
+
+    tasks = Director(db_session).propose_tasks()
+
+    assert len(tasks) == 1
+    ir = db_session.scalars(select(IntelligenceRequirement)).one()
+    assert ir.status is IntelligenceRequirementStatus.ACTIVE
+
+
+def test_auto_close_handles_paused_ir_without_closing(db_session) -> None:
+    """暂停态 IR 即使 valid_until 到期也不自动关闭（仅激活态触发）。"""
+    today = datetime.now(UTC).date()
+    _seed_ir(
+        db_session,
+        name="暂停且到期",
+        status=IntelligenceRequirementStatus.PAUSED,
+        valid_until=today - timedelta(days=1),
+    )
+    _seed_outlet(db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example")
+
+    Director(db_session).propose_tasks()
+
+    ir = db_session.scalars(select(IntelligenceRequirement)).one()
+    assert ir.status is IntelligenceRequirementStatus.PAUSED

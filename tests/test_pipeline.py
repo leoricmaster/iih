@@ -166,3 +166,27 @@ def test_lifespan_pipeline_loop_follows_interval(db_session, monkeypatch) -> Non
     monkeypatch.setattr(web_app_module, "get_settings", lambda: on_settings)
     with TestClient(create_app()):
         assert calls == [3600]
+
+
+def test_run_pipeline_round_updates_last_collected_at(db_session, monkeypatch) -> None:
+    """IIH-03.01：一轮采集完成后，被派单过的 IR 更新 last_collected_at。"""
+    ir_id = _seed_collectable_fixture(db_session)
+    pages = {ENTRY_URL: HTML_ENTRY_LISTING, ARTICLE_URL: HTML_ARTICLE}
+    monkeypatch.setattr("iih.pipeline.fetch", lambda url: pages[url])
+    session_factory = sessionmaker(bind=db_session.bind, join_transaction_mode="create_savepoint")
+
+    ir = db_session.get(IntelligenceRequirement, ir_id)
+    assert ir is not None
+    assert ir.last_collected_at is None
+
+    run_pipeline_round(
+        settings=get_settings(),
+        session_factory=session_factory,
+        llm=_dispatch_llm(ir_id),
+        store=FakeSnapshotStore(),
+    )
+
+    db_session.expire_all()
+    refreshed = db_session.get(IntelligenceRequirement, ir_id)
+    assert refreshed is not None
+    assert refreshed.last_collected_at is not None

@@ -1,12 +1,33 @@
 """溯源存储 schema：媒介、载体、信源、途径、情报条目（doc-04 §1；English 命名见术语表 §三/§六）。"""
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    String,
+    Table,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from iih.db import Base
+
+# 情报需求 × 信源 多对多关联（IIH-03.01：信源绑定，只能绑已确认信源）
+intelligence_requirement_source = Table(
+    "intelligence_requirement_source",
+    Base.metadata,
+    Column("requirement_id", ForeignKey("intelligence_requirement.id"), primary_key=True),
+    Column("source_id", ForeignKey("source.id"), primary_key=True),
+    Column("created_at", DateTime(timezone=True), server_default=func.now()),
+)
 
 
 def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
@@ -131,6 +152,9 @@ class Source(Base):
 
     outlets: Mapped[list["Outlet"]] = relationship(back_populates="source")
     credit_adjustments: Mapped[list["CreditAdjustment"]] = relationship(back_populates="source")
+    bound_requirements: Mapped[list["IntelligenceRequirement"]] = relationship(
+        secondary=intelligence_requirement_source, back_populates="sources"
+    )
 
 
 class Outlet(Base):
@@ -222,8 +246,14 @@ class IntelligenceItem(Base):
 class IntelligenceRequirement(Base):
     """情报需求（doc-04 §1、doc-02 §4.1）：消费方声明的兴趣配置。
 
-    本任务最简：name + content_spec + status。豁免「提出方」（单消费方前提，doc-07 §1）
-    与「生效窗口」（范围外含调度节奏）——任务 comment 留痕豁免。
+    需求级采集配置（IIH-03.01）：
+    - collection_frequency：采集频率文本（"1h"/"24h"；空=继承全局间隔）
+    - event_freshness：事件时效边界文本（"7d"/"24h"；空=不限，审查据此否决过期线索）
+    - valid_from / valid_until：生效窗口起止日期（空=常驻；valid_until 到期自动关闭）
+    - last_collected_at：上次采集时间戳（调度差异化用，Director 据此判断 due）
+    - sources：信源绑定（M-N；空=全部已确认信源；只影响自动拉取派单，人工录入不受限）
+
+    豁免「提出方」（单消费方前提，doc-07 §1）——任务 comment 留痕。
     """
 
     __tablename__ = "intelligence_requirement"
@@ -236,9 +266,18 @@ class IntelligenceRequirement(Base):
         default=IntelligenceRequirementStatus.DRAFT,
         index=True,
     )
+    collection_frequency: Mapped[str | None] = mapped_column(String(50))
+    event_freshness: Mapped[str | None] = mapped_column(String(50))
+    valid_from: Mapped[date | None] = mapped_column(Date)
+    valid_until: Mapped[date | None] = mapped_column(Date)
+    last_collected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    sources: Mapped[list["Source"]] = relationship(
+        secondary=intelligence_requirement_source, back_populates="bound_requirements"
     )
 
 

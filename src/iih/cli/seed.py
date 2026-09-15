@@ -7,6 +7,7 @@
 
 import argparse
 import json
+from datetime import date
 from pathlib import Path
 
 from sqlalchemy import select
@@ -33,6 +34,12 @@ from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
 DEFAULT_SEED_FILE = Path(__file__).resolve().parent.parent / "seeds" / "dev.json"
 
 SEED_RATIONALE = "种子数据"
+
+
+def _parse_date(s: str | None) -> date | None:
+    if not s or not s.strip():
+        return None
+    return date.fromisoformat(s.strip())
 
 
 def _seed_sources(session: Session, sources: list[dict[str, str]]) -> None:
@@ -71,7 +78,13 @@ def _seed_requirements(session: Session, requirements: list[dict[str, str]]) -> 
                 result = StateMachineExecutor().execute(
                     IntelligenceRequirementRegisterProposal(
                         payload=IntelligenceRequirementRegisterPayload(
-                            name=req["name"], content_spec=req["content_spec"]
+                            name=req["name"],
+                            content_spec=req["content_spec"],
+                            collection_frequency=req.get("collection_frequency") or None,
+                            event_freshness=req.get("event_freshness") or None,
+                            valid_from=_parse_date(req.get("valid_from")),
+                            valid_until=_parse_date(req.get("valid_until")),
+                            source_ids=req.get("source_ids", []),
                         ),
                         rationale=SEED_RATIONALE,
                     ),

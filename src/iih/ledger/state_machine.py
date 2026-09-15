@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from iih.ledger.duration import parse_duration_to_seconds
 from iih.ledger.models import (
     IntelligenceItem,
     IntelligenceRequirement,
@@ -340,7 +341,10 @@ class StateMachineExecutor:
     ) -> ExecutionResult:
         """情报需求登记：[*] → 草稿 Draft（doc-02 §4.1）。
 
-        校验：name + content_spec 非空白 + 依据非空白。
+        校验：name + content_spec 非空白 + 依据非空白
+        + 频率/时效格式可解析（非空时）
+        + valid_until 不早于 valid_from（两者都非空时）
+        + source_ids 中每个信源存在且 confirmed=True（decision-05 边界）。
         """
         reasons: list[str] = []
         payload = proposal.payload
@@ -350,6 +354,26 @@ class StateMachineExecutor:
             reasons.append("内容规格缺失")
         if not proposal.rationale.strip():
             reasons.append("依据缺失")
+        if payload.collection_frequency and payload.collection_frequency.strip():
+            if parse_duration_to_seconds(payload.collection_frequency) is None:
+                reasons.append(
+                    f"采集频率格式非法：{payload.collection_frequency}（须 Nh/Nd/Nw/Nm）"
+                )
+        if payload.event_freshness and payload.event_freshness.strip():
+            if parse_duration_to_seconds(payload.event_freshness) is None:
+                reasons.append(f"事件时效格式非法：{payload.event_freshness}（须 Nh/Nd/Nw/Nm）")
+        if payload.valid_from and payload.valid_until and payload.valid_until < payload.valid_from:
+            reasons.append("生效窗口结束日早于起始日")
+        bound_sources: list[Source] = []
+        if payload.source_ids:
+            for sid in payload.source_ids:
+                src = session.get(Source, sid)
+                if src is None:
+                    reasons.append(f"信源不存在：{sid}")
+                elif not src.confirmed:
+                    reasons.append(f"信源未确认，不可绑定：{src.name}")
+                else:
+                    bound_sources.append(src)
         if reasons:
             raise ProposalRejectedError(reasons)
 
@@ -357,7 +381,17 @@ class StateMachineExecutor:
             name=payload.name.strip(),
             content_spec=payload.content_spec.strip(),
             status=IntelligenceRequirementStatus.DRAFT,
+            collection_frequency=payload.collection_frequency.strip()
+            if payload.collection_frequency and payload.collection_frequency.strip()
+            else None,
+            event_freshness=payload.event_freshness.strip()
+            if payload.event_freshness and payload.event_freshness.strip()
+            else None,
+            valid_from=payload.valid_from,
+            valid_until=payload.valid_until,
         )
+        if bound_sources:
+            ir.sources = bound_sources
         session.add(ir)
         session.flush()
         requirement_id = ir.id
@@ -367,15 +401,20 @@ class StateMachineExecutor:
     def _execute_ir_activate(
         self, proposal: IntelligenceRequirementActivateProposal, session: Session
     ) -> ExecutionResult:
-        """情报需求激活：草稿 Draft → 激活 Active（doc-02 §4.1）。
+        """情报需求激活：Draft → Active，或 Closed → Active（重开，doc-02 §4.1）。
 
-        前置违反（非 Draft）驳回，状态不变。
+        前置违反（非 Draft 且非 Closed）驳回，状态不变。
         """
         ir = session.get(IntelligenceRequirement, proposal.payload.requirement_id)
         if ir is None:
             raise ProposalRejectedError(["情报需求不存在"])
-        if ir.status is not IntelligenceRequirementStatus.DRAFT:
-            raise ProposalRejectedError([f"前置违反：当前状态 {ir.status.value}，需 Draft"])
+        if ir.status not in (
+            IntelligenceRequirementStatus.DRAFT,
+            IntelligenceRequirementStatus.CLOSED,
+        ):
+            raise ProposalRejectedError(
+                [f"前置违反：当前状态 {ir.status.value}，需 Draft 或 Closed"]
+            )
 
         ir.status = IntelligenceRequirementStatus.ACTIVE
         session.flush()

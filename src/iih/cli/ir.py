@@ -1,6 +1,7 @@
 """情报需求子命令：ir-create / ir-activate（doc-02 §4.1 状态机）。"""
 
 import argparse
+from datetime import date
 
 from iih.config import get_settings
 from iih.db import make_engine, make_session_factory
@@ -13,14 +14,31 @@ from iih.ledger.proposal import (
 from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
 
 
+def _parse_date(s: str) -> date | None:
+    if not s or not s.strip():
+        return None
+    return date.fromisoformat(s.strip())
+
+
 def ir_create(args: argparse.Namespace) -> int:
-    """情报需求登记：[*] → Draft。"""
+    """情报需求登记：[*] → Draft（含需求级采集配置 IIH-03.01）。"""
     settings = get_settings()
     engine = make_engine(settings)
     session_factory = make_session_factory(engine)
+    source_ids: list[int] = []
+    if args.source_ids.strip():
+        source_ids = [int(x) for x in args.source_ids.split(",") if x.strip()]
     with session_factory() as session:
         proposal = IntelligenceRequirementRegisterProposal(
-            payload=IntelligenceRequirementRegisterPayload(name=args.name, content_spec=args.spec),
+            payload=IntelligenceRequirementRegisterPayload(
+                name=args.name,
+                content_spec=args.spec,
+                collection_frequency=args.frequency.strip() or None,
+                event_freshness=args.freshness.strip() or None,
+                valid_from=_parse_date(args.valid_from),
+                valid_until=_parse_date(args.valid_until),
+                source_ids=source_ids,
+            ),
             rationale="CLI 登记（消费方声明）",
         )
         try:

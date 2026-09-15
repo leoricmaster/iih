@@ -92,6 +92,7 @@ details.box[open]>summary{margin-bottom:10px}
 table[data-resize] th{position:relative}
 .colhandle{position:absolute;right:-3px;top:0;bottom:0;width:7px;cursor:col-resize}
 .colhandle:hover{background:rgba(43,91,215,.25)}
+.box.table-box{overflow-x:auto}
 .listbar{display:flex;align-items:center;gap:8px;margin:0 0 10px}
 .listbar-t{font-size:18px;font-weight:650}
 .listbar .acts{margin-left:auto;display:flex;gap:8px;align-items:center}
