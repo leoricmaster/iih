@@ -25,6 +25,7 @@ from iih.ledger.models import (
 from iih.ledger.proposal import IntelligenceItemNewProposal
 from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
 from iih.tools.fetcher import FetcherError, fetch
+from iih.tools.snapshot_store import SnapshotStore
 
 logger = logging.getLogger("iih.pipeline")
 
@@ -67,9 +68,10 @@ def run_collect_stage(
     session_factory: sessionmaker[Session],
     llm,
     summary: RoundSummary,
+    store: SnapshotStore | None = None,
     log: LogFn | None = None,
 ) -> None:
-    """采集段：Director 派单 → fetcher 抓取 → Collector 提案 → 执行器落账。"""
+    """采集段：Director 派单 → fetcher 抓取入口页 → Collector 两跳提案 → 执行器落账。"""
 
     def say(msg: str) -> None:
         if log is not None:
@@ -96,8 +98,10 @@ def run_collect_stage(
         with session_factory() as session:
             collector = Collector(llm=llm, session=session, model=settings.llm_model)
             try:
-                proposal = collector.collect_outlet(task=task, html=html)
-            except Exception as exc:  # LLM 调用失败等
+                proposal = collector.collect_outlet(
+                    task=task, html=html, fetch_article=fetch, store=store
+                )
+            except Exception as exc:  # LLM 调用失败 / 文章页抓取失败等
                 summary.collect_failed += 1
                 summary.errors.append(f"采集失败 {task.source_name}·{task.outlet_name}：{exc}")
                 say(f"  [错误] {task.source_name}·{task.outlet_name}：{exc}")
@@ -105,7 +109,8 @@ def run_collect_stage(
 
             if proposal is None:
                 summary.collect_skipped += 1
-                say(f"  [空] {task.source_name}·{task.outlet_name}：LLM 判定无情报价值")
+                label = f"{task.source_name}·{task.outlet_name}"
+                say(f"  [跳过] {label}：无新内容（已采集或无情报价值）")
                 continue
 
             try:
@@ -242,12 +247,18 @@ def run_pipeline_round(
     settings: Settings,
     session_factory: sessionmaker[Session],
     llm,
+    store: SnapshotStore | None = None,
     log: LogFn | None = None,
 ) -> RoundSummary:
     """完整一轮：采集 → 审查 → 核实。"""
     summary = RoundSummary()
     run_collect_stage(
-        settings=settings, session_factory=session_factory, llm=llm, summary=summary, log=log
+        settings=settings,
+        session_factory=session_factory,
+        llm=llm,
+        summary=summary,
+        store=store,
+        log=log,
     )
     run_review_stage(
         settings=settings, session_factory=session_factory, llm=llm, summary=summary, log=log

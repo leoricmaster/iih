@@ -272,12 +272,11 @@ def test_source_register_rejects_when_internet_medium_missing(db_session) -> Non
 
 
 def make_automated_proposal(**overrides) -> IntelligenceItemNewProposal:
-    """AUTOMATED 模式提案：信源与途径须已登记 confirmed=True。"""
+    """AUTOMATED 模式提案：信源与途径须已登记 confirmed=True；快照为对象键。"""
     provenance_fields = {
         "modality_code": "webpage",
         "medium_code": "internet",
         "collected_at": datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
-        "original_snapshot": "W 公司公告正文归一化文本",
         "source_name": "W 公司",
         "source_type": SourceType.COMPANY,
         "outlet_name": "官网",
@@ -287,6 +286,7 @@ def make_automated_proposal(**overrides) -> IntelligenceItemNewProposal:
         "mode": ItemMode.AUTOMATED,
         "content_fingerprint": "a" * 64,
         "original_url": "https://w-mining.example/news",
+        "snapshot_object_key": f"snapshots/{'a' * 64}.html",
     } | overrides.pop("payload", {})
     top_fields = {"rationale": "自动拉取，抽取自页面正文"} | overrides
     return IntelligenceItemNewProposal(
@@ -327,6 +327,8 @@ def test_automated_item_new_lands_lead_with_fingerprint_and_initial_node(db_sess
     assert item.outlet is not None and item.outlet.name == "官网"
     assert item.content_fingerprint == "a" * 64
     assert item.original_url == "https://w-mining.example/news"
+    assert item.snapshot_object_key == f"snapshots/{'a' * 64}.html"
+    assert item.original_snapshot is None  # 自动拉取：快照在对象存储，非正文文本
 
     # 初始转引链节点：出处信源即首节点
     nodes = db_session.scalars(
@@ -368,6 +370,19 @@ def test_automated_item_new_rejects_unknown_outlet(db_session) -> None:
         StateMachineExecutor().execute(make_automated_proposal(), session=db_session)
 
     assert any("途径未登记" in r for r in excinfo.value.reasons)
+
+
+def test_automated_item_new_rejects_missing_snapshot_object(db_session) -> None:
+    """AUTOMATED 模式：快照对象键缺失驳回（无溯源不落账）。"""
+    seed_confirmed_w_outlet(db_session)
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            make_automated_proposal(payload={"snapshot_object_key": None}), session=db_session
+        )
+
+    assert "溯源缺失：原文快照对象" in excinfo.value.reasons
+    assert db_session.scalars(select(IntelligenceItem)).first() is None
 
 
 def test_ir_register_lands_draft(db_session) -> None:

@@ -1,6 +1,6 @@
 """HTML 归一化与内容指纹单测（doc-06 §3 前置过滤）。"""
 
-from iih.tools.html_normalize import extract_links, fingerprint, normalize
+from iih.tools.html_normalize import extract_link_candidates, fingerprint, normalize
 
 
 def test_normalize_strips_script_and_style() -> None:
@@ -57,10 +57,10 @@ def test_fingerprint_is_64_hex_chars() -> None:
     int(fp, 16)  # 可解析为 hex
 
 
-# ---- 原文链接提取（doc-05 §5 溯源：原文链接指向文章页） ----
+# ---- 链接候选提取（doc-06 §3 两跳选链输入：URL + 锚文本） ----
 
 
-def test_extract_links_absolutizes_and_dedupes() -> None:
+def test_extract_link_candidates_absolutizes_and_dedupes() -> None:
     html = (
         '<a href="/news/2026/jv-agreement">合资公告</a>'
         '<a href="/news/2026/jv-agreement">转载同一链接</a>'
@@ -69,21 +69,44 @@ def test_extract_links_absolutizes_and_dedupes() -> None:
         '<a href="mailto:a@b.example">邮件</a>'
     )
 
-    links = extract_links(html, base_url="https://w-mining.example/news")
+    candidates = extract_link_candidates(html, base_url="https://w-mining.example/news")
 
-    assert links == [
-        "https://w-mining.example/news/2026/jv-agreement",
-        "https://other.example/report",
+    assert candidates == [
+        ("https://w-mining.example/news/2026/jv-agreement", "合资公告"),
+        ("https://other.example/report", "外部"),
     ]
 
 
-def test_extract_links_respects_limit_and_order() -> None:
+def test_extract_link_candidates_respects_limit_and_order() -> None:
     html = "".join(f'<a href="/p/{i}">第{i}条</a>' for i in range(10))
 
-    links = extract_links(html, base_url="https://x.example", limit=3)
+    candidates = extract_link_candidates(html, base_url="https://x.example", limit=3)
 
-    assert links == [f"https://x.example/p/{i}" for i in range(3)]
+    assert candidates == [(f"https://x.example/p/{i}", f"第{i}条") for i in range(3)]
 
 
-def test_extract_links_empty_when_no_anchors() -> None:
-    assert extract_links("<p>纯文本</p>", base_url="https://x.example") == []
+def test_extract_link_candidates_empty_when_no_anchors() -> None:
+    assert extract_link_candidates("<p>纯文本</p>", base_url="https://x.example") == []
+
+
+def test_extract_link_candidates_ranks_articles_above_menus() -> None:
+    """预排序：带日期长标题的叶子路径文章链接排前，目录形菜单链接沉底；入口页自身排除。"""
+    html = (
+        '<a href="/product/zhongka/">三一重卡</a>'
+        '<a href="/news/16627.html">中国进出口银行行长到访三一集团开展合作洽谈 2026.07.29</a>'
+        '<a href="/news-collection/">新闻资讯</a>'
+        '<a href="/news/16639.html">向文波先生担任集团董事长 2026.05.17</a>'
+        '<a href="/about/">关于我们</a>'
+    )
+
+    candidates = extract_link_candidates(html, base_url="https://x.example/news-collection/")
+
+    assert candidates == [
+        (
+            "https://x.example/news/16627.html",
+            "中国进出口银行行长到访三一集团开展合作洽谈 2026.07.29",
+        ),
+        ("https://x.example/news/16639.html", "向文波先生担任集团董事长 2026.05.17"),
+        ("https://x.example/product/zhongka/", "三一重卡"),
+        ("https://x.example/about/", "关于我们"),
+    ]

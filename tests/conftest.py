@@ -1,5 +1,6 @@
 """测试基建：独立测试库（iih_test），会话级 Alembic 建表，每测试事务回滚；LLM 客户端替身。"""
 
+import hashlib
 from types import SimpleNamespace
 
 import pytest
@@ -9,7 +10,11 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session
 
-from iih.agents.collector import AttributionResult, StatementExtractionResult
+from iih.agents.collector import (
+    ArticleSelectionResult,
+    AttributionResult,
+    StatementExtractionResult,
+)
 from iih.agents.reviewer import ReviewJudgmentResult
 from iih.config import get_settings
 
@@ -33,21 +38,60 @@ def make_fake_llm(
     return SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
 
 
-def make_fake_llm_extraction(
-    extraction: StatementExtractionResult, prompt_tokens: int = 200, completion_tokens: int = 80
-):
-    """instructor 替身：返回 StatementExtractionResult。"""
+class FakeSnapshotStore:
+    """SnapshotStore 内存替身：内容寻址键与真实实现一致。"""
 
+    def __init__(self) -> None:
+        self.objects: dict[str, str] = {}
+
+    def put_html(self, html: str) -> str:
+        digest = hashlib.sha256(html.encode("utf-8")).hexdigest()
+        key = f"snapshots/{digest}.html"
+        self.objects[key] = html
+        return key
+
+    def get_html(self, key: str) -> str:
+        return self.objects[key]
+
+
+@pytest.fixture
+def fake_snapshot_store() -> FakeSnapshotStore:
+    return FakeSnapshotStore()
+
+
+def make_selection_article() -> ArticleSelectionResult:
+    """选链替身：入口页为列表页，选中合资公告文章页。"""
+    return ArticleSelectionResult(
+        url="https://w-mining.example/news/2026/jv-agreement",
+        rationale="入口页为新闻列表，选合资协议公告文章链接",
+    )
+
+
+def make_selection_self() -> ArticleSelectionResult:
+    """选链替身：入口页本身即文章正文页（单跳回退）。"""
+    return ArticleSelectionResult(url="", rationale="入口页即文章正文页")
+
+
+def _make_dispatch_llm(responses: dict[type, object], prompt_tokens: int, completion_tokens: int):
     class Completions:
         def create_with_completion(self, *, response_model, messages, **kwargs):
-            assert response_model is StatementExtractionResult
-            return extraction, SimpleNamespace(
+            result = responses[response_model]
+            return result, SimpleNamespace(
                 usage=SimpleNamespace(
                     prompt_tokens=prompt_tokens, completion_tokens=completion_tokens
                 )
             )
 
     return SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+
+
+def make_fake_llm_collect(selection: ArticleSelectionResult, extraction: StatementExtractionResult):
+    """instructor 替身：按 response_model 分发选链 / 抽取（collect_outlet 单测）。"""
+    return _make_dispatch_llm(
+        {ArticleSelectionResult: selection, StatementExtractionResult: extraction},
+        prompt_tokens=200,
+        completion_tokens=80,
+    )
 
 
 def make_fake_llm_review(
@@ -67,12 +111,18 @@ def make_fake_llm_review(
     return SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
 
 
-def make_fake_llm_dispatch(extraction: StatementExtractionResult, judgment: ReviewJudgmentResult):
-    """instructor 替身：按 response_model 分发（采集抽取 / 审查判定），供流水线全链测试。"""
+def make_fake_llm_dispatch(
+    selection: ArticleSelectionResult,
+    extraction: StatementExtractionResult,
+    judgment: ReviewJudgmentResult,
+):
+    """instructor 替身：按 response_model 分发（选链 / 抽取 / 审查判定），供流水线全链测试。"""
 
     class Completions:
         def create_with_completion(self, *, response_model, messages, **kwargs):
-            if response_model is StatementExtractionResult:
+            if response_model is ArticleSelectionResult:
+                result = selection
+            elif response_model is StatementExtractionResult:
                 result = extraction
             else:
                 assert response_model is ReviewJudgmentResult
@@ -105,11 +155,6 @@ def w_extraction() -> StatementExtractionResult:
         statement="W 公司公告：与 Z 集团签署合资协议，Q4 设立合资公司",
         rationale="页面首屏公告区主体陈述，事实性强、时效近",
     )
-
-
-@pytest.fixture
-def fake_extraction_llm(w_extraction: StatementExtractionResult):
-    return make_fake_llm_extraction(w_extraction)
 
 
 @pytest.fixture

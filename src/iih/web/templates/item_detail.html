@@ -3,6 +3,7 @@
 {% block content %}
 <h1 class="page"><a href="/items">情报条目</a> / 详情</h1>
 
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
 {% if err %}<div class="err">{{ err }}</div>{% endif %}
 
 <div class="detail-sticky">
@@ -46,7 +47,7 @@
     <li><span class="st todo">○</span><span>核实评级 · 穿透转引链 · 独立信源统计</span></li>
     {% endif %}
   </ul>
-  <div class="fbrow"><button class="btn small primary" form="run-one">▶ 立即运行一轮</button></div>
+  <div class="fbrow"><button class="btn small primary" form="run-one">▶ 立即运行</button></div>
   <form id="run-one" method="post" action="/pipeline/run"></form>
 </div>
 {% elif item.status.value == 'verified' and latest_verification %}
@@ -127,7 +128,11 @@
     <dt>采集模式</dt><dd>{{ '自动拉取' if item.mode.value == 'automated' else '人工提交' }}</dd>
     <dt>出处信源</dt><dd>{% if item.source %}<a href="/sources/{{ item.source.id }}">{{ item.source.name }}</a>{% else %}—{% endif %}</dd>
     <dt>途径</dt><dd>{{ item.outlet.name if item.outlet else '—' }}</dd>
-    <dt>原文快照</dt><dd><div class="snapbox">{{ item.original_snapshot }}</div></dd>
+    <dt>原文快照</dt><dd>
+      {% if item.snapshot_object_key %}<a href="/items/{{ item.id }}/snapshot" target="_blank" rel="noopener">存档页 ↗</a>
+      {%- elif item.original_snapshot %}<details><summary>提交文本</summary><div class="snapbox">{{ item.original_snapshot }}</div></details>
+      {%- else %}—{% endif %}
+    </dd>
     <dt>原文链接</dt><dd>{% if item.original_url %}<a href="{{ item.original_url }}" rel="noopener">{{ item.original_url }}</a>{% else %}—{% endif %}</dd>
     <dt>登记时间</dt><dd>{{ item.created_at | dtstr }}</dd>
   </dl>

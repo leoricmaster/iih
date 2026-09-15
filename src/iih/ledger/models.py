@@ -181,16 +181,19 @@ class IntelligenceItem(Base):
     modality_id: Mapped[int] = mapped_column(ForeignKey("modality.id"))
     medium_id: Mapped[int] = mapped_column(ForeignKey("medium.id"))
     collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    original_snapshot: Mapped[str] = mapped_column(Text)  # 原文快照 / 链接
+    original_snapshot: Mapped[str | None] = mapped_column(Text)  # 原文快照：人工提交文本
     source_id: Mapped[int | None] = mapped_column(ForeignKey("source.id"), index=True)
     outlet_id: Mapped[int | None] = mapped_column(ForeignKey("outlet.id"))
 
     provenance_source_id: Mapped[int | None] = mapped_column(ForeignKey("source.id"))  # 出处信源
     event_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # 事件时间
 
-    # 自动拉取路径专用（doc-06 §3 前置过滤）：内容指纹 + 原文链接
+    # 自动拉取路径专用（doc-06 §3 前置过滤）：内容指纹 + 原文链接 + 快照对象键
     content_fingerprint: Mapped[str | None] = mapped_column(String(64), index=True)
     original_url: Mapped[str | None] = mapped_column(Text)
+    snapshot_object_key: Mapped[str | None] = mapped_column(
+        String(120)
+    )  # 原始网页 HTML 对象键（MinIO）
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

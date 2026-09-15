@@ -4,13 +4,14 @@
 <h1 class="page"><a href="/requirements">情报需求</a> / 详情</h1>
 <div class="sub">{{ ir.name }}</div>
 
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
 {% if errors %}{% for e in errors %}<div class="err">{{ e }}</div>{% endfor %}{% endif %}
 
 <div class="box"><h2>{{ ir.name }} <span class="pill">{{ status_labels[ir.status] }}</span></h2>
   <div class="muted">创建于 {{ ir.created_at | dtstr }}</div>
   <div class="fbrow" style="margin-top:8px">
     {% if ir.status.value == 'draft' %}
-    <form method="post" action="/requirements/{{ ir.id }}/action"><input type="hidden" name="action" value="activate"><button class="btn small primary">确认激活</button></form>
+    <form method="post" action="/requirements/{{ ir.id }}/action"><input type="hidden" name="action" value="activate"><button class="btn small primary">激活</button></form>
     {% elif ir.status.value == 'active' %}
     <form method="post" action="/requirements/{{ ir.id }}/action"><input type="hidden" name="action" value="pause"><button class="btn small">暂停</button></form>
     <form method="post" action="/requirements/{{ ir.id }}/action"><input type="hidden" name="action" value="close"><button class="btn small">关闭</button></form>
@@ -24,7 +25,7 @@
 <div class="box"><h2>内容规格</h2>
   {% if ir.status.value == 'active' %}
   <form method="post" action="/requirements/{{ ir.id }}/spec">
-    <div class="field"><textarea name="content_spec">{{ ir.content_spec }}</textarea></div>
+    <div class="field"><textarea name="content_spec" rows="4" placeholder="自由文本，可按维度分行写：&#10;例1 主题：矿卡、电动化、订单与业绩&#10;例2 关注对象：W 公司及其竞争对手；一次信源优先&#10;例3 排除：招聘、营销活动；时效一周内">{{ ir.content_spec }}</textarea></div>
     <button class="btn primary">保存</button>
   </form>
   {% else %}
@@ -34,7 +35,7 @@
 
 <div class="box"><h2>配置自检</h2>
   <form method="post" action="/requirements/{{ ir.id }}/probe">
-    <button class="btn small primary">▶ 试采集一轮</button>
+    <button class="btn small primary">▶ 试采</button>
     <span class="muted">不产生正式条目</span>
   </form>
   {% if probe_results is not none %}
@@ -42,6 +43,7 @@
   {% for r in probe_results %}
   <div style="border-bottom:1px solid #eee;padding:9px 0">
     <div><b>{{ r.source_name }} · {{ r.outlet_name }}</b> <span class="muted">{{ r.url }}</span></div>
+    {% if r.article_url %}<div class="muted">选链：{{ r.article_url }}</div>{% endif %}
     {% if r.fetch_error %}
     <div class="err" style="margin-top:4px">抓取失败：{{ r.fetch_error }}</div>
     {% elif r.extraction_note %}

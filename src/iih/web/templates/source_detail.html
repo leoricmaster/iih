@@ -5,11 +5,21 @@
 <div class="sub">{{ source.name }} · {{ source_type_labels[source.type] }}
   {% if source.confirmed %}<span class="pill">已确认</span>{% else %}<span class="pill dashed">待确认</span>{% endif %}</div>
 
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
 {% if err %}<div class="err">{{ err }}</div>{% endif %}
 
 {% if not source.confirmed %}
 <div class="box"><div class="empty">待确认——确认功能即将上线</div></div>
 {% else %}
+<div class="box"><h2>主体</h2>
+  <form method="post" action="/sources/{{ source.id }}/rename">
+    <div class="fbrow">
+      <input type="text" name="name" value="{{ source.name }}" maxlength="80">
+      <button class="btn small">改名</button>
+    </div>
+  </form>
+</div>
+
 <div class="box"><h2>信源信用 <span class="pill rating">{{ source.credit or '—' }}</span></h2>
   {% if adjustments %}
   <table>

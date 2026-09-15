@@ -49,6 +49,7 @@ from iih.web.context import (
     register_template_filters,
 )
 from iih.web.deps import get_llm_client, get_session
+from iih.web.flash import redirect_with_flash
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = register_template_filters(Jinja2Templates(directory=TEMPLATES_DIR))
@@ -178,6 +179,7 @@ def _render_detail(
     requirement_id: int,
     *,
     errors: list[str] | None = None,
+    flash: str = "",
     probe_results: list["ProbeResult"] | None = None,
 ):
     ir = session.get(IntelligenceRequirement, requirement_id)
@@ -193,6 +195,7 @@ def _render_detail(
             "item_status_labels": STATUS_LABELS,
             "hit_items": _hit_items(session, requirement_id),
             "errors": errors or [],
+            "flash": flash,
             "probe_results": probe_results,
         },
     )
@@ -200,9 +203,12 @@ def _render_detail(
 
 @router.get("/requirements/{requirement_id}")
 def requirement_detail(
-    requirement_id: int, request: Request, session: Session = Depends(get_session)
+    requirement_id: int,
+    request: Request,
+    flash: str = "",
+    session: Session = Depends(get_session),
 ):
-    return _render_detail(request, session, requirement_id)
+    return _render_detail(request, session, requirement_id, flash=flash)
 
 
 @router.post("/requirements/{requirement_id}/action")
@@ -243,7 +249,7 @@ def requirement_spec_update(
         return _render_detail(request, session, requirement_id, errors=["内容规格不能为空"])
     ir.content_spec = content_spec.strip()
     session.commit()
-    return RedirectResponse(f"/requirements/{requirement_id}", status_code=303)
+    return redirect_with_flash(f"/requirements/{requirement_id}", "内容规格已保存")
 
 
 # ---- 配置自检（试采集预览 · 不落账，IIH-01.13 偏差 #7） ----
@@ -251,14 +257,15 @@ def requirement_spec_update(
 
 @dataclass
 class ProbeResult:
-    """单途径试采集预览结果（仅回显，不产生提案、不落账）。"""
+    """单途径试采集预览结果（仅回显，不产生提案、不落账、不存快照对象）。"""
 
     source_name: str
     outlet_name: str
     url: str
     fetch_error: str | None = None
+    article_url: str | None = None  # 选链结果（两跳：文章页地址；单跳：入口地址）
     statement: str | None = None
-    extraction_note: str | None = None  # 无情报价值 / 指纹命中既有条目
+    extraction_note: str | None = None  # 无新内容 / 命中既有条目
     extraction_rationale: str | None = None
     decision: str | None = None  # 审查预判：pass / reject
     reason_type: str | None = None
@@ -288,7 +295,7 @@ def requirement_probe(
     """配置自检：按本需求逐途径试采集，预览抽取与审查预判——不落账。
 
     供「激活后配置是否合理、能否抓到情报」的即时反馈（不等下轮采集）；
-    指纹命中既有条目时提示将走转引链追加而非新建。LLM 调用照常计量。
+    已采集内容命中既有条目时提示将走转引链追加而非新建。LLM 调用照常计量。
     """
     ir = session.get(IntelligenceRequirement, requirement_id)
     if ir is None:
@@ -321,7 +328,7 @@ def requirement_probe(
         try:
             html = fetch(url)
             proposal = Collector(llm=llm, session=session, model=settings.llm_model).collect_outlet(
-                task=task, html=html
+                task=task, html=html, fetch_article=fetch
             )
         except FetcherError as exc:
             result.fetch_error = str(exc)
@@ -333,13 +340,15 @@ def requirement_probe(
             continue
 
         if proposal is None:
-            result.extraction_note = "采集智能体判定页面无情报价值内容"
+            result.extraction_note = "无新内容（已采集或页面无情报价值）"
         elif isinstance(proposal, ItemProvenanceAppendProposal):
+            result.article_url = proposal.payload.original_url
             result.extraction_note = (
-                f"内容指纹命中既有条目 #{proposal.payload.item_id}"
+                f"已采集内容命中既有条目 #{proposal.payload.item_id}"
                 "——正式采集将追加转引链节点，不新建条目"
             )
         else:
+            result.article_url = proposal.payload.original_url
             result.statement = proposal.payload.statement
             result.extraction_rationale = proposal.rationale
             try:

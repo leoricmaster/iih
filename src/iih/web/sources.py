@@ -24,6 +24,7 @@ from iih.ledger.proposal import SourceRegisterPayload, SourceRegisterProposal
 from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
 from iih.web.context import STATUS_LABELS, base_context, register_template_filters
 from iih.web.deps import get_session
+from iih.web.flash import redirect_with_flash
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = register_template_filters(Jinja2Templates(directory=TEMPLATES_DIR))
@@ -146,7 +147,11 @@ def register(
 
 @router.get("/sources/{source_id}")
 def source_detail(
-    source_id: int, request: Request, err: str = "", session: Session = Depends(get_session)
+    source_id: int,
+    request: Request,
+    err: str = "",
+    flash: str = "",
+    session: Session = Depends(get_session),
 ):
     """信源画像：信用（档 + 调整历史）+ 途径 + 参与条目（转引链出现即计）。"""
     source = session.get(Source, source_id)
@@ -185,8 +190,38 @@ def source_detail(
             "item_status_labels": STATUS_LABELS,
             "half_life_days": HALF_LIFE_DAYS,
             "err": err,
+            "flash": flash,
         },
     )
+
+
+@router.post("/sources/{source_id}/rename")
+def source_rename(
+    source_id: int,
+    request: Request,
+    name: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    """主体改名（消费方配置编辑，同信用档人工编辑）；同名冲突拦截。"""
+    source = session.get(Source, source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="信源不存在")
+
+    new_name = name.strip()
+    if not source.confirmed:
+        err = "待确认信源不入库、不建画像、不记账"
+    elif not new_name:
+        err = "名称不能为空"
+    else:
+        dup = session.scalars(
+            select(Source).where(Source.name == new_name, Source.id != source_id)
+        ).first()
+        if dup is None:
+            source.name = new_name
+            session.commit()
+            return redirect_with_flash(f"/sources/{source_id}", f"已改名：{new_name}")
+        err = f"已存在同名信源：{new_name}"
+    return RedirectResponse(f"/sources/{source_id}?err={quote_plus(err)}", status_code=303)
 
 
 @router.post("/sources/{source_id}/credit")
@@ -212,5 +247,5 @@ def source_credit_set(
     else:
         source.credit = grade or None
         session.commit()
-        return RedirectResponse(f"/sources/{source_id}", status_code=303)
+        return redirect_with_flash(f"/sources/{source_id}", "信用档已保存")
     return RedirectResponse(f"/sources/{source_id}?err={quote_plus(err)}", status_code=303)

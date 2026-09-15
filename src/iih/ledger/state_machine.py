@@ -165,6 +165,7 @@ class StateMachineExecutor:
             event_time=proposal.payload.event_time,
             content_fingerprint=proposal.payload.content_fingerprint,
             original_url=proposal.payload.original_url,
+            snapshot_object_key=proposal.payload.snapshot_object_key,
         )
         session.add(item)
         session.flush()
@@ -196,8 +197,16 @@ class StateMachineExecutor:
             reasons.append("溯源缺失：载体")
         if not provenance.medium_code.strip():
             reasons.append("溯源缺失：媒介")
-        if not provenance.original_snapshot.strip():
+        if (
+            proposal.payload.mode is ItemMode.MANUAL
+            and not (provenance.original_snapshot or "").strip()
+        ):
             reasons.append("溯源缺失：原文快照")
+        if (
+            proposal.payload.mode is ItemMode.AUTOMATED
+            and not (proposal.payload.snapshot_object_key or "").strip()
+        ):
+            reasons.append("溯源缺失：原文快照对象")
         if not provenance.source_name.strip():
             reasons.append("溯源缺失：信源归因")
         return reasons

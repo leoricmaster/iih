@@ -8,7 +8,12 @@ from unittest.mock import patch
 
 from sqlalchemy import select
 
-from conftest import make_fake_llm_extraction, make_fake_llm_review
+from conftest import (
+    FakeSnapshotStore,
+    make_fake_llm_collect,
+    make_fake_llm_review,
+    make_selection_self,
+)
 from iih.cli import main
 from iih.ledger.models import (
     IntelligenceItem,
@@ -35,6 +40,10 @@ HTML_W = """
   <footer>页脚</footer>
 </body></html>
 """
+
+
+def _deny_fetch(url: str) -> str:
+    raise AssertionError(f"不应发起第二跳抓取：{url}")
 
 
 def _seed(db_session) -> None:
@@ -64,7 +73,7 @@ def test_ir_create_then_activate_then_collect_produces_lead(db_session, w_extrac
     直接走提案路径模拟 CLI 行为（与单元测试一致），collect 链路 mock fetcher 与 LLM。
     """
     _seed(db_session)
-    fake_llm = make_fake_llm_extraction(w_extraction)
+    fake_llm = make_fake_llm_collect(make_selection_self(), w_extraction)
 
     # ir-create 等价：登记 Draft
     from iih.ledger.proposal import (
@@ -119,7 +128,9 @@ def test_ir_create_then_activate_then_collect_produces_lead(db_session, w_extrac
         )
 
         collector = Collector(llm=fake_llm, session=db_session, model="deepseek-chat")
-        proposal = collector.collect_outlet(task=tasks[0], html=HTML_W)
+        proposal = collector.collect_outlet(
+            task=tasks[0], html=HTML_W, fetch_article=_deny_fetch, store=FakeSnapshotStore()
+        )
 
     assert proposal is not None
     result = StateMachineExecutor().execute(proposal, session=db_session)
@@ -144,10 +155,10 @@ def test_ir_create_then_activate_then_collect_produces_lead(db_session, w_extrac
     assert len(nodes) == 1
     assert nodes[0].source.name == "W 公司"
 
-    # LLM 计量
+    # LLM 计量：选链 + 抽取
     calls = db_session.scalars(select(LlmCall)).all()
-    assert len(calls) == 1
-    assert calls[0].target == "outlet_collection"
+    assert [c.target for c in calls] == ["outlet_link_select", "outlet_collection"]
+    assert item.snapshot_object_key is not None  # 快照对象已存档
 
 
 def test_collect_with_duplicate_content_appends_provenance_node(db_session, w_extraction) -> None:
@@ -159,11 +170,13 @@ def test_collect_with_duplicate_content_appends_provenance_node(db_session, w_ex
     from iih.agents.director import CollectionTask, Director
 
     tasks = Director(db_session).propose_tasks()
-    fake_llm = make_fake_llm_extraction(w_extraction)
+    fake_llm = make_fake_llm_collect(make_selection_self(), w_extraction)
     collector = Collector(llm=fake_llm, session=db_session, model="deepseek-chat")
 
     # 首次拉取：新建条目
-    first = collector.collect_outlet(task=tasks[0], html=HTML_W)
+    first = collector.collect_outlet(
+        task=tasks[0], html=HTML_W, fetch_article=_deny_fetch, store=FakeSnapshotStore()
+    )
     assert first is not None
     StateMachineExecutor().execute(first, session=db_session)
     items_after_first = len(db_session.scalars(select(IntelligenceItem)).all())
@@ -184,7 +197,9 @@ def test_collect_with_duplicate_content_appends_provenance_node(db_session, w_ex
         url="https://media-a.example/repost",
     )
 
-    proposal = collector.collect_outlet(task=repost_task, html=HTML_W)
+    proposal = collector.collect_outlet(
+        task=repost_task, html=HTML_W, fetch_article=_deny_fetch, store=FakeSnapshotStore()
+    )
 
     from iih.ledger.proposal import ItemProvenanceAppendProposal
 
@@ -193,8 +208,8 @@ def test_collect_with_duplicate_content_appends_provenance_node(db_session, w_ex
 
     # 不新建条目
     assert len(db_session.scalars(select(IntelligenceItem)).all()) == items_after_first
-    # 不调 LLM
-    assert len(db_session.scalars(select(LlmCall)).all()) == llm_calls_after_first
+    # 不重复抽取：仅选链一次 LLM（指纹命中不调抽取）
+    assert len(db_session.scalars(select(LlmCall)).all()) == llm_calls_after_first + 1
 
     # 转引链节点追加
     nodes = db_session.scalars(select(ProvenanceChainNode)).all()
@@ -277,7 +292,7 @@ def test_cli_collect_e2e_produces_lead(db_session, monkeypatch, w_extraction) ->
     _seed_active_ir(db_session)
 
     fake_engine = SimpleNamespace(dispose=lambda: None)
-    fake_llm = make_fake_llm_extraction(w_extraction)
+    fake_llm = make_fake_llm_collect(make_selection_self(), w_extraction)
 
     @contextmanager
     def fake_factory():
@@ -286,6 +301,7 @@ def test_cli_collect_e2e_produces_lead(db_session, monkeypatch, w_extraction) ->
     monkeypatch.setattr("iih.cli.collect.make_engine", lambda settings: fake_engine)
     monkeypatch.setattr("iih.cli.collect.make_session_factory", lambda engine: fake_factory)
     monkeypatch.setattr("iih.cli.collect.make_llm_client", lambda settings: fake_llm)
+    monkeypatch.setattr("iih.cli.collect.make_snapshot_store", lambda settings: FakeSnapshotStore())
     monkeypatch.setattr("iih.pipeline.fetch", lambda url, **kwargs: HTML_W)
 
     rc = main(["collect"])
@@ -298,6 +314,7 @@ def test_cli_collect_e2e_produces_lead(db_session, monkeypatch, w_extraction) ->
     assert item.source.name == "W 公司"
     assert item.outlet.name == "官网"
     assert item.original_url == "https://w-mining.example/news"
+    assert item.snapshot_object_key is not None
 
 
 # ---- IIH-01.02 线索审查过滤 CLI ----
@@ -511,3 +528,32 @@ def test_cli_verify_e2e_no_candidates_skips(db_session, monkeypatch) -> None:
     rc = main(["verify"])
 
     assert rc == 0
+
+
+def test_cli_seed_lands_baseline_and_idempotent(db_session, monkeypatch) -> None:
+    """seed 子命令：版本化种子铺基线（信源+途径+初始档、需求激活），重复执行幂等。"""
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    fake_engine = SimpleNamespace(dispose=lambda: None)
+
+    @contextmanager
+    def fake_factory():
+        yield db_session
+
+    monkeypatch.setattr("iih.cli.seed.make_engine", lambda settings: fake_engine)
+    monkeypatch.setattr("iih.cli.seed.make_session_factory", lambda engine: fake_factory)
+
+    assert main(["seed"]) == 0
+
+    source = db_session.scalars(select(Source).where(Source.name == "三一集团")).one()
+    assert source.confirmed is True
+    assert source.credit == "C"
+    assert source.outlets[0].entry == "https://www.sanygroup.com/"
+    ir = db_session.scalars(select(IntelligenceRequirement)).one()
+    assert ir.content_spec == "主题：财报、挖掘机、行业合作"
+    assert ir.status is IntelligenceRequirementStatus.ACTIVE
+
+    assert main(["seed"]) == 0  # 幂等：同名跳过，不重复落账
+    assert len(db_session.scalars(select(Source)).all()) == 1
+    assert len(db_session.scalars(select(IntelligenceRequirement)).all()) == 1

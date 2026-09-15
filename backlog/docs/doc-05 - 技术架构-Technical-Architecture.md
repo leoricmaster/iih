@@ -54,11 +54,11 @@ flowchart TB
     subgraph HOST[单机 · Docker Compose]
         APP[web-app 单体]
         PG[(PostgreSQL)]
-        FS[/文件存储/]
+        MO[(MinIO 对象存储)]
     end
     U((消费方)) --> APP
     APP --> PG
-    APP --> FS
+    APP --> MO
     APP --> EXT[互联网 · LLM API · 推送通道]
 ```
 
@@ -66,7 +66,7 @@ flowchart TB
 |---|---|---|---|
 | web-app | 记账层六模块（§4）、五类智能体执行编排、工具层、HTTP API 与薄 Web UI | Python 单体（FastAPI + SQLAlchemy + Alembic） | 判断层与工具层依赖 AI 生态（LLM SDK、ASR/OCR/解析管线），Python 覆盖最全；单人单语言维护面最小 |
 | PostgreSQL | 溯源存储：情报条目、命题、推理记录、反馈、信源与画像；调度任务；LLM 调用计量 | PostgreSQL | 提案"校验 → 迁移 → 落账"需事务原子性；分发检索免独立检索引擎，同库满足 |
-| 文件存储 | 原文快照、录音/图片等原始素材 | 本地目录（挂载卷），S3 兼容接口留后 | 快照仅内部留存（立项 §8）；量级单机可容 |
+| 文件存储 | 原文快照、录音/图片等原始素材 | MinIO（S3 兼容对象存储，内容寻址键，桶自建） | 快照为佐证留存（立项 §8）、Web 代理回放（CSP sandbox）；单机容器即容，S3 接口留扩展 |
 
 关键取舍：
 
@@ -109,6 +109,14 @@ flowchart TB
 ```
 
 判断层五类智能体见智能体规约（doc-06），无状态调用、输出提案、智能体间不直接通信，全部经记账层中转。工具层为无状态功能，作为智能体工具被调用，清单随实现另行沉淀。English 命名：判断层 Judgment Layer｜记账层 Ledger Layer｜工具层 Tool Layer｜提案 Proposal（契约 §5）。
+
+工具层抓取侧选型（2026-09 调研沉淀）：
+
+- 正文抽取引成熟轮子（方向 trafilatura 系，Apache-2.0；正文 + 元数据标题，空结果回退自研归一化）。硬理由在指纹：指纹须对正文计算——对「导航+正文」整体计算时，信源改一次导航、同一文章指纹即变，内容去重失效；
+- 列表页选链无免配置通用轮子：业界两派——按站写规则（Scrapy 系）与通用打分 + LLM（crawl4ai 思路）；取后者（确定性预排序 + LLM 选链，见 doc-06 §3），与零配置准入设计一致；
+- JS 渲染页走 Playwright 系，待服务端渲染覆盖不足时引入；
+- RSS/sitemap 免爬通道可经 trafilatura 自带模块增强（多数国内企业官网两者皆无，列表页爬取仍为主线）；
+- 抓取全家桶框架（Firecrawl/crawl4ai/Jina Reader）不引入：接管「抓→抽→结构化」整链，与「判断归智能体、工具无状态」架构重叠。
 
 记账层六个模块：
 

@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from conftest import make_fake_llm_dispatch
+from conftest import FakeSnapshotStore, make_fake_llm_dispatch, make_selection_article
 from iih.agents.collector import StatementExtractionResult
 from iih.agents.reviewer import ReviewJudgmentResult
 from iih.config import get_settings
@@ -25,7 +25,19 @@ from iih.pipeline import RoundSummary, run_pipeline_round
 from iih.web.app import create_app
 from iih.web.pipeline import run_round_with_lock
 
-HTML_FETCH_PAGE = """
+ENTRY_URL = "https://w-mining.example/news"
+ARTICLE_URL = "https://w-mining.example/news/2026/jv-agreement"
+
+HTML_ENTRY_LISTING = """
+<html><head><title>W 公司新闻</title></head><body>
+  <main>
+    <h1>新闻</h1>
+    <a href="/news/2026/jv-agreement">W 公司与 Z 集团签署合资协议</a>
+  </main>
+</body></html>
+"""
+
+HTML_ARTICLE = """
 <html><head><title>W 公司</title></head><body>
   <main>
     <p>W 公司公告：与 Z 集团签署合资协议，Q4 设立合资公司。</p>
@@ -53,9 +65,10 @@ def _seed_collectable_fixture(db_session) -> int:
 
 def _dispatch_llm(ir_id: int):
     return make_fake_llm_dispatch(
+        make_selection_article(),
         StatementExtractionResult(
             statement="W 公司公告：与 Z 集团签署合资协议，Q4 设立合资公司",
-            rationale="页面公告区主体陈述",
+            rationale="文章公告段主体陈述",
         ),
         ReviewJudgmentResult(
             decision="pass",
@@ -81,15 +94,17 @@ def test_round_summary_flash_counts() -> None:
 
 
 def test_run_pipeline_round_full_chain(db_session, monkeypatch) -> None:
-    """一轮跑通采集（fetch 替身）→ 审查 → 核实：新建线索落账至评级 B2。"""
+    """一轮跑通两跳采集（fetch 替身）→ 审查 → 核实：新建线索落账至评级 B2。"""
     ir_id = _seed_collectable_fixture(db_session)
-    monkeypatch.setattr("iih.pipeline.fetch", lambda url: HTML_FETCH_PAGE)
+    pages = {ENTRY_URL: HTML_ENTRY_LISTING, ARTICLE_URL: HTML_ARTICLE}
+    monkeypatch.setattr("iih.pipeline.fetch", lambda url: pages[url])
     session_factory = sessionmaker(bind=db_session.bind, join_transaction_mode="create_savepoint")
 
     summary = run_pipeline_round(
         settings=get_settings(),
         session_factory=session_factory,
         llm=_dispatch_llm(ir_id),
+        store=FakeSnapshotStore(),
     )
 
     assert summary.tasks == 1
@@ -101,6 +116,8 @@ def test_run_pipeline_round_full_chain(db_session, monkeypatch) -> None:
     assert item.status is ItemStatus.VERIFIED
     assert item.rating == "B2"
     assert item.mode.value == "automated"
+    assert item.original_url == ARTICLE_URL  # 两跳：原文链接锚定文章页
+    assert item.snapshot_object_key is not None  # 快照对象已存档
 
 
 def test_run_pipeline_round_without_tasks_is_noop(db_session) -> None:

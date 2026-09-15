@@ -1,6 +1,7 @@
 """Web 层共享模板上下文：侧栏徽标计数、通用标签、模板过滤器。"""
 
 from datetime import UTC, datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi.templating import Jinja2Templates
@@ -13,6 +14,9 @@ from iih.ledger.models import (
     ItemStatus,
     RejectionReasonEnum,
 )
+
+# 样式表版本号（文件 mtime）：链接带 ?v= 击穿浏览器缓存，改样式即换 URL
+CSS_VERSION = str(int((Path(__file__).parent / "static" / "app.css").stat().st_mtime))
 
 STATUS_LABELS = {
     ItemStatus.LEAD: "线索",
@@ -52,6 +56,7 @@ def base_context(session: Session, nav: str) -> dict:
         "nav": nav,
         "inbox_count": inbox_count(session),
         "pipeline_interval": get_settings().pipeline_interval_seconds,
+        "css_version": CSS_VERSION,
     }
 
 

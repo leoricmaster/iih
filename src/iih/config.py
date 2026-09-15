@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     # 展示时区：库内时间戳一律 UTC，Web 展示按此时区换算
     display_timezone: str = "Asia/Shanghai"
 
+    # 原文快照对象存储（doc-04）：自动拉取条目的原始网页 HTML 存 MinIO
+    snapshot_endpoint: str = "minio:9000"
+    snapshot_access_key: str = "minioadmin"
+    snapshot_secret_key: str = "minioadmin"
+    snapshot_bucket: str = "iih-snapshots"
+    snapshot_secure: bool = False
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 

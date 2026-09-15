@@ -9,6 +9,7 @@ from iih.agents.llm import make_llm_client
 from iih.config import get_settings
 from iih.db import make_engine, make_session_factory
 from iih.pipeline import RoundSummary, run_collect_stage
+from iih.tools.snapshot_store import make_snapshot_store
 
 
 def run(args: argparse.Namespace) -> int:
@@ -24,6 +25,7 @@ def run(args: argparse.Namespace) -> int:
         session_factory=session_factory,
         llm=llm,
         summary=summary,
+        store=make_snapshot_store(settings),
         log=print,
     )
     print(summary.flash())

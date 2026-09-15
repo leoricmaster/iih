@@ -6,13 +6,14 @@
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from iih.agents.verifier import Verifier
+from iih.config import get_settings
 from iih.ledger.feedback_router import TYPE_LABELS
 from iih.ledger.models import (
     Feedback,
@@ -27,6 +28,7 @@ from iih.ledger.models import (
 )
 from iih.ledger.proposal import ItemReverifyPayload, ItemReverifyProposal
 from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
+from iih.tools.snapshot_store import SnapshotStore, make_snapshot_store
 from iih.web.context import (
     REJECTION_REASON_LABELS,
     STATUS_LABELS,
@@ -206,6 +208,7 @@ def _render_detail(
     item_id: int,
     *,
     err: str = "",
+    flash: str = "",
     fb_type: str = "",
     fb_reason: str = "",
 ):
@@ -256,9 +259,33 @@ def _render_detail(
             "status_labels": STATUS_LABELS,
             "reason_labels": REJECTION_REASON_LABELS,
             "err": err,
+            "flash": flash,
             "fb_type": fb_type,
             "fb_reason": fb_reason,
         },
+    )
+
+
+@router.get("/items/{item_id}/snapshot")
+def item_snapshot(item_id: int, request: Request, session: Session = Depends(get_session)):
+    """快照回放：对象存储原始 HTML 原样返回（新窗口查看）。
+
+    沙箱响应头：存档页里的脚本 / 表单不得在本站源下执行（CSP sandbox）。
+    """
+    item = session.get(IntelligenceItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="条目不存在")
+    if not item.snapshot_object_key:
+        raise HTTPException(status_code=404, detail="该条目无对象快照")
+
+    store: SnapshotStore = getattr(request.app.state, "snapshot_store", None) or (
+        make_snapshot_store(get_settings())
+    )
+    request.app.state.snapshot_store = store
+    return Response(
+        content=store.get_html(item.snapshot_object_key),
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Security-Policy": "sandbox", "X-Content-Type-Options": "nosniff"},
     )
 
 
@@ -267,11 +294,14 @@ def item_detail_page(
     item_id: int,
     request: Request,
     err: str = "",
+    flash: str = "",
     fb_type: str = "",
     fb_reason: str = "",
     session: Session = Depends(get_session),
 ):
-    return _render_detail(request, session, item_id, err=err, fb_type=fb_type, fb_reason=fb_reason)
+    return _render_detail(
+        request, session, item_id, err=err, flash=flash, fb_type=fb_type, fb_reason=fb_reason
+    )
 
 
 @router.post("/items/{item_id}/reverify")

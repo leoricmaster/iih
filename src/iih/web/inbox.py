@@ -30,6 +30,7 @@ from iih.ledger.proposal import ItemReviewDisputePayload, ItemReviewDisputePropo
 from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
 from iih.web.context import STATUS_LABELS, base_context, register_template_filters
 from iih.web.deps import get_llm_client, get_session
+from iih.web.flash import redirect_with_flash
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = register_template_filters(Jinja2Templates(directory=TEMPLATES_DIR))
@@ -153,9 +154,12 @@ def item_feedback(
         )
         if err is not None:
             return RedirectResponse(f"/items/{item_id}?err={quote_plus(err)}", status_code=303)
+        message = "审查异议已记录并重审"
+    else:
+        message = f"已记录反馈：{TYPE_LABELS[type_enum]}"
 
     referer = request.headers.get("referer")
-    return RedirectResponse(referer or f"/items/{item_id}", status_code=303)
+    return redirect_with_flash(referer or f"/items/{item_id}", message)
 
 
 def _run_dispute_rereview(

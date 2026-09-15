@@ -1,0 +1,18 @@
+{
+  "sources": [
+    {
+      "source_name": "三一集团",
+      "source_type": "company",
+      "outlet_name": "官网",
+      "outlet_entry": "https://www.sanygroup.com/",
+      "initial_credit": "C"
+    }
+  ],
+  "requirements": [
+    {
+      "name": "长期跟踪三一公司动态",
+      "content_spec": "主题：财报、挖掘机、行业合作",
+      "activate": true
+    }
+  ]
+}

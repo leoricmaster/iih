@@ -7,7 +7,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from conftest import make_fake_llm, make_fake_llm_dispatch, make_fake_llm_review
+from conftest import (
+    FakeSnapshotStore,
+    make_fake_llm,
+    make_fake_llm_dispatch,
+    make_fake_llm_review,
+    make_selection_article,
+    make_selection_self,
+)
 from iih.agents.collector import StatementExtractionResult
 from iih.agents.reviewer import ReviewJudgmentResult
 from iih.ledger.credit import SOURCE_CREDIT_FORMULA_VERSION
@@ -392,7 +399,11 @@ def test_quick_feedback_from_inbox_card_lands_with_default_reason(
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "http://testserver/"
+    from urllib.parse import parse_qs, urlsplit
+
+    loc = response.headers["location"]
+    assert loc.startswith("http://testserver/?flash=")  # 回来源页且带提示
+    assert parse_qs(urlsplit(loc).query)["flash"] == ["已记录反馈：有效"]
     feedback = db_session.scalars(select(Feedback)).unique().one()
     assert feedback.item_id == item.id
     assert feedback.feedback_type is FeedbackType.VALID
@@ -854,7 +865,19 @@ def test_source_detail_404_for_unknown(inbox_client: TestClient) -> None:
 
 # ---- IIH-01.13 流水线 UI 触发（浏览器端到端） ----
 
-HTML_FETCH_PAGE = """
+ENTRY_URL = "https://w-mining.example/news"
+ARTICLE_URL = "https://w-mining.example/news/2026/jv-agreement"
+
+HTML_ENTRY_LISTING = """
+<html><head><title>W 公司新闻</title></head><body>
+  <main>
+    <h1>新闻</h1>
+    <a href="/news/2026/jv-agreement">W 公司与 Z 集团签署合资协议</a>
+  </main>
+</body></html>
+"""
+
+HTML_ARTICLE_PAGE = """
 <html><head><title>W 公司</title></head><body>
   <main>
     <p>W 公司公告：与 Z 集团签署合资协议，Q4 设立合资公司。</p>
@@ -864,7 +887,7 @@ HTML_FETCH_PAGE = """
 
 
 def test_pipeline_button_cold_start_to_rated_inbox(db_session, monkeypatch) -> None:
-    """对应 IIH-01.13 AC#1：纯浏览器冷启动→立即运行一轮→收件箱见评级条目。"""
+    """对应 IIH-01.13 AC#1：纯浏览器冷启动→立即运行一轮→收件箱见评级条目（两跳采集）。"""
     app = create_app()
     app.dependency_overrides[get_session] = lambda: db_session
     with TestClient(app) as client:
@@ -877,7 +900,7 @@ def test_pipeline_button_cold_start_to_rated_inbox(db_session, monkeypatch) -> N
                 "source_name": "W 公司",
                 "source_type": "company",
                 "outlet_name": "官网",
-                "outlet_entry": "https://w-mining.example/news",
+                "outlet_entry": ENTRY_URL,
                 "initial_credit": "B",
             },
             follow_redirects=True,
@@ -887,7 +910,7 @@ def test_pipeline_button_cold_start_to_rated_inbox(db_session, monkeypatch) -> N
 
         extraction = StatementExtractionResult(
             statement="W 公司公告：与 Z 集团签署合资协议，Q4 设立合资公司",
-            rationale="页面公告区主体陈述",
+            rationale="文章公告段主体陈述",
         )
         judgment = ReviewJudgmentResult(
             decision="pass",
@@ -895,11 +918,15 @@ def test_pipeline_button_cold_start_to_rated_inbox(db_session, monkeypatch) -> N
             matched_requirement_id=ir_id,
             rationale="陈述主题命中激活需求「跟踪 W 公司」",
         )
+        pages = {ENTRY_URL: HTML_ENTRY_LISTING, ARTICLE_URL: HTML_ARTICLE_PAGE}
         monkeypatch.setattr(
             "iih.agents.llm.make_llm_client",
-            lambda settings: make_fake_llm_dispatch(extraction, judgment),
+            lambda settings: make_fake_llm_dispatch(make_selection_article(), extraction, judgment),
         )
-        monkeypatch.setattr("iih.pipeline.fetch", lambda url: HTML_FETCH_PAGE)
+        monkeypatch.setattr("iih.pipeline.fetch", lambda url: pages[url])
+        monkeypatch.setattr(
+            "iih.tools.snapshot_store.make_snapshot_store", lambda settings: FakeSnapshotStore()
+        )
 
         response = client.post("/pipeline/run", follow_redirects=True)
 
@@ -912,6 +939,8 @@ def test_pipeline_button_cold_start_to_rated_inbox(db_session, monkeypatch) -> N
     item = db_session.scalars(select(IntelligenceItem)).unique().one()
     assert item.status is ItemStatus.VERIFIED
     assert item.rating == "B2"
+    assert item.original_url == ARTICLE_URL  # 原文链接锚定文章页
+    assert item.snapshot_object_key is not None
 
 
 def test_pipeline_button_busy_flashes_hint(db_session) -> None:
@@ -1004,7 +1033,34 @@ def test_source_credit_set_via_profile_page(sources_client: TestClient, db_sessi
 
     assert response.status_code == 200
     assert '<span class="pill rating">B</span>' in response.text
+    assert "信用档已保存" in response.text  # 成功提示可见（flash）
     assert db_session.get(Source, source.id).credit == "B"
+
+
+def test_source_rename_via_profile_page(sources_client: TestClient, db_session) -> None:
+    """画像页主体改名：落账 + 空名/同名冲突拦截。"""
+    source = Source(name="三一集图", type=SourceType.COMPANY, confirmed=True)
+    other = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True)
+    db_session.add_all([source, other])
+    db_session.flush()
+
+    empty = sources_client.post(
+        f"/sources/{source.id}/rename", data={"name": "  "}, follow_redirects=True
+    )
+    assert "名称不能为空" in empty.text
+
+    dup = sources_client.post(
+        f"/sources/{source.id}/rename", data={"name": "W 公司"}, follow_redirects=True
+    )
+    assert "已存在同名信源" in dup.text
+    assert db_session.get(Source, source.id).name == "三一集图"
+
+    ok = sources_client.post(
+        f"/sources/{source.id}/rename", data={"name": "三一集团"}, follow_redirects=True
+    )
+    assert ok.status_code == 200
+    assert "已改名：三一集团" in ok.text  # 成功提示可见（flash）
+    assert db_session.get(Source, source.id).name == "三一集团"
 
 
 def test_reverify_rescues_undetermined_after_credit_set(
@@ -1128,8 +1184,10 @@ def test_requirement_probe_previews_without_landing(db_session, monkeypatch, w_e
         matched_requirement_id=ir_id,
         rationale="陈述主题命中本需求内容规格",
     )
-    app = _probe_app(db_session, make_fake_llm_dispatch(w_extraction, judgment))
-    monkeypatch.setattr("iih.web.requirements.fetch", lambda url, **kwargs: HTML_FETCH_PAGE)
+    app = _probe_app(
+        db_session, make_fake_llm_dispatch(make_selection_self(), w_extraction, judgment)
+    )
+    monkeypatch.setattr("iih.web.requirements.fetch", lambda url, **kwargs: HTML_ARTICLE_PAGE)
 
     with TestClient(app) as client:
         response = client.post(f"/requirements/{ir_id}/probe")
@@ -1140,7 +1198,7 @@ def test_requirement_probe_previews_without_landing(db_session, monkeypatch, w_e
     assert w_extraction.rationale in response.text
     assert "预判 · 命中" in response.text
     assert db_session.scalars(select(IntelligenceItem)).first() is None  # 不落账
-    assert len(db_session.scalars(select(LlmCall)).all()) == 2  # 抽取 + 预判，计量照记
+    assert len(db_session.scalars(select(LlmCall)).all()) == 3  # 选链 + 抽取 + 预判，计量照记
 
 
 def test_requirement_probe_reject_shows_chinese_reason(
@@ -1154,8 +1212,10 @@ def test_requirement_probe_reject_shows_chinese_reason(
         matched_requirement_id=None,
         rationale="与需求内容规格无关",
     )
-    app = _probe_app(db_session, make_fake_llm_dispatch(w_extraction, judgment))
-    monkeypatch.setattr("iih.web.requirements.fetch", lambda url, **kwargs: HTML_FETCH_PAGE)
+    app = _probe_app(
+        db_session, make_fake_llm_dispatch(make_selection_self(), w_extraction, judgment)
+    )
+    monkeypatch.setattr("iih.web.requirements.fetch", lambda url, **kwargs: HTML_ARTICLE_PAGE)
 
     with TestClient(app) as client:
         response = client.post(f"/requirements/{ir_id}/probe")
@@ -1195,6 +1255,69 @@ def test_requirement_probe_without_outlets_shows_hint(db_session) -> None:
 
     assert response.status_code == 200
     assert "无已登记互联网途径" in response.text
+
+
+# ---- IIH-01.15 快照对象存档与详情呈现 / IIH-01.16 需求表单引导 ----
+
+
+def test_item_detail_shows_snapshot_link_not_flat_text(
+    inbox_client: TestClient, db_session
+) -> None:
+    """对应 IIH-01.15 AC#4：自动条目快照为存档链接（不平铺）、默认视图只有陈述/评级/轨迹。"""
+    item = _seed_verified_item(db_session)
+    item.snapshot_object_key = "snapshots/abc.html"
+    item.original_snapshot = None
+    db_session.flush()
+
+    detail = inbox_client.get(f"/items/{item.id}")
+
+    assert f'href="/items/{item.id}/snapshot"' in detail.text
+    assert "存档页" in detail.text
+    assert "snapbox" not in detail.text  # 不再平铺归一化文本快照
+
+
+def test_item_snapshot_route_serves_sandboxed_html(inbox_client: TestClient, db_session) -> None:
+    """快照回放：对象 HTML 原样返回 + CSP sandbox（存档页脚本不得在本域执行）。"""
+    app = inbox_client.app
+    store = FakeSnapshotStore()
+    key = store.put_html(HTML_ARTICLE_PAGE)
+    app.state.snapshot_store = store
+    item = _seed_verified_item(db_session)
+    item.snapshot_object_key = key
+    db_session.flush()
+
+    response = inbox_client.get(f"/items/{item.id}/snapshot")
+    manual = _seed_verified_item(db_session, statement="人工线索", source_name="Z 集团")
+
+    assert response.status_code == 200
+    assert response.headers["content-security-policy"] == "sandbox"
+    assert "W 公司公告" in response.text  # 对象内容原样回放
+    assert inbox_client.get(f"/items/{manual.id}/snapshot").status_code == 404  # 无对象快照
+    assert inbox_client.get("/items/9999/snapshot").status_code == 404
+
+
+def test_item_detail_manual_snapshot_collapsed(inbox_client: TestClient, db_session) -> None:
+    """对应 IIH-01.15 AC#5：人工条目快照仍为提交文本（折叠呈现），不回归。"""
+    item = _seed_verified_item(db_session)  # original_snapshot = 提交文本
+
+    detail = inbox_client.get(f"/items/{item.id}")
+
+    assert "<details><summary>提交文本</summary>" in detail.text
+    assert "W 公司今日公告，与 Z 集团签署合资协议。" in detail.text
+
+
+def test_requirement_form_shows_guided_placeholder(inbox_client: TestClient, db_session) -> None:
+    """对应 IIH-01.16 AC#1：内容规格 placeholder 覆盖主题/关注对象/排除写法示例。"""
+    ir_id = _create_ir_via_form(inbox_client)
+    inbox_client.post(f"/requirements/{ir_id}/action", data={"action": "activate"})
+
+    listing = inbox_client.get("/requirements")
+    detail = inbox_client.get(f"/requirements/{ir_id}")
+
+    for page in (listing, detail):
+        assert "主题：矿卡、电动化、订单与业绩" in page.text
+        assert "关注对象：W 公司及其竞争对手" in page.text
+        assert "排除：招聘、营销活动" in page.text
 
 
 # ---- 审查异议重审（doc-02 §6 处置通路：噪音回候选） ----
