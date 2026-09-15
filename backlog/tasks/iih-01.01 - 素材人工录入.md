@@ -33,7 +33,7 @@ ordinal: 2000
 
 录入素材页（doc-07 §2.3、原型「录入素材」页）：选媒介、填写陈述内容，提交生成线索提案，经状态机执行器落账为「线索」态，溯源五要素齐备。信源与途径不经登记、由采集智能体从陈述归因补记（接 LLM 最简归因：推断信源与途径；非互联网途径不经登记，doc-06 §3）；识别出未登记信源则经双通道确认制准入（decision-05）。
 
-本故事范围（奠基裁夺）：仅文字载体录入；附件载体管线（录音 ASR / 图片 OCR / 文档解析）剥离至 IIH-01.09 / IIH-01.10 / IIH-01.11（非 MVP），实体提及抽取剥离至 IIH-01.12（非 MVP）。承载奠基工作包：提案契约与状态机执行器、工程骨架与 CI 基线（选型见技术架构 §1/§3、质量保障见 §8），实现计划于开发启动时编写。
+本故事范围（奠基裁夺）：仅文字载体录入；附件载体管线（录音 ASR / 图片 OCR / 文档解析）剥离至 IIH-02.01 / IIH-02.02 / IIH-02.03（非 MVP），实体提及抽取剥离至 DRAFT-11（非 MVP）。承载奠基工作包：提案契约与状态机执行器、工程骨架与 CI 基线（选型见技术架构 §1/§3、质量保障见 §8），实现计划于开发启动时编写。
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -62,7 +62,7 @@ ordinal: 2000
 ### 阶段 1 · 最简 schema（doc-04 §1，English 命名见术语表 §三/§六）
 - SQLAlchemy models：Medium、Modality、Source、Outlet、IntelligenceItem（status / rating / void_flag / provenance 五要素 / provenance_source / event_time / mode）
 - Source 加待确认状态：归因产出的新信源记待确认、不入正式池不参与信用（decision-05），确认入信源库归 IIH-01.07
-- EntityMention 表随 IIH-01.12，本任务不建
+- EntityMention 表随 DRAFT-11（实体提及抽取），本任务不建
 - Alembic 初始迁移建表
 
 ### 阶段 2 · CI 基线（doc-05 §8、doc-08）
@@ -77,7 +77,7 @@ ordinal: 2000
 
 ### 阶段 4 · 采集智能体 Collector · 最简归因（doc-06 §3）
 - Collector 执行器包（agents/）：人工提交路径不经定向任务化、直接产出线索提案
-- LLM 最简归因：从陈述 + 媒介推断 Source（发布主体）+ Outlet（线下场景途径），组装溯源五要素；实体提及抽取剥离至 IIH-01.12
+- LLM 最简归因：从陈述 + 媒介推断 Source（发布主体）+ Outlet（线下场景途径），组装溯源五要素；实体提及抽取剥离至 DRAFT-11
 - LLM 集成：OpenAI 客户端 + instructor（Pydantic 结构化输出归因字段）；起步接 DeepSeek（OpenAI 兼容端点）；provider/model/base_url/api_key 走环境变量——切 provider 只改配置不动代码；SDK 直连、调用计量入 PG（最简计量表：智能体/对象/token/时间）
 - 测试用 LLM mock
 

@@ -1,5 +1,5 @@
 ---
-id: DRAFT-09
+id: IIH-03.01
 title: 需求级采集配置
 status: To Do
 assignee: []
@@ -15,7 +15,8 @@ references:
   - IIH-01.13
 priority: medium
 type: feature
-ordinal: 15000
+ordinal: 16001
+parent_task_id: IIH-03
 ---
 
 ## Description

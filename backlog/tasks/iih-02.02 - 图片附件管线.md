@@ -1,5 +1,5 @@
 ---
-id: IIH-01.10
+id: IIH-02.02
 title: 图片附件管线
 status: To Do
 assignee: []
@@ -14,9 +14,9 @@ references:
   - doc-04 §1
   - doc-05 §3
   - prototype/index.html 录入素材页
-parent_task_id: IIH-01
+parent_task_id: IIH-02
 type: feature
-ordinal: 11000
+ordinal: 15002
 ---
 
 ## Description
