@@ -99,10 +99,7 @@ def _collect_outlets(session: Session) -> list[Outlet]:
             .where(Outlet.medium.has())
         )
     )
-    return [
-        o for o in outlets
-        if o.medium is not None and o.medium.code == "internet" and o.entry
-    ]
+    return [o for o in outlets if o.medium is not None and o.medium.code == "internet" and o.entry]
 
 
 @router.get("/requirements")
