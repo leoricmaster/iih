@@ -1,11 +1,11 @@
 ---
 id: IIH-03.01
 title: 需求级采集配置
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-15 07:46'
-updated_date: '2026-09-15 10:03'
+updated_date: '2026-09-15 12:17'
 labels:
   - product
   - pipeline
@@ -43,16 +43,16 @@ ordinal: 16001
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Given 消费方为需求 A 配置频率 1h、需求 B 频率 24h When 调度器运行 Then A、B 按各自频率独立采集，互不干扰
-- [ ] #2 Given 消费方为需求 A 绑定信源 [S1, S2]、需求 B 不绑定（=全部）When 调度器运行 Then A 仅派单到 S1/S2 的互联网途径，B 派单到全部已确认信源的互联网途径；人工录入无论归因信源是否在绑定内，都按内容规格正常匹配
-- [ ] #3 Given 消费方为需求 A 配置事件时效「一周内」When 审查执行 Then 事件时间早于时效边界的线索被否决（不相关），不入候选
-- [ ] #4 Given 消费方为需求 A 配置生效窗口至 2026-12-31 When 调度器运行至 2026-12-31 后 Then 需求 A 自动从激活转为关闭
-- [ ] #5 Given 多个需求各自配置不同 When 消费方打开情报需求列表 Then 一眼可见各需求在频率、时效、来源、生效窗口四项上的差异
+- [x] #1 Given 消费方为需求 A 配置频率 1h、需求 B 频率 24h When 调度器运行 Then A、B 按各自频率独立采集，互不干扰
+- [x] #2 Given 消费方为需求 A 绑定信源 [S1, S2]、需求 B 不绑定（=全部）When 调度器运行 Then A 仅派单到 S1/S2 的互联网途径，B 派单到全部已确认信源的互联网途径；人工录入无论归因信源是否在绑定内，都按内容规格正常匹配
+- [x] #3 Given 消费方为需求 A 配置事件时效「一周内」When 审查执行 Then 事件时间早于时效边界的线索被否决（不相关），不入候选
+- [x] #4 Given 消费方为需求 A 配置生效窗口至 2026-12-31 When 调度器运行至 2026-12-31 后 Then 需求 A 自动从激活转为关闭
+- [x] #5 Given 多个需求各自配置不同 When 消费方打开情报需求列表 Then 一眼可见各需求在频率、时效、来源、生效窗口四项上的差异
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 符合 doc-08 通用 DoD（完成定义与豁免规则）
+- [x] #1 符合 doc-08 通用 DoD（完成定义与豁免规则）
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -60,3 +60,19 @@ ordinal: 16001
 <!-- SECTION:PLAN:BEGIN -->
 1. 工具函数 parse_duration_to_seconds（Nh/Nd/Nw/Nm） 2. 模型字段+迁移（频率/时效/生效起止/last_collected_at + M-N 关联表） 3. Register payload 扩展与状态机校验 4. Director 调度差异化（到期关闭+due 过滤+信源绑定过滤） 5. Pipeline 更新 last_collected_at 6. Reviewer 时效否决 7. Web UI 列表四列+详情配置行+编辑表单+新建表单+配置更新端点 8. CLI ir-create 可选参数 9. 种子数据示例配置 10. 文档同步 doc-02/doc-04 11. 测试覆盖 12. 本地门禁与 Docker 重建
 <!-- SECTION:PLAN:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: @lancer
+created: 2026-09-15 12:15
+---
+验收轮补救（并入原任务）：1) 需求列表列序调整为 需求/状态/信源/事件时效/频率/生效窗口/命中；2) 修正 alembic 迁移 g5e6f7a8b9c0 ruff format（上轮推送 CI 红的根因）。浏览器验收通过后关闭。
+---
+<!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+需求级采集配置四项（频率/事件时效/信源绑定/生效窗口）落地：模型+迁移、Register 校验、Director 差异化调度（due 过滤+绑定过滤+到期自动关闭）、Reviewer 时效否决、Web 列表四列+详情配置+编辑表单、CLI 可选参数、种子示例、doc-02/04 同步。291 测试通过、覆盖率 92.5%、mypy/ruff 绿；5 AC 各有对应自动化测试，浏览器验收通过（验收轮补救：列表列序调整+迁移文件格式修正，CI 绿 run 34967906960）。
+<!-- SECTION:FINAL_SUMMARY:END -->
