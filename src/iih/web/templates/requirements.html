@@ -47,15 +47,15 @@
 <div class="box table-box">
   {% if requirements %}
   <table data-resize>
-    <tr><th>需求</th><th>频率</th><th>事件时效</th><th>信源</th><th>生效窗口</th><th>状态</th><th>命中</th></tr>
+    <tr><th>需求</th><th>状态</th><th>信源</th><th>事件时效</th><th>频率</th><th>生效窗口</th><th>命中</th></tr>
     {% for r in requirements %}
     <tr>
       <td><a href="/requirements/{{ r.id }}">{{ r.name }}</a></td>
-      <td class="muted">{{ r.collection_frequency or '默认' }}</td>
-      <td class="muted">{{ r.event_freshness or '不限' }}</td>
-      <td class="muted">{{ format_sources(r) }}</td>
-      <td class="muted">{{ format_window(r) }}</td>
       <td><span class="pill">{{ status_labels[r.status] }}</span></td>
+      <td class="muted">{{ format_sources(r) }}</td>
+      <td class="muted">{{ r.event_freshness or '不限' }}</td>
+      <td class="muted">{{ r.collection_frequency or '默认' }}</td>
+      <td class="muted">{{ format_window(r) }}</td>
       <td class="muted">{{ hit_counts.get(r.id, 0) }}</td>
     </tr>
     {% endfor %}

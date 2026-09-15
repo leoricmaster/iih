@@ -28,12 +28,8 @@ def upgrade() -> None:
         "intelligence_requirement",
         sa.Column("event_freshness", sa.String(length=50), nullable=True),
     )
-    op.add_column(
-        "intelligence_requirement", sa.Column("valid_from", sa.Date(), nullable=True)
-    )
-    op.add_column(
-        "intelligence_requirement", sa.Column("valid_until", sa.Date(), nullable=True)
-    )
+    op.add_column("intelligence_requirement", sa.Column("valid_from", sa.Date(), nullable=True))
+    op.add_column("intelligence_requirement", sa.Column("valid_until", sa.Date(), nullable=True))
     op.add_column(
         "intelligence_requirement",
         sa.Column("last_collected_at", sa.DateTime(timezone=True), nullable=True),
