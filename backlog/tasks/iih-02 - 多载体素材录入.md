@@ -4,12 +4,11 @@ title: 多载体素材录入
 status: To Do
 assignee: []
 created_date: '2026-09-15 09:17'
-updated_date: '2026-09-15 09:20'
+updated_date: '2026-09-15 09:40'
 labels:
   - product
   - pipeline
   - ui
-milestone: m-1
 dependencies: []
 references:
   - doc-06 §3
