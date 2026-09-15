@@ -109,3 +109,15 @@ td .stmtline{max-width:340px}
 .fbtype label{display:inline-block;border:1px solid #ccc;border-radius:14px;padding:2px 10px;font-size:12px;cursor:pointer;color:#555;background:#fff}
 .fbtype input:checked+label{border-color:#2b5bd7;color:#2b5bd7;font-weight:600}
 .fbtype input:focus-visible+label{outline:2px solid #2b5bd7;outline-offset:1px}
+/* 待确认信源行（IIH-05.01）：单表单（拒绝经 button formaction），确认/拒绝恒并列；
+   input.srcname 选择器优先级须压过全局 input[type=text]{width:100%}（等特异度、后置胜） */
+.srcrow{padding:8px 0;border-bottom:1px solid #eee}
+.srcrow:last-child{border-bottom:none}
+.srcrow>form{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.srcrow-main{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+input.srcname{width:160px;flex:none;font-weight:600;font-size:13.5px;padding:3px 6px;border:1px solid transparent;background:transparent;border-radius:6px}
+input.srcname:hover{border-color:#d5d5d5;background:#fff}
+input.srcname:focus{border-color:#2b5bd7;outline:none;background:#fff}
+.srctype{width:auto;flex:none;padding:3px 6px;font-size:12.5px}
+.srcrow-acts{display:flex;align-items:center;gap:6px;margin-left:auto;white-space:nowrap}
+.srcrow-acts select{width:auto;padding:3px 6px;font-size:12.5px}

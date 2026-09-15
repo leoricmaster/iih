@@ -39,6 +39,7 @@ from iih.ledger.models import (
     ReviewDecision,
     ReviewDecisionEnum,
     Source,
+    SourceAlias,
     SourceType,
     VerificationOutcome,
     VerificationRecord,
@@ -1104,6 +1105,282 @@ def test_source_detail_shows_credit_history_and_participation(
 
 def test_source_detail_404_for_unknown(inbox_client: TestClient) -> None:
     assert inbox_client.get("/sources/9999").status_code == 404
+
+
+# ---- IIH-05.01 待确认信源确认闭环 ----
+
+
+def _seed_pending_with_item(
+    db_session, *, source_name: str = "矿业装备出口观察"
+) -> IntelligenceItem:
+    """预置待确认信源（素材归因补记产生）+ 归因到它的既有条目（单节点转引链）。"""
+    medium = db_session.scalars(select(Medium).where(Medium.code == "meeting_discussion")).one()
+    modality = db_session.scalars(select(Modality).where(Modality.code == "text")).one()
+    source = Source(name=source_name, type=SourceType.MEDIA, confirmed=False)
+    item = IntelligenceItem(
+        statement="行业大会传出电驱矿卡降价信号",
+        status=ItemStatus.LEAD,
+        mode=ItemMode.MANUAL,
+        medium=medium,
+        modality=modality,
+        collected_at=datetime(2026, 9, 15, 9, 0, tzinfo=UTC),
+        original_snapshot="行业大会纪要原文",
+        source=source,
+    )
+    db_session.add_all([source, item])
+    db_session.flush()
+    db_session.add(
+        ProvenanceChainNode(
+            item=item,
+            source=source,
+            modality=modality,
+            medium=medium,
+            collected_at=datetime(2026, 9, 15, 9, 0, tzinfo=UTC),
+        )
+    )
+    db_session.flush()
+    return item
+
+
+def test_confirm_pending_source_end_to_end(inbox_client: TestClient, db_session) -> None:
+    """对应 IIH-05.01 AC#1：信源库确认 + 初始档 → 入池、建画像、可被需求绑定。"""
+    item = _seed_pending_with_item(db_session)
+    source = item.source
+    assert source is not None
+
+    response = inbox_client.post(
+        f"/sources/{source.id}/confirm",
+        data={"initial_credit": "B", "next": "/sources"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "已确认入信源库" in response.text  # flash
+    db_session.expire_all()
+    confirmed = db_session.get(Source, source.id)
+    assert confirmed is not None
+    assert confirmed.confirmed is True
+    assert confirmed.credit == "B"
+
+    detail = inbox_client.get(f"/sources/{source.id}")
+    assert "信源信用" in detail.text  # 确认即建画像（画像页开放）
+
+    # 可被情报需求绑定（confirmed 边界放开）
+    ir_response = inbox_client.post(
+        "/requirements",
+        data={
+            "name": "跟踪行业动态",
+            "content_spec": "主题：矿山装备",
+            "source_ids": [str(source.id)],
+        },
+        follow_redirects=False,
+    )
+    assert ir_response.status_code == 303
+    ir = db_session.scalars(select(IntelligenceRequirement)).one()
+    assert [s.id for s in ir.sources] == [source.id]
+
+
+def test_reject_pending_source_leaves_audit_trail(inbox_client: TestClient, db_session) -> None:
+    """对应 IIH-05.01 AC#2：拒绝 → 不入池、留痕可见，既有条目不受影响。"""
+    item = _seed_pending_with_item(db_session)
+    source = item.source
+    assert source is not None
+    item_id, statement = item.id, item.statement
+
+    response = inbox_client.post(
+        f"/sources/{source.id}/reject", data={"next": "/sources"}, follow_redirects=True
+    )
+
+    assert response.status_code == 200
+    assert "已拒绝" in response.text  # 拒绝留痕可见（待确认区 pill + flash）
+    db_session.expire_all()
+    rejected = db_session.get(Source, source.id)
+    assert rejected is not None
+    assert rejected.confirmed is False  # 不入池
+    assert rejected.rejected_at is not None
+
+    refreshed = db_session.get(IntelligenceItem, item_id)  # 既有条目不受影响
+    assert refreshed is not None
+    assert refreshed.source_id == source.id
+    assert refreshed.statement == statement
+
+
+def test_confirm_entry_points_replace_placeholders(inbox_client: TestClient, db_session) -> None:
+    """对应 IIH-05.01 DoD#2：四处「确认功能即将上线」占位全部替换为确认入口。"""
+    item = _seed_pending_with_item(db_session)
+    source = item.source
+    assert source is not None
+    undetermined = _seed_undetermined_item(db_session, confirmed=False, name="Y 公司")
+
+    sources_page = inbox_client.get("/sources")
+    assert "确认功能即将上线" not in sources_page.text
+    assert ">确认</button>" in sources_page.text
+
+    inbox_page = inbox_client.get("/")
+    assert "确认功能即将上线" not in inbox_page.text
+    assert ">确认</button>" in inbox_page.text
+
+    profile = inbox_client.get(f"/sources/{source.id}")
+    assert "确认功能即将上线" not in profile.text
+    assert ">确认</button>" in profile.text
+
+    item_detail = inbox_client.get(f"/items/{undetermined.id}")
+    assert "确认功能即将上线" not in item_detail.text
+    assert "去确认" in item_detail.text
+
+
+def test_confirm_with_illegal_credit_redirects_with_err(
+    inbox_client: TestClient, db_session
+) -> None:
+    """支撑：初始档非法经记账层校验驳回，错误回显、状态不变。"""
+    item = _seed_pending_with_item(db_session)
+    source = item.source
+    assert source is not None
+
+    response = inbox_client.post(
+        f"/sources/{source.id}/confirm",
+        data={"initial_credit": "X", "next": "/sources"},
+        follow_redirects=True,
+    )
+
+    assert "初始信用档不合法" in response.text
+    db_session.expire_all()
+    unchanged = db_session.get(Source, source.id)
+    assert unchanged is not None
+    assert unchanged.confirmed is False
+
+
+def test_confirm_next_redirect_is_site_path_only(inbox_client: TestClient, db_session) -> None:
+    """支撑：回跳白名单——站外 next 落回默认页（防开放重定向）。"""
+    item = _seed_pending_with_item(db_session)
+    source = item.source
+    assert source is not None
+
+    response = inbox_client.post(
+        f"/sources/{source.id}/confirm",
+        data={"initial_credit": "C", "next": "https://evil.example"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/sources")
+
+
+def test_confirm_with_rename_end_to_end(inbox_client: TestClient, db_session) -> None:
+    """对应 IIH-05.01 AC#4：确认时修正名（未撞名）→ 以新名入池。"""
+    item = _seed_pending_with_item(db_session, source_name="三一")
+    source = item.source
+    assert source is not None
+
+    response = inbox_client.post(
+        f"/sources/{source.id}/confirm",
+        data={"name": "三一重工", "initial_credit": "B", "next": "/sources"},
+        follow_redirects=True,
+    )
+
+    assert "已确认入信源库：三一重工" in response.text
+    db_session.expire_all()
+    confirmed = db_session.get(Source, source.id)
+    assert confirmed is not None
+    assert confirmed.name == "三一重工"
+    assert confirmed.confirmed is True
+
+
+def test_confirm_rename_merges_into_confirmed_end_to_end(
+    inbox_client: TestClient, db_session
+) -> None:
+    """对应 IIH-05.01 AC#4：撞既有已确认信源名（三一 → 三一集团）→ 并入该信源。"""
+    existing = Source(name="三一集团", type=SourceType.COMPANY, confirmed=True, credit="A")
+    db_session.add(existing)
+    db_session.flush()
+    item = _seed_pending_with_item(db_session, source_name="三一")
+    pending = item.source
+    assert pending is not None
+
+    response = inbox_client.post(
+        f"/sources/{pending.id}/confirm",
+        data={"name": "三一集团", "initial_credit": "C", "next": "/sources"},
+        follow_redirects=True,
+    )
+
+    assert "已并入既有信源：三一集团" in response.text
+    db_session.expire_all()
+    assert db_session.get(Source, pending.id) is None  # 待确认行删除
+    refreshed = db_session.get(IntelligenceItem, item.id)
+    assert refreshed is not None
+    assert refreshed.source_id == existing.id  # 既有条目并入目标信源
+    assert db_session.get(Source, existing.id).credit == "A"  # 信用档沿用目标
+
+
+def test_confirm_with_type_correction_end_to_end(inbox_client: TestClient, db_session) -> None:
+    """对应 IIH-05.01 AC#4：确认时可修正类型（提取为媒体 → 修正为公司）。"""
+    item = _seed_pending_with_item(db_session, source_name="三一")
+    source = item.source
+    assert source is not None
+
+    response = inbox_client.post(
+        f"/sources/{source.id}/confirm",
+        data={"name": "三一", "source_type": "company", "initial_credit": "B", "next": "/sources"},
+        follow_redirects=True,
+    )
+
+    assert "已确认入信源库" in response.text
+    db_session.expire_all()
+    confirmed = db_session.get(Source, source.id)
+    assert confirmed is not None
+    assert confirmed.type is SourceType.COMPANY
+
+
+def test_confirm_rename_alias_visible_on_profile(inbox_client: TestClient, db_session) -> None:
+    """对应 IIH-05.01 AC#5：确认改名后旧名留档别名，画像页可见。"""
+    item = _seed_pending_with_item(db_session, source_name="三一")
+    source = item.source
+    assert source is not None
+
+    inbox_client.post(
+        f"/sources/{source.id}/confirm",
+        data={"name": "三一重工", "initial_credit": "B", "next": "/sources"},
+        follow_redirects=True,
+    )
+
+    detail = inbox_client.get(f"/sources/{source.id}")
+    assert "别名" in detail.text
+    assert '<span class="pill">三一</span>' in detail.text
+
+
+def test_sources_list_shows_alias_pills(sources_client: TestClient, db_session) -> None:
+    """信源库列表：主体名后内联别名 pill（仅有别名时出现）。"""
+    holder = Source(name="三一集团", type=SourceType.COMPANY, confirmed=True, credit="A")
+    db_session.add_all([holder, SourceAlias(source=holder, name="三一")])
+    db_session.flush()
+
+    listing = sources_client.get("/sources")
+
+    assert '<span class="pill">三一</span>' in listing.text
+
+
+def test_rejected_source_leaves_pending_list_and_resurfaces(
+    inbox_client: TestClient, db_session
+) -> None:
+    """拒绝即出待确认队列；再归因重捞入队，行内提示「曾拒 ×1」。"""
+    item = _seed_pending_with_item(db_session, source_name="行业媒体 B")
+    source = item.source
+    assert source is not None
+
+    inbox_client.post(
+        f"/sources/{source.id}/reject", data={"next": "/sources"}, follow_redirects=True
+    )
+
+    dequeued = inbox_client.get("/sources")
+    assert "行业媒体 B" not in dequeued.text  # 出队
+    assert "曾拒 ×" not in dequeued.text
+
+    source.rejected_at = None  # 重捞（执行器路径由状态机单测覆盖）；拒绝事件已由上方 POST 留痕
+    db_session.flush()
+
+    resurfaced = inbox_client.get("/sources")
+    assert "行业媒体 B" in resurfaced.text
+    assert "曾拒 ×1" in resurfaced.text
 
 
 # ---- IIH-01.13 流水线 UI 触发（浏览器端到端） ----

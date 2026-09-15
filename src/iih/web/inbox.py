@@ -2,7 +2,7 @@
 
 三类待办聚合：待反馈条目 · 警报汇总 · 待确认信源（decision-05）。
 本里程碑分发记录与警报未建：待反馈以已核实未作废条目近似、警报区块空态呈现；
-待确认信源为素材归因补记产生（decision-05 通道二），确认动作后续里程碑开通。
+待确认信源为素材归因补记产生（decision-05 通道二），确认/拒绝入口随 IIH-05.01 开通。
 """
 
 from pathlib import Path
@@ -28,7 +28,12 @@ from iih.ledger.models import (
 )
 from iih.ledger.proposal import ItemReviewDisputePayload, ItemReviewDisputeProposal
 from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
-from iih.web.context import STATUS_LABELS, base_context, register_template_filters
+from iih.web.context import (
+    SOURCE_TYPE_LABELS,
+    STATUS_LABELS,
+    base_context,
+    register_template_filters,
+)
 from iih.web.deps import get_llm_client, get_session
 from iih.web.flash import redirect_with_flash
 
@@ -74,8 +79,12 @@ def _latest_verifications(session: Session, item_ids: list[int]) -> dict[int, Ve
 
 
 def _pending_sources(session: Session) -> list[Source]:
-    """待确认信源：素材归因补记产生，不入正式池（decision-05 通道二）。"""
-    return list(session.scalars(select(Source).where(Source.confirmed.is_(False))))
+    """待确认信源：素材归因补记产生；拒绝即出队，再归因命中时重捞。"""
+    return list(
+        session.scalars(
+            select(Source).where(Source.confirmed.is_(False), Source.rejected_at.is_(None))
+        )
+    )
 
 
 def _undetermined_count(session: Session) -> int:
@@ -102,6 +111,7 @@ def inbox_page(request: Request, flash: str = "", session: Session = Depends(get
             "verifications": _latest_verifications(session, [i.id for i in items]),
             "undetermined_count": _undetermined_count(session),
             "pending_sources": _pending_sources(session),
+            "source_types": list(SOURCE_TYPE_LABELS.items()),
             "quick_types": QUICK_TYPES,
             "type_labels": TYPE_LABELS,
             "status_labels": STATUS_LABELS,

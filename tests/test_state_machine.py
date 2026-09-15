@@ -19,6 +19,8 @@ from iih.ledger.models import (
     ReviewDecision,
     ReviewDecisionEnum,
     Source,
+    SourceAlias,
+    SourceRejection,
     SourceType,
     VerificationOutcome,
     VerificationRecord,
@@ -40,8 +42,12 @@ from iih.ledger.proposal import (
     ProvenanceData,
     ReviewPayload,
     ReviewProposal,
+    SourceConfirmPayload,
+    SourceConfirmProposal,
     SourceRegisterPayload,
     SourceRegisterProposal,
+    SourceRejectPayload,
+    SourceRejectProposal,
     VerificationPayload,
     VerificationProposal,
 )
@@ -266,6 +272,446 @@ def test_source_register_rejects_when_internet_medium_missing(db_session) -> Non
 
     assert any("internet" in reason for reason in excinfo.value.reasons)
     assert db_session.scalars(select(Source)).first() is None
+
+
+# ---- IIH-05.01 待确认信源确认闭环 ----
+
+
+def _seed_pending_source(db_session, *, name: str = "行业媒体 A", rejected: bool = False) -> Source:
+    """待确认信源（素材归因补记产生，decision-05 通道二）。"""
+    source = Source(
+        name=name,
+        type=SourceType.MEDIA,
+        confirmed=False,
+        rejected_at=datetime(2026, 9, 15, 8, 0, tzinfo=UTC) if rejected else None,
+    )
+    db_session.add(source)
+    db_session.flush()
+    return source
+
+
+def test_source_confirm_lands_confirmed_with_initial_credit(db_session) -> None:
+    """对应 IIH-05.01 AC#1：确认入池——已确认态 + 初始信用档 + 拒绝留痕清空。"""
+    source = _seed_pending_source(db_session, rejected=True)
+
+    result = StateMachineExecutor().execute(
+        SourceConfirmProposal(
+            payload=SourceConfirmPayload(source_id=source.id, initial_credit="B"),
+            rationale="人工确认（decision-05 准入把关）",
+        ),
+        session=db_session,
+    )
+
+    assert result.source_id == source.id
+    db_session.expire_all()
+    confirmed = db_session.get(Source, source.id)
+    assert confirmed is not None
+    assert confirmed.confirmed is True
+    assert confirmed.credit == "B"
+    assert confirmed.rejected_at is None  # 确认抹除待决标记
+
+
+def test_source_confirm_then_ir_binding_allowed(db_session) -> None:
+    """对应 IIH-05.01 AC#1：确认后可被情报需求绑定（confirmed 边界放开）。"""
+    source = _seed_pending_source(db_session)
+    StateMachineExecutor().execute(
+        SourceConfirmProposal(
+            payload=SourceConfirmPayload(source_id=source.id, initial_credit="C"),
+            rationale="人工确认（decision-05 准入把关）",
+        ),
+        session=db_session,
+    )
+
+    result = StateMachineExecutor().execute(
+        IntelligenceRequirementRegisterProposal(
+            payload=IntelligenceRequirementRegisterPayload(
+                name="跟踪行业动态", content_spec="主题：矿山装备", source_ids=[source.id]
+            ),
+            rationale="消费方声明",
+        ),
+        session=db_session,
+    )
+
+    ir = db_session.get(IntelligenceRequirement, result.requirement_id)
+    assert ir is not None
+    assert [s.id for s in ir.sources] == [source.id]
+
+
+def test_source_confirm_rejects_missing_or_confirmed(db_session) -> None:
+    """支撑：确认前置校验——信源不存在 / 已确认驳回，状态不变。"""
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            SourceConfirmProposal(
+                payload=SourceConfirmPayload(source_id=999, initial_credit="C"),
+                rationale="人工确认（decision-05 准入把关）",
+            ),
+            session=db_session,
+        )
+    assert "信源不存在" in excinfo.value.reasons
+
+    source = _seed_pending_source(db_session)
+    source.confirmed = True
+    db_session.flush()
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            SourceConfirmProposal(
+                payload=SourceConfirmPayload(source_id=source.id, initial_credit="C"),
+                rationale="人工确认（decision-05 准入把关）",
+            ),
+            session=db_session,
+        )
+    assert "前置违反" in excinfo.value.reasons[0]
+
+
+def test_source_confirm_rejects_illegal_initial_credit(db_session) -> None:
+    """支撑：确认必设初始档且合法（doc-04 §2.3 解死锁）。"""
+    source = _seed_pending_source(db_session, name="行业媒体 B")
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            SourceConfirmProposal(
+                payload=SourceConfirmPayload(source_id=source.id, initial_credit=""),
+                rationale="人工确认（decision-05 准入把关）",
+            ),
+            session=db_session,
+        )
+    assert "初始信用档缺失" in excinfo.value.reasons[0]
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            SourceConfirmProposal(
+                payload=SourceConfirmPayload(source_id=source.id, initial_credit="X"),
+                rationale="人工确认（decision-05 准入把关）",
+            ),
+            session=db_session,
+        )
+    assert "初始信用档不合法" in excinfo.value.reasons[0]
+
+
+def test_source_reject_lands_rejected_at_without_confirming(db_session) -> None:
+    """对应 IIH-05.01 AC#2：拒绝不入池、留痕——confirmed 保持 False、rejected_at 落账。"""
+    source = _seed_pending_source(db_session)
+
+    StateMachineExecutor().execute(
+        SourceRejectProposal(
+            payload=SourceRejectPayload(source_id=source.id),
+            rationale="人工拒绝（decision-05 准入把关）",
+        ),
+        session=db_session,
+    )
+
+    db_session.expire_all()
+    rejected = db_session.get(Source, source.id)
+    assert rejected is not None
+    assert rejected.confirmed is False
+    assert rejected.rejected_at is not None
+    rejections = db_session.scalars(
+        select(SourceRejection).where(SourceRejection.source_id == source.id)
+    ).all()
+    assert len(rejections) == 1  # 拒绝事件留痕（重捞再现时带上）
+
+
+def test_source_reject_then_reconfirm_allowed(db_session) -> None:
+    """拒绝非终态：再次确认仍可入池（同名信源再次归因命中时无死区）。"""
+    source = _seed_pending_source(db_session)
+    StateMachineExecutor().execute(
+        SourceRejectProposal(
+            payload=SourceRejectPayload(source_id=source.id),
+            rationale="人工拒绝（decision-05 准入把关）",
+        ),
+        session=db_session,
+    )
+    StateMachineExecutor().execute(
+        SourceConfirmProposal(
+            payload=SourceConfirmPayload(source_id=source.id, initial_credit="C"),
+            rationale="人工确认（decision-05 准入把关）",
+        ),
+        session=db_session,
+    )
+
+    db_session.expire_all()
+    confirmed = db_session.get(Source, source.id)
+    assert confirmed is not None
+    assert confirmed.confirmed is True
+    assert confirmed.rejected_at is None
+
+
+def test_manual_attribution_to_rejected_source_resurfaces(db_session) -> None:
+    """拒绝出队后再次归因命中同名信源：重捞入队（rejected_at 清空），拒绝历史保留。"""
+    source = _seed_pending_source(db_session)
+    StateMachineExecutor().execute(
+        SourceRejectProposal(
+            payload=SourceRejectPayload(source_id=source.id),
+            rationale="人工拒绝（decision-05 准入把关）",
+        ),
+        session=db_session,
+    )
+
+    result = StateMachineExecutor().execute(
+        make_proposal(provenance={"source_name": "行业媒体 A"}), session=db_session
+    )
+
+    item = db_session.get(IntelligenceItem, result.item_id)
+    assert item is not None
+    assert item.source_id == source.id  # 复用原行，不新建
+    db_session.expire_all()
+    resurfaced = db_session.get(Source, source.id)
+    assert resurfaced is not None
+    assert resurfaced.rejected_at is None  # 重捞入队
+    rejections = db_session.scalars(
+        select(SourceRejection).where(SourceRejection.source_id == source.id)
+    ).all()
+    assert len(rejections) == 1  # 曾拒 ×1
+
+
+def test_source_reject_history_accumulates(db_session) -> None:
+    """拒绝 → 重捞 → 再拒绝：事件表累计 ×2，rejected_at 再置。"""
+    source = _seed_pending_source(db_session)
+    executor = StateMachineExecutor()
+    executor.execute(
+        SourceRejectProposal(
+            payload=SourceRejectPayload(source_id=source.id),
+            rationale="人工拒绝（decision-05 准入把关）",
+        ),
+        session=db_session,
+    )
+    executor.execute(
+        make_proposal(provenance={"source_name": "行业媒体 A"}), session=db_session
+    )  # 重捞
+    executor.execute(
+        SourceRejectProposal(
+            payload=SourceRejectPayload(source_id=source.id),
+            rationale="人工拒绝（decision-05 准入把关）",
+        ),
+        session=db_session,
+    )
+
+    db_session.expire_all()
+    refreshed = db_session.get(Source, source.id)
+    assert refreshed is not None
+    assert refreshed.rejected_at is not None
+    assert len(refreshed.rejections) == 2
+
+
+def test_source_reject_rejects_missing_or_confirmed(db_session) -> None:
+    """支撑：拒绝前置校验——信源不存在 / 已确认驳回。"""
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            SourceRejectProposal(
+                payload=SourceRejectPayload(source_id=999),
+                rationale="人工拒绝（decision-05 准入把关）",
+            ),
+            session=db_session,
+        )
+    assert "信源不存在" in excinfo.value.reasons
+
+    source = _seed_pending_source(db_session)
+    source.confirmed = True
+    db_session.flush()
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            SourceRejectProposal(
+                payload=SourceRejectPayload(source_id=source.id),
+                rationale="人工拒绝（decision-05 准入把关）",
+            ),
+            session=db_session,
+        )
+    assert "前置违反" in excinfo.value.reasons[0]
+
+
+def _confirm_proposal(
+    source_id: int,
+    *,
+    initial_credit: str = "C",
+    name: str | None = None,
+    source_type: SourceType | None = None,
+):
+    return SourceConfirmProposal(
+        payload=SourceConfirmPayload(
+            source_id=source_id,
+            initial_credit=initial_credit,
+            name=name,
+            source_type=source_type,
+        ),
+        rationale="人工确认（decision-05 准入把关）",
+    )
+
+
+def test_source_confirm_with_rename_lands_new_name(db_session) -> None:
+    """对应 IIH-05.01 AC#4：确认时修正名（未撞名）→ 以新名入池。"""
+    source = _seed_pending_source(db_session, name="三一")
+
+    StateMachineExecutor().execute(
+        _confirm_proposal(source.id, name="三一重工"), session=db_session
+    )
+
+    db_session.expire_all()
+    confirmed = db_session.get(Source, source.id)
+    assert confirmed is not None
+    assert confirmed.name == "三一重工"
+    assert confirmed.confirmed is True
+
+
+def test_source_confirm_rename_merges_into_confirmed_source(db_session) -> None:
+    """对应 IIH-05.01 AC#4：撞既有已确认信源名 → 并入（条目/节点/途径迁移、同名途径复用）。"""
+    target = Source(name="三一集团", type=SourceType.COMPANY, confirmed=True, credit="A")
+    target_outlet = Outlet(source=target, name="官网", entry="https://sany.example")
+    db_session.add_all([target, target_outlet])
+    db_session.flush()
+    pending = _seed_pending_source(db_session, name="三一")
+    pending_outlet = Outlet(source=pending, name="官网")  # 与目标途径同名 → 复用
+    pending_outlet2 = Outlet(source=pending, name="渠道大会现场")  # 异名 → 迁移
+    db_session.add_all([pending_outlet, pending_outlet2])
+    db_session.flush()
+    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).first()
+    modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).first()
+    assert medium is not None and modality is not None
+    item = IntelligenceItem(
+        statement="三一渠道大会要点",
+        status=ItemStatus.LEAD,
+        mode=ItemMode.MANUAL,
+        medium=medium,
+        modality=modality,
+        collected_at=datetime(2026, 9, 15, 9, 0, tzinfo=UTC),
+        original_snapshot="原文",
+        source=pending,
+        outlet=pending_outlet,
+    )
+    db_session.add(item)
+    db_session.flush()
+    db_session.add(
+        ProvenanceChainNode(
+            item=item,
+            source=pending,
+            outlet=pending_outlet,
+            modality=modality,
+            medium=medium,
+            collected_at=datetime(2026, 9, 15, 9, 0, tzinfo=UTC),
+        )
+    )
+    db_session.flush()
+
+    result = StateMachineExecutor().execute(
+        _confirm_proposal(pending.id, name="三一集团"), session=db_session
+    )
+
+    assert result.source_id == target.id
+    db_session.expire_all()
+    assert db_session.get(Source, pending.id) is None  # 待确认行删除
+    kept = db_session.get(Source, target.id)
+    assert kept is not None
+    assert kept.credit == "A"  # 信用档沿用目标信源
+    outlet_names = {o.name for o in kept.outlets}
+    assert outlet_names == {"官网", "渠道大会现场"}  # 同名复用 + 异名迁移
+    refreshed = db_session.get(IntelligenceItem, item.id)
+    assert refreshed is not None
+    assert refreshed.source_id == target.id
+    assert refreshed.outlet_id == target_outlet.id  # 条目途径指向既有同名途径
+    nodes = db_session.scalars(
+        select(ProvenanceChainNode).where(ProvenanceChainNode.item_id == item.id)
+    ).all()
+    assert [n.source_id for n in nodes] == [target.id]
+    assert nodes[0].outlet_id == target_outlet.id
+    alias = db_session.scalars(select(SourceAlias).where(SourceAlias.name == "三一")).first()
+    assert alias is not None
+    assert alias.source_id == target.id  # 并入路径旧名留档为目标信源别名
+
+
+def test_source_confirm_rename_to_pending_name_rejected(db_session) -> None:
+    """支撑：撞名对象为另一待确认信源时驳回（避免唯一约束冲突，指明先处理）。"""
+    first = _seed_pending_source(db_session, name="三一")
+    _seed_pending_source(db_session, name="三一集团")
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            _confirm_proposal(first.id, name="三一集团"), session=db_session
+        )
+
+    assert any("先处理该信源" in reason for reason in excinfo.value.reasons)
+
+
+def test_source_confirm_rename_records_alias(db_session) -> None:
+    """对应 IIH-05.01 AC#5：确认改名后旧名留档为别名。"""
+    source = _seed_pending_source(db_session, name="三一")
+
+    StateMachineExecutor().execute(
+        _confirm_proposal(source.id, name="三一重工"), session=db_session
+    )
+
+    db_session.expire_all()
+    alias = db_session.scalars(select(SourceAlias).where(SourceAlias.name == "三一")).first()
+    assert alias is not None
+    assert alias.source_id == source.id
+
+
+def test_source_confirm_target_name_colliding_with_alias_rejected(db_session) -> None:
+    """支撑：修正名撞其他信源别名 → 驳回（别名全局唯一）。"""
+    holder = Source(name="三一重工", type=SourceType.COMPANY, confirmed=True, credit="C")
+    db_session.add_all([holder, SourceAlias(source=holder, name="三一")])
+    db_session.flush()
+    pending = _seed_pending_source(db_session, name="三一集团")
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            _confirm_proposal(pending.id, name="三一"), session=db_session
+        )
+
+    assert any("别名" in reason for reason in excinfo.value.reasons)
+
+
+def test_manual_attribution_via_alias_resolves_to_confirmed(db_session) -> None:
+    """对应 IIH-05.01 AC#5：归因命中别名直接归入已确认信源，不再产生待确认行。"""
+    source = _seed_pending_source(db_session, name="三一")
+    StateMachineExecutor().execute(
+        _confirm_proposal(source.id, name="三一重工"), session=db_session
+    )
+
+    result = StateMachineExecutor().execute(
+        make_proposal(provenance={"source_name": "三一"}), session=db_session
+    )
+
+    item = db_session.get(IntelligenceItem, result.item_id)
+    assert item is not None
+    assert item.source_id == source.id
+    assert item.source.confirmed is True
+    assert db_session.scalars(select(Source).where(Source.confirmed.is_(False))).first() is None
+
+
+def test_source_confirm_type_correction_lands(db_session) -> None:
+    """支撑：确认时可修正类型（如误提取为媒体 → 公司）。"""
+    source = _seed_pending_source(db_session, name="三一")  # 提取默认媒体
+
+    StateMachineExecutor().execute(
+        _confirm_proposal(source.id, source_type=SourceType.COMPANY), session=db_session
+    )
+
+    db_session.expire_all()
+    confirmed = db_session.get(Source, source.id)
+    assert confirmed is not None
+    assert confirmed.type is SourceType.COMPANY
+
+
+def test_source_register_rejects_alias_collision(db_session) -> None:
+    """支撑：登记名撞既有别名 → 驳回，指明别名归属信源。"""
+    holder = Source(name="三一集团", type=SourceType.COMPANY, confirmed=True, credit="C")
+    db_session.add_all([holder, SourceAlias(source=holder, name="三一")])
+    db_session.flush()
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            SourceRegisterProposal(
+                payload=SourceRegisterPayload(
+                    source_name="三一",
+                    source_type=SourceType.COMPANY,
+                    outlet_name="官网",
+                    outlet_entry="https://sany.example",
+                    initial_credit="C",
+                ),
+                rationale="人工登记（decision-05 通道一）",
+            ),
+            session=db_session,
+        )
+
+    assert any("别名" in reason for reason in excinfo.value.reasons)
 
 
 # ---- IIH-01.08 互联网信源自动拉取 ----

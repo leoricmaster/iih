@@ -18,11 +18,24 @@ from iih.ledger.models import (
     IntelligenceItem,
     ProvenanceChainNode,
     Source,
+    SourceAlias,
     SourceType,
 )
-from iih.ledger.proposal import SourceRegisterPayload, SourceRegisterProposal
+from iih.ledger.proposal import (
+    SourceConfirmPayload,
+    SourceConfirmProposal,
+    SourceRegisterPayload,
+    SourceRegisterProposal,
+    SourceRejectPayload,
+    SourceRejectProposal,
+)
 from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
-from iih.web.context import STATUS_LABELS, base_context, register_template_filters
+from iih.web.context import (
+    SOURCE_TYPE_LABELS,
+    STATUS_LABELS,
+    base_context,
+    register_template_filters,
+)
 from iih.web.deps import get_session
 from iih.web.flash import redirect_with_flash
 
@@ -31,16 +44,15 @@ templates = register_template_filters(Jinja2Templates(directory=TEMPLATES_DIR))
 
 router = APIRouter()
 
-SOURCE_TYPE_LABELS = {
-    SourceType.COMPANY: "公司",
-    SourceType.GOVERNMENT: "政府",
-    SourceType.ORGANIZATION: "组织",
-    SourceType.MEDIA: "媒体",
-    SourceType.PERSON: "人物",
-    SourceType.OTHER: "其他",
-}
-
 REGISTER_RATIONALE = "人工登记（decision-05 通道一）"
+CONFIRM_RATIONALE = "人工确认（decision-05 准入把关）"
+REJECT_RATIONALE = "人工拒绝（decision-05 准入把关）"
+
+
+def _safe_next(next_url: str) -> str:
+    """回跳白名单：仅站内路径（/ 开头且非 //），防开放重定向。"""
+    stripped = next_url.strip()
+    return stripped if stripped.startswith("/") and not stripped.startswith("//") else "/sources"
 
 
 def _confirmed_sources(session: Session) -> list[Source]:
@@ -51,9 +63,13 @@ def _confirmed_sources(session: Session) -> list[Source]:
 
 
 def _pending_sources(session: Session) -> list[Source]:
-    """待确认信源（decision-05 通道二：素材归因补记产生）。"""
+    """待确认信源（decision-05 通道二）：拒绝即出队，再归因命中时重捞（rejected_at 清空）。"""
     return list(
-        session.scalars(select(Source).where(Source.confirmed.is_(False)).order_by(Source.id))
+        session.scalars(
+            select(Source)
+            .where(Source.confirmed.is_(False), Source.rejected_at.is_(None))
+            .order_by(Source.id)
+        )
     )
 
 
@@ -72,7 +88,13 @@ def _feedback_counts(session: Session) -> dict[int, dict[str, int]]:
     }
 
 
-def _render(request: Request, session: Session, errors: list[str] | None = None):
+def _render(
+    request: Request,
+    session: Session,
+    errors: list[str] | None = None,
+    flash: str = "",
+    err: str = "",
+):
     return templates.TemplateResponse(
         request,
         "sources.html",
@@ -84,13 +106,17 @@ def _render(request: Request, session: Session, errors: list[str] | None = None)
             "source_types": list(SOURCE_TYPE_LABELS.items()),
             "source_type_labels": SOURCE_TYPE_LABELS,
             "errors": errors or [],
+            "flash": flash,
+            "err": err,
         },
     )
 
 
 @router.get("/sources")
-def sources_page(request: Request, session: Session = Depends(get_session)):
-    return _render(request, session)
+def sources_page(
+    request: Request, flash: str = "", err: str = "", session: Session = Depends(get_session)
+):
+    return _render(request, session, flash=flash, err=err)
 
 
 @router.post("/sources")
@@ -186,6 +212,7 @@ def source_detail(
             "source": source,
             "adjustments": adjustments,
             "participating": participating,
+            "source_types": list(SOURCE_TYPE_LABELS.items()),
             "source_type_labels": SOURCE_TYPE_LABELS,
             "item_status_labels": STATUS_LABELS,
             "half_life_days": HALF_LIFE_DAYS,
@@ -216,11 +243,17 @@ def source_rename(
         dup = session.scalars(
             select(Source).where(Source.name == new_name, Source.id != source_id)
         ).first()
-        if dup is None:
+        alias = session.scalars(select(SourceAlias).where(SourceAlias.name == new_name)).first()
+        if dup is not None:
+            err = f"已存在同名信源：{new_name}"
+        elif alias is not None:
+            err = f"已存在同名别名（归属 {alias.source.name}）：{new_name}"
+        else:
+            if new_name != source.name:
+                session.add(SourceAlias(source=source, name=source.name))
             source.name = new_name
             session.commit()
             return redirect_with_flash(f"/sources/{source_id}", f"已改名：{new_name}")
-        err = f"已存在同名信源：{new_name}"
     return RedirectResponse(f"/sources/{source_id}?err={quote_plus(err)}", status_code=303)
 
 
@@ -249,3 +282,65 @@ def source_credit_set(
         session.commit()
         return redirect_with_flash(f"/sources/{source_id}", "信用档已保存")
     return RedirectResponse(f"/sources/{source_id}?err={quote_plus(err)}", status_code=303)
+
+
+@router.post("/sources/{source_id}/confirm")
+def source_confirm(
+    source_id: int,
+    request: Request,
+    initial_credit: str = Form(""),
+    name: str = Form(""),
+    source_type: str = Form(""),
+    next_url: str = Form("", alias="next"),
+    session: Session = Depends(get_session),
+):
+    """待确认信源确认入池（IIH-05.01）：可修正名/类型 + 初始档 → 提案落账。"""
+    target = _safe_next(next_url)
+    try:
+        type_enum = SourceType(source_type) if source_type else None
+    except ValueError:
+        return redirect_with_flash(target, f"未知信源类型：{source_type}", param="err")
+    try:
+        result = StateMachineExecutor().execute(
+            SourceConfirmProposal(
+                payload=SourceConfirmPayload(
+                    source_id=source_id,
+                    initial_credit=initial_credit.strip(),
+                    name=name.strip() or None,
+                    source_type=type_enum,
+                ),
+                rationale=CONFIRM_RATIONALE,
+            ),
+            session=session,
+        )
+    except ProposalRejectedError as exc:
+        return redirect_with_flash(target, "；".join(exc.reasons), param="err")
+    source = session.get(Source, result.source_id or source_id)
+    final_name = source.name if source else str(source_id)
+    if source is not None and source.id != source_id:
+        return redirect_with_flash(target, f"已并入既有信源：{final_name}")
+    return redirect_with_flash(target, f"已确认入信源库：{final_name}")
+
+
+@router.post("/sources/{source_id}/reject")
+def source_reject(
+    source_id: int,
+    request: Request,
+    next_url: str = Form("", alias="next"),
+    session: Session = Depends(get_session),
+):
+    """待确认信源拒绝（IIH-05.01）：不入池、留痕，条目不受影响。"""
+    target = _safe_next(next_url)
+    source = session.get(Source, source_id)
+    if source is None:
+        return redirect_with_flash(target, "信源不存在", param="err")
+    try:
+        StateMachineExecutor().execute(
+            SourceRejectProposal(
+                payload=SourceRejectPayload(source_id=source_id), rationale=REJECT_RATIONALE
+            ),
+            session=session,
+        )
+    except ProposalRejectedError as exc:
+        return redirect_with_flash(target, "；".join(exc.reasons), param="err")
+    return redirect_with_flash(target, f"已拒绝（留痕）：{source.name}")

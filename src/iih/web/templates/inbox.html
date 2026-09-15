@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as m %}
 {% block title %}收件箱{% endblock %}
 {% block content %}
 <h1 class="page">收件箱</h1>
@@ -46,13 +47,10 @@
 <div class="box"><h2>待确认信源</h2>
   {% if pending_sources %}
   {% for s in pending_sources %}
-  <div style="border-bottom:1px solid #eee;padding:10px 0;">
-    <div><b>{{ s.name }}</b> <span class="pill">信源</span> <span class="pill dashed">待确认</span></div>
-  </div>
+  {{ m.confirm_reject(s, '/', source_types) }}
   {% endfor %}
   {% else %}
   <div class="empty">队列为空</div>
   {% endif %}
-  <div class="muted" style="margin-top:8px">确认功能即将上线</div>
 </div>
 {% endblock %}

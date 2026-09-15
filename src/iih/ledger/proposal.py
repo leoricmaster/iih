@@ -83,6 +83,46 @@ class SourceRegisterProposal(Proposal):
     payload: SourceRegisterPayload
 
 
+class SourceConfirmPayload(BaseModel):
+    """「待确认信源确认」产出：目标信源 ID + 初始信用档 + 修正名/类型（可空，IIH-05.01）。"""
+
+    source_id: int
+    initial_credit: str
+    name: str | None = None  # 修正信源名；撞既有已确认信源名即合并迁移，旧名留档为别名
+    source_type: SourceType | None = None  # 修正类型；空 = 沿用提取结果，并入路径忽略
+
+
+class SourceConfirmProposal(Proposal):
+    """提案类型「待确认信源确认」：待确认 → 已确认，入信源库（decision-05 准入把关）。
+
+    消费方确认非情报产出，无 provenance、无 formula_version（同 source_register）。
+    确认必设初始信用档（doc-04 §2.3 解死锁）；拒绝留痕（rejected_at）随确认清空；
+    携带修正名时改名入池（旧名留档为别名，归因解析按别名归到本信源），
+    撞既有已确认信源名则并入该信源（条目/转引链/途径迁移）。
+    """
+
+    PROPOSAL_TYPE = "source_confirm"
+
+    payload: SourceConfirmPayload
+
+
+class SourceRejectPayload(BaseModel):
+    """「待确认信源拒绝」产出：目标信源 ID（IIH-05.01）。"""
+
+    source_id: int
+
+
+class SourceRejectProposal(Proposal):
+    """提案类型「待确认信源拒绝」：不入池、留痕（rejected_at），confirmed 保持 False。
+
+    已归因到该信源的既有条目不受影响；拒绝非终态——再次归因命中同名信源仍可确认。
+    """
+
+    PROPOSAL_TYPE = "source_reject"
+
+    payload: SourceRejectPayload
+
+
 # ---- IIH-01.08 互联网信源自动拉取 ----
 
 

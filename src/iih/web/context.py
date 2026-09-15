@@ -13,6 +13,7 @@ from iih.ledger.models import (
     IntelligenceItem,
     ItemStatus,
     RejectionReasonEnum,
+    SourceType,
 )
 
 
@@ -37,6 +38,15 @@ REJECTION_REASON_LABELS = {
     RejectionReasonEnum.IRRELEVANT: "不相关",
     RejectionReasonEnum.DUPLICATE: "重复",
     RejectionReasonEnum.INVALID: "无效",
+}
+
+SOURCE_TYPE_LABELS = {
+    SourceType.COMPANY: "公司",
+    SourceType.GOVERNMENT: "政府",
+    SourceType.ORGANIZATION: "组织",
+    SourceType.MEDIA: "媒体",
+    SourceType.PERSON: "人物",
+    SourceType.OTHER: "其他",
 }
 
 

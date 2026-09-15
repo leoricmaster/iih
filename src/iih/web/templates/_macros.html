@@ -1,0 +1,24 @@
+{% macro confirm_reject(s, next, source_types) %}
+<div class="srcrow">
+  <form method="post" action="/sources/{{ s.id }}/confirm">
+    <input type="hidden" name="next" value="{{ next }}">
+    <span class="srcrow-main">
+      <input class="srcname" type="text" name="name" value="{{ s.name }}" maxlength="80" title="可修正信源名——撞既有已确认信源名即并入该信源">
+      <select class="srctype" name="source_type" title="可修正信源类型">
+        {% for value, label in source_types %}
+        <option value="{{ value }}" {{ 'selected' if s.type == value }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      {% if s.rejected_at %}<span class="pill dashed">已拒绝 · {{ s.rejected_at | dtstr }}</span>{% elif s.rejections %}<span class="pill dashed" title="最近拒绝：{{ s.rejections[0].created_at | dtstr }}">曾拒 ×{{ s.rejections | length }}</span>{% else %}<span class="pill dashed">待确认</span>{% endif %}
+    </span>
+    <span class="srcrow-acts">
+      <span class="muted" title="初始信用档 A–F：A 最可靠 → F 最不可靠。累计分映射：A ≥8、B [4,8)、C [0,4)、D [−4,0)、E [−8,−4)、F <−8；有效反馈 +1、事实错误 −2、180 天半衰期。C 为中性默认。">ⓘ</span>
+      <select name="initial_credit">
+        {% for g in "ABCDEF" %}<option value="{{ g }}" {{ 'selected' if g == 'C' }}>{{ g }}</option>{% endfor %}
+      </select>
+      <button class="btn small primary">确认</button>
+      <button class="btn small" formaction="/sources/{{ s.id }}/reject">拒绝</button>
+    </span>
+  </form>
+</div>
+{% endmacro %}

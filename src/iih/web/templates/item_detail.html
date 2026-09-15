@@ -59,7 +59,7 @@
   <div class="muted">核实无法完成。{% if latest_verification %}{{ latest_verification.rationale }}{% endif %}</div>
   <div class="fbrow" style="margin-top:8px">
     <form method="post" action="/items/{{ item.id }}/reverify"><button class="btn small primary">重新核实</button></form>
-    {% if item.source and not item.source.confirmed %}<span class="muted">出处信源 <a href="/sources/{{ item.source.id }}">{{ item.source.name }}</a> 尚待确认——确认功能即将上线。</span>
+    {% if item.source and not item.source.confirmed %}<span class="muted">出处信源 <a href="/sources/{{ item.source.id }}">{{ item.source.name }}</a> 尚待确认——<a href="/sources/{{ item.source.id }}">去确认 ↗</a></span>
     {% elif item.source and not item.source.credit %}<span class="muted">出处信源 <a href="/sources/{{ item.source.id }}">{{ item.source.name }}</a> 未设信用档——先到画像页人工设档，再回此处重核。</span>{% endif %}
   </div>
 </div>

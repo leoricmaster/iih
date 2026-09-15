@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as m %}
 {% block title %}{{ source.name }}{% endblock %}
 {% block content %}
 <h1 class="page"><a href="/sources">信源库</a> / 信源画像</h1>
@@ -9,7 +10,10 @@
 {% if err %}<div class="err">{{ err }}</div>{% endif %}
 
 {% if not source.confirmed %}
-<div class="box"><div class="empty">待确认——确认功能即将上线</div></div>
+<div class="box"><h2>待确认</h2>
+  <div class="muted">不入库、不建画像、不记账（decision-05）。</div>
+  {{ m.confirm_reject(source, '/sources/' ~ source.id, source_types) }}
+</div>
 {% else %}
 <div class="box"><h2>主体</h2>
   <form method="post" action="/sources/{{ source.id }}/rename">
@@ -18,6 +22,12 @@
       <button class="btn small">改名</button>
     </div>
   </form>
+  {% if source.aliases %}
+  <div class="fbrow">
+    <span class="muted">别名</span>
+    {% for a in source.aliases %}<span class="pill">{{ a.name }}</span>{% endfor %}
+  </div>
+  {% endif %}
 </div>
 
 <div class="box"><h2>信源信用 <span class="pill rating">{{ source.credit or '—' }}</span></h2>

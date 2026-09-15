@@ -5,6 +5,7 @@
 """
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -23,6 +24,8 @@ from iih.ledger.models import (
     ReviewDecision,
     ReviewDecisionEnum,
     Source,
+    SourceAlias,
+    SourceRejection,
     VerificationOutcome,
     VerificationRecord,
 )
@@ -39,7 +42,9 @@ from iih.ledger.proposal import (
     Proposal,
     ProvenanceData,
     ReviewProposal,
+    SourceConfirmProposal,
     SourceRegisterProposal,
+    SourceRejectProposal,
     VerificationProposal,
 )
 
@@ -70,6 +75,10 @@ class StateMachineExecutor:
                 return self._execute_item_new(proposal, session)
             case SourceRegisterProposal():
                 return self._execute_source_register(proposal, session)
+            case SourceConfirmProposal():
+                return self._execute_source_confirm(proposal, session)
+            case SourceRejectProposal():
+                return self._execute_source_reject(proposal, session)
             case IntelligenceRequirementRegisterProposal():
                 return self._execute_ir_register(proposal, session)
             case IntelligenceRequirementActivateProposal():
@@ -222,24 +231,33 @@ class StateMachineExecutor:
         return reasons
 
     def _resolve_source(self, session: Session, provenance: ProvenanceData) -> Source:
-        """信源按名解析；新信源记待确认，不入正式池、不参与信用（decision-05）。"""
-        source = session.scalars(
-            select(Source).where(Source.name == provenance.source_name)
-        ).first()
+        """信源按名/别名解析（别名归到归属信源）；新信源记待确认（decision-05）。
+
+        已拒绝信源再次被归因命中即重捞：清 rejected_at 重新入队（拒绝历史由事件表带上）。
+        """
+        source = self._source_by_name_or_alias(session, provenance.source_name)
         if source is None:
             source = Source(
                 name=provenance.source_name, type=provenance.source_type, confirmed=False
             )
             session.add(source)
+        elif source.rejected_at is not None:
+            source.rejected_at = None
         return source
+
+    def _source_by_name_or_alias(self, session: Session, name: str) -> Source | None:
+        """按名解析信源：先正名后别名。别名仅记在已确认信源上，命中即归入，不建待确认行。"""
+        source = session.scalars(select(Source).where(Source.name == name)).first()
+        if source is not None:
+            return source
+        alias = session.scalars(select(SourceAlias).where(SourceAlias.name == name)).first()
+        return alias.source if alias is not None else None
 
     def _resolve_confirmed_source(
         self, session: Session, provenance: ProvenanceData, reasons: list[str]
     ) -> Source | None:
         """AUTOMATED 模式：信源必须已登记 confirmed=True（doc-05 双通道确认制边界）。"""
-        source = session.scalars(
-            select(Source).where(Source.name == provenance.source_name)
-        ).first()
+        source = self._source_by_name_or_alias(session, provenance.source_name)
         if source is None:
             reasons.append(f"自动拉取信源未登记：{provenance.source_name}")
             return None
@@ -297,6 +315,13 @@ class StateMachineExecutor:
         existing = session.scalars(select(Source).where(Source.name == payload.source_name)).first()
         if existing is not None:
             raise ProposalRejectedError([f"信源名已存在：{payload.source_name}"])
+        alias = session.scalars(
+            select(SourceAlias).where(SourceAlias.name == payload.source_name)
+        ).first()
+        if alias is not None:
+            raise ProposalRejectedError(
+                [f"信源名已存在（别名，归属 {alias.source.name}）：{payload.source_name}"]
+            )
 
         source = Source(
             name=payload.source_name,
@@ -333,6 +358,150 @@ class StateMachineExecutor:
         if not proposal.rationale.strip():
             reasons.append("依据缺失")
         return reasons
+
+    # ---- IIH-05.01 待确认信源确认闭环 ----
+
+    def _execute_source_confirm(
+        self, proposal: SourceConfirmProposal, session: Session
+    ) -> ExecutionResult:
+        """待确认信源确认入池（decision-05 准入把关）：待确认 → 已确认。
+
+        校验：信源存在 + confirmed=False 前置 + 初始档必填合法（doc-04 §2.3 解死锁）+ 依据非空
+        + 修正名非空白 + 目标名不撞别名。
+        三分支：未改名 → 直接入池；改名未撞名 → 以新名入池，旧名留档为别名；撞既有已确认
+        信源名 → 并入该信源（条目/转引链节点/途径迁移，同名途径复用），待确认行删除，
+        旧名留档为目标信源别名，信用档沿用目标信源。类型仅在非并入路径修正。
+        """
+        payload = proposal.payload
+        reasons: list[str] = []
+
+        if not proposal.rationale.strip():
+            reasons.append("依据缺失")
+        source = session.get(Source, payload.source_id)
+        if source is None:
+            reasons.append("信源不存在")
+        elif source.confirmed:
+            reasons.append(f"前置违反：信源已确认：{source.name}")
+        if not payload.initial_credit:
+            reasons.append("初始信用档缺失：确认必设（A–F）")
+        elif payload.initial_credit not in "ABCDEF":
+            reasons.append(f"初始信用档不合法：{payload.initial_credit}（需 A–F）")
+        provided_name = (payload.name or "").strip()
+        target_name = provided_name or (source.name if source else "")
+        if not target_name:
+            reasons.append("信源名缺失")
+        if reasons:
+            raise ProposalRejectedError(reasons)
+
+        assert source is not None
+        existing = session.scalars(
+            select(Source).where(Source.name == target_name, Source.id != source.id)
+        ).first()
+        if existing is not None:
+            if not existing.confirmed:
+                raise ProposalRejectedError(
+                    [f"信源名已存在（待确认）：{target_name}——先处理该信源"]
+                )
+            return self._merge_into_confirmed(session, pending=source, target=existing)
+        alias_hit = session.scalars(
+            select(SourceAlias).where(SourceAlias.name == target_name)
+        ).first()
+        if alias_hit is not None:
+            raise ProposalRejectedError(
+                [f"信源名已存在（别名，归属 {alias_hit.source.name}）：{target_name}"]
+            )
+
+        if provided_name and provided_name != source.name:
+            self._record_alias(session, source=source, name=source.name)
+        source.name = target_name
+        source.confirmed = True
+        source.credit = payload.initial_credit
+        source.rejected_at = None
+        if payload.source_type is not None:
+            source.type = payload.source_type
+        session.flush()
+        source_id = source.id
+        session.commit()
+        return ExecutionResult(source_id=source_id)
+
+    def _merge_into_confirmed(
+        self, session: Session, *, pending: Source, target: Source
+    ) -> ExecutionResult:
+        """待确认信源并入既有已确认信源：条目/转引链节点/途径迁移，待确认行删除。
+
+        同名途径不迁移——条目/节点改指目标信源既有途径（归属唯一信源约束），待确认途径行删除；
+        旧名留档为目标信源别名（后续归因按别名直接归入）；信用档沿用目标信源。
+        """
+        self._record_alias(session, source=target, name=pending.name)
+        outlet_remap: dict[int, Outlet] = {}
+        duplicated: list[Outlet] = []
+        for outlet in list(pending.outlets):
+            kept = next((o for o in target.outlets if o.name == outlet.name), None)
+            if kept is None:
+                outlet.source = target
+            else:
+                outlet_remap[outlet.id] = kept
+                duplicated.append(outlet)
+        nodes = session.scalars(
+            select(ProvenanceChainNode).where(ProvenanceChainNode.source_id == pending.id)
+        ).all()
+        for node in nodes:
+            node.source = target
+            if node.outlet_id in outlet_remap:
+                node.outlet = outlet_remap[node.outlet_id]
+        items = session.scalars(
+            select(IntelligenceItem).where(IntelligenceItem.source_id == pending.id)
+        ).all()
+        for item in items:
+            item.source = target
+            if item.outlet_id in outlet_remap:
+                item.outlet = outlet_remap[item.outlet_id]
+        for outlet in duplicated:
+            session.delete(outlet)
+        session.delete(pending)
+        session.flush()
+        target_id = target.id
+        session.commit()
+        return ExecutionResult(source_id=target_id)
+
+    def _record_alias(self, session: Session, *, source: Source, name: str) -> None:
+        """旧名留档为别名（全局唯一）：同信源幂等跳过，撞他信源别名即驳回。"""
+        existing = session.scalars(select(SourceAlias).where(SourceAlias.name == name)).first()
+        if existing is not None:
+            if existing.source_id == source.id:
+                return
+            raise ProposalRejectedError(
+                [f"别名已归属其他信源：{name}——归属 {existing.source.name}"]
+            )
+        session.add(SourceAlias(source=source, name=name))
+
+    def _execute_source_reject(
+        self, proposal: SourceRejectProposal, session: Session
+    ) -> ExecutionResult:
+        """待确认信源拒绝（decision-05）：不入池、留痕出队，confirmed 保持 False。
+
+        前置：信源存在 + confirmed=False。拒绝即出待确认队列（事件表留痕）；
+        再次归因命中同名信源时重捞入队（rejected_at 清空），仍可确认。
+        已归因条目不受影响（仍指向该信源，不参与记账由 confirmed 边界保持）。
+        """
+        reasons: list[str] = []
+        if not proposal.rationale.strip():
+            reasons.append("依据缺失")
+        source = session.get(Source, proposal.payload.source_id)
+        if source is None:
+            reasons.append("信源不存在")
+        elif source.confirmed:
+            reasons.append(f"前置违反：信源已确认：{source.name}")
+        if reasons:
+            raise ProposalRejectedError(reasons)
+
+        assert source is not None
+        source.rejected_at = datetime.now(UTC)
+        session.add(SourceRejection(source=source))
+        session.flush()
+        source_id = source.id
+        session.commit()
+        return ExecutionResult(source_id=source_id)
 
     # ---- IIH-01.08 互联网信源自动拉取 ----
 

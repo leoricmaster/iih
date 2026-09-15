@@ -148,13 +148,44 @@ class Source(Base):
     name: Mapped[str] = mapped_column(String(200), unique=True)
     type: Mapped[SourceType] = mapped_column(_sa_enum(SourceType))
     confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 拒绝出队标记（IIH-05.01）：非 None 即不在待确认队列；确认时清空；再次归因命中时清空重捞
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     credit: Mapped[str | None] = mapped_column(String(1))  # 信源信用 A–F（信用记账归 IIH-01.06）
 
     outlets: Mapped[list["Outlet"]] = relationship(back_populates="source")
     credit_adjustments: Mapped[list["CreditAdjustment"]] = relationship(back_populates="source")
+    aliases: Mapped[list["SourceAlias"]] = relationship(back_populates="source")
+    rejections: Mapped[list["SourceRejection"]] = relationship(
+        back_populates="source", order_by="SourceRejection.id.desc()"
+    )
     bound_requirements: Mapped[list["IntelligenceRequirement"]] = relationship(
         secondary=intelligence_requirement_source, back_populates="sources"
     )
+
+
+class SourceAlias(Base):
+    """信源别名（IIH-05.01）：确认改名/并入时旧名留档，归因解析按别名归到既有信源。"""
+
+    __tablename__ = "source_alias"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("source.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    source: Mapped["Source"] = relationship(back_populates="aliases")
+
+
+class SourceRejection(Base):
+    """信源拒绝留痕（IIH-05.01）：每次拒绝追加一行；重捞入队时行内提示「曾拒 ×N」。"""
+
+    __tablename__ = "source_rejection"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("source.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    source: Mapped["Source"] = relationship(back_populates="rejections")
 
 
 class Outlet(Base):

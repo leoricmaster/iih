@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as m %}
 {% block title %}信源库{% endblock %}
 {% block content %}
 <div class="listbar">
@@ -6,14 +7,32 @@
   <span class="acts"><button type="button" class="btn primary" data-panel="register-panel">＋ 登记信源</button></span>
 </div>
 
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+{% if err %}<div class="err">{{ err }}</div>{% endif %}
+
+<div class="box">
+  <table data-resize>
+    <tr><th>信源</th><th>类型</th><th>途径</th><th>信源信用</th><th>历史反馈</th><th>状态</th></tr>
+    {% for s in sources %}
+    <tr>
+      <td><a href="/sources/{{ s.id }}">{{ s.name }}</a>{% for a in s.aliases %} <span class="pill">{{ a.name }}</span>{% endfor %}</td>
+      <td class="muted">{{ source_type_labels[s.type] }}</td>
+      <td class="muted">{{ s.outlets | map(attribute='name') | join('、') if s.outlets else '—' }}</td>
+      <td>{% if s.credit %}<span class="pill rating">{{ s.credit }}</span>{% else %}<span class="pill dashed">未设档</span>{% endif %}</td>
+      <td class="muted">{% if feedback_counts.get(s.id) %}有效 ×{{ feedback_counts[s.id]['valid'] }} · 事实错误 ×{{ feedback_counts[s.id]['factual_error'] }}{% else %}—{% endif %}</td>
+      <td><span class="pill">已确认</span></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6"><div class="empty">信源库为空</div></td></tr>
+    {% endfor %}
+  </table>
+</div>
+
 {% if pending_sources %}
 <div class="box"><h2>待确认</h2>
   {% for s in pending_sources %}
-  <div style="border-bottom:1px solid #eee;padding:9px 0">
-    <b>{{ s.name }}</b> <span class="pill">{{ source_type_labels[s.type] }}</span> <span class="pill dashed">待确认</span>
-  </div>
+  {{ m.confirm_reject(s, '/sources', source_types) }}
   {% endfor %}
-  <div class="muted" style="margin-top:6px">确认功能即将上线。</div>
 </div>
 {% endif %}
 
@@ -40,22 +59,4 @@
     </form>
   </div>
 </dialog>
-
-<div class="box">
-  <table data-resize>
-    <tr><th>信源</th><th>类型</th><th>途径</th><th>信源信用</th><th>历史反馈</th><th>状态</th></tr>
-    {% for s in sources %}
-    <tr>
-      <td><a href="/sources/{{ s.id }}">{{ s.name }}</a></td>
-      <td class="muted">{{ source_type_labels[s.type] }}</td>
-      <td class="muted">{{ s.outlets | map(attribute='name') | join('、') if s.outlets else '—' }}</td>
-      <td>{% if s.credit %}<span class="pill rating">{{ s.credit }}</span>{% else %}<span class="pill dashed">未设档</span>{% endif %}</td>
-      <td class="muted">{% if feedback_counts.get(s.id) %}有效 ×{{ feedback_counts[s.id]['valid'] }} · 事实错误 ×{{ feedback_counts[s.id]['factual_error'] }}{% else %}—{% endif %}</td>
-      <td><span class="pill">已确认</span></td>
-    </tr>
-    {% else %}
-    <tr><td colspan="6"><div class="empty">信源库为空</div></td></tr>
-    {% endfor %}
-  </table>
-</div>
 {% endblock %}
