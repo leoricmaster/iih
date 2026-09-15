@@ -5,13 +5,6 @@
 
 {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
 
-<div class="runbar">
-  <form method="post" action="/pipeline/run">
-    <button class="btn small primary">▶ 立即运行</button>
-  </form>
-  <span class="muted">后台每 {{ pipeline_interval // 60 }} 分钟自动运行</span>
-</div>
-
 <div class="box"><h2>待反馈条目</h2>
   {% if items %}
   {% for item in items %}

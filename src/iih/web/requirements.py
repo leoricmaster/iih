@@ -98,14 +98,16 @@ def requirements_page(request: Request, session: Session = Depends(get_session))
             )
         )
     )
-    groups = [(status, [r for r in requirements if r.status is status]) for status in GROUP_ORDER]
+    # 单表按状态序（激活在前），组内保持创建时间倒序（稳定排序）
+    status_order = {status: i for i, status in enumerate(GROUP_ORDER)}
+    requirements.sort(key=lambda r: status_order[r.status])
     hit_counts = {r.id: len(_hit_item_ids(session, r.id)) for r in requirements}
     return templates.TemplateResponse(
         request,
         "requirements.html",
         {
             **base_context(session, "reqs"),
-            "groups": groups,
+            "requirements": requirements,
             "hit_counts": hit_counts,
             "status_labels": IR_STATUS_LABELS,
             "item_status_labels": STATUS_LABELS,
@@ -129,15 +131,14 @@ def requirement_create(
 
     if errors:
         requirements = list(session.scalars(select(IntelligenceRequirement)))
+        status_order = {status: i for i, status in enumerate(GROUP_ORDER)}
+        requirements.sort(key=lambda r: status_order[r.status])
         return templates.TemplateResponse(
             request,
             "requirements.html",
             {
                 **base_context(session, "reqs"),
-                "groups": [
-                    (status, [r for r in requirements if r.status is status])
-                    for status in GROUP_ORDER
-                ],
+                "requirements": requirements,
                 "hit_counts": {r.id: len(_hit_item_ids(session, r.id)) for r in requirements},
                 "status_labels": IR_STATUS_LABELS,
                 "item_status_labels": STATUS_LABELS,

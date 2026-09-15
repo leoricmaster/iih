@@ -83,6 +83,8 @@ EXTRACTION_SYSTEM_PROMPT = """你是情报采集智能体的陈述抽取模块�
 
 要求：
 - statement：客观陈述句，描述事实而非评价；若页面无情报价值内容，返回空字符串；
+- event_time：陈述所述事实的发生日期（ISO 格式，如 2026-08-30），正文无明确日期
+  依据则留空，不得编造；
 - rationale：一句话说明为何选此陈述（依据记入提案）。"""
 
 
@@ -90,7 +92,17 @@ class StatementExtractionResult(BaseModel):
     """LLM 结构化陈述抽取输出。"""
 
     statement: str = Field(description="页面中最具情报价值的一条陈述；无则空字符串")
+    event_time: datetime | None = Field(
+        default=None, description="陈述所述事实的发生日期；正文无明确日期依据则留空"
+    )
     rationale: str = Field(description="一句话抽取依据")
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    """LLM 输出的 naive 时间按 UTC 入账（库内时间戳一律 aware UTC）。"""
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
 
 
 class Collector:
@@ -238,6 +250,7 @@ class Collector:
             payload=IntelligenceItemNewPayload(
                 statement=extraction.statement.strip(),
                 mode=ItemMode.AUTOMATED,
+                event_time=_as_utc(extraction.event_time),
                 content_fingerprint=fp,
                 original_url=url,
                 snapshot_object_key=store.put_html(html) if store is not None else None,

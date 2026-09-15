@@ -15,8 +15,14 @@ from iih.ledger.models import (
     RejectionReasonEnum,
 )
 
-# 样式表版本号（文件 mtime）：链接带 ?v= 击穿浏览器缓存，改样式即换 URL
-CSS_VERSION = str(int((Path(__file__).parent / "static" / "app.css").stat().st_mtime))
+
+# 静态资源版本号（文件 mtime）：链接带 ?v= 击穿浏览器缓存，改文件即换 URL
+def _static_version(filename: str) -> str:
+    return str(int((Path(__file__).parent / "static" / filename).stat().st_mtime))
+
+
+CSS_VERSION = _static_version("app.css")
+JS_VERSION = _static_version("app.js")
 
 STATUS_LABELS = {
     ItemStatus.LEAD: "线索",
@@ -57,6 +63,7 @@ def base_context(session: Session, nav: str) -> dict:
         "inbox_count": inbox_count(session),
         "pipeline_interval": get_settings().pipeline_interval_seconds,
         "css_version": CSS_VERSION,
+        "js_version": JS_VERSION,
     }
 
 

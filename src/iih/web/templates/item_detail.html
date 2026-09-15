@@ -52,8 +52,7 @@
 </div>
 {% elif item.status.value == 'verified' and latest_verification %}
 <div class="box"><h2>评级依据</h2>
-  <div>{{ latest_verification.rationale }}</div>
-  <div class="muted" style="margin-top:6px">公式 {{ latest_verification.formula_version }}：N={{ latest_verification.independent_source_count }}（穿透转引链后独立信源数），R={{ latest_verification.source_reliability }}（出处信源可靠度档）→ 内容可信度 {{ latest_verification.content_credibility }} → 评级 {{ latest_verification.rating }}。</div>
+  <div>{{ latest_verification.formula_version }}：N={{ latest_verification.independent_source_count }} · R={{ latest_verification.source_reliability }} → 可信度 {{ latest_verification.content_credibility }} → 评级 {{ latest_verification.rating }}</div>
 </div>
 {% elif item.status.value == 'undetermined' %}
 <div class="box"><h2>存疑说明</h2>
@@ -81,27 +80,18 @@
 
 <div class="box" id="feedback"><h2>反馈</h2>
   {% if item.status.value == 'verified' and not item.retracted %}
-  <div class="fbrow">
-    <form method="post" action="/items/{{ item.id }}/feedback" class="fbrow">
+  <form method="post" action="/items/{{ item.id }}/feedback" data-feedback>
+    <div class="chips">
+      <span class="lbl">类型</span>
       {% for ft, label in type_labels.items() %}
-      {% if ft.value not in ('factual_error', 'review_dispute') %}
-      <button name="feedback_type" value="{{ ft.value }}">{{ label }}</button>
+      {% if ft.value != 'review_dispute' %}
+      <span class="fbtype"><input type="radio" name="feedback_type" id="fb-{{ ft.value }}" value="{{ ft.value }}"{{ ' checked' if fb_type == ft.value or (not fb_type and loop.first) }}><label for="fb-{{ ft.value }}">{{ label }}</label></span>
       {% endif %}
       {% endfor %}
-    </form>
-    <span class="muted">事实错误须填写理由。</span>
-  </div>
-  <form method="post" action="/items/{{ item.id }}/feedback">
+    </div>
     <div class="field" style="margin-top:10px">
-      <label>反馈类型与理由</label>
-      <select name="feedback_type">
-        {% for ft, label in type_labels.items() %}
-        {% if ft.value != 'review_dispute' %}
-        <option value="{{ ft.value }}" {{ 'selected' if fb_type == ft.value }}>{{ label }}</option>
-        {% endif %}
-        {% endfor %}
-      </select>
-      <textarea name="reason" placeholder="{{ '必填：请说明事实错误的依据' if fb_type == 'factual_error' else '补写理由（可选）' }}" style="margin-top:6px">{{ fb_reason }}</textarea>
+      <label data-reason-label>理由（补写，可选）</label>
+      <textarea name="reason">{{ fb_reason or '' }}</textarea>
     </div>
     <button class="btn primary">提交反馈</button>
   </form>

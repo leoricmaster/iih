@@ -1,6 +1,6 @@
 """采集智能体 Collector 单测（doc-06 §3）：人工提交归因 + 自动拉取两跳路径。"""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import select
@@ -202,6 +202,34 @@ def test_collect_two_hop_extracts_from_article_page(db_session) -> None:
     # 计量：选链 + 抽取两次 LLM
     calls = db_session.scalars(select(LlmCall)).all()
     assert [c.target for c in calls] == ["outlet_link_select", "outlet_collection"]
+
+
+def test_collect_extracts_event_time(db_session) -> None:
+    """抽取输出事件时间（naive）→ 提案按 UTC aware 落账条目事件时间（doc-03 事件时间）。"""
+    source = _seed_confirmed_w_outlet(db_session)
+    task = _make_task(source, source.outlets[0])
+    extraction = StatementExtractionResult(
+        statement="W 公司公告：与 Z 集团签署合资协议，Q4 设立合资公司",
+        event_time=datetime(2026, 8, 30),
+        rationale="文章公告段主体陈述",
+    )
+    collector = Collector(
+        llm=make_fake_llm_collect(make_selection_article(), extraction),
+        session=db_session,
+        model="deepseek-chat",
+    )
+    proposal = collector.collect_outlet(
+        task=task,
+        html=ENTRY_LISTING_HTML,
+        fetch_article=_fetch_pages({ARTICLE_URL: ARTICLE_HTML}),
+        store=FakeSnapshotStore(),
+    )
+
+    assert proposal.payload.event_time == datetime(2026, 8, 30, tzinfo=UTC)
+
+    result = StateMachineExecutor().execute(proposal, session=db_session)
+    item = db_session.get(IntelligenceItem, result.item_id)
+    assert item.event_time == datetime(2026, 8, 30, tzinfo=UTC)
 
 
 def test_collect_single_hop_when_entry_is_article(db_session) -> None:
