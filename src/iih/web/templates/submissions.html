@@ -4,16 +4,16 @@
 <h1 class="page">录入素材</h1>
 
 {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
-{% if errors %}{% for e in errors %}<div class="err">{{ e }}</div>{% endfor %}{% endif %}
+{% if errors %}<div class="flash err">{{ errors | join('；') }}</div>{% endif %}
 
 <div class="box"><h2>提交素材</h2>
   <form method="post" action="/submissions">
     <div class="field"><label>媒介</label>
       <select name="medium_code">
-        {% for m in mediums %}<option value="{{ m.code }}">{{ m.name }}</option>{% endfor %}
+        {% for m in mediums %}<option value="{{ m.code }}"{% if m.code == form_medium %} selected{% endif %}>{{ m.name }}</option>{% endfor %}
       </select></div>
     <div class="field"><label>文字纪要</label>
-      <textarea name="statement" rows="6" placeholder="会议 / 访谈纪要，或一句话要点——系统自动抽取陈述"></textarea></div>
+      <textarea name="statement" rows="6" placeholder="会议 / 访谈纪要，或一句话要点——系统自动抽取陈述">{{ form_statement or '' }}</textarea></div>
     <button class="btn primary">提交</button>
   </form>
 </div>

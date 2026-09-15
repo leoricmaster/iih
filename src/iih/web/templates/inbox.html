@@ -9,7 +9,7 @@
   {% if items %}
   {% for item in items %}
   <div style="border-bottom:1px solid #eee;padding:10px 0;">
-    <div><a href="/items/{{ item.id }}"><b>{{ item.statement }}</b></a></div>
+    <div><a class="stmtline" href="/items/{{ item.id }}"><b>{{ item.statement }}</b></a></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;">
       <span class="pill">已核实</span>
       {% if item.rating %}<span class="pill rating">{{ item.rating }}</span>{% endif %}

@@ -117,7 +117,9 @@ def test_submit_without_intelligence_reports_error(db_session, w_attribution) ->
             "/submissions", data={"medium_code": "meeting_discussion", "statement": "寒暄闲聊"}
         )
 
-    assert "未能从提交文本中识别出情报陈述" in response.text
+    assert '<div class="flash err">未能从提交文本中识别出情报陈述</div>' in response.text
+    assert ">寒暄闲聊</textarea>" in response.text  # 拦截时已填内容保留
+    assert 'value="meeting_discussion" selected' in response.text
     assert db_session.scalars(select(IntelligenceItem)).first() is None
 
 

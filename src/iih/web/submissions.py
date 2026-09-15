@@ -42,7 +42,14 @@ def _recent_manual_items(session: Session) -> list[IntelligenceItem]:
     )
 
 
-def _render(request: Request, session: Session, errors: list[str] | None = None, flash: str = ""):
+def _render(
+    request: Request,
+    session: Session,
+    errors: list[str] | None = None,
+    flash: str = "",
+    form_medium: str = "",
+    form_statement: str = "",
+):
     return templates.TemplateResponse(
         request,
         "submissions.html",
@@ -53,6 +60,8 @@ def _render(request: Request, session: Session, errors: list[str] | None = None,
             "status_labels": STATUS_LABELS,
             "errors": errors or [],
             "flash": flash,
+            "form_medium": form_medium,
+            "form_statement": form_statement,
         },
     )
 
@@ -71,6 +80,10 @@ def submit(
     llm: Instructor = Depends(get_llm_client),
 ):
     """表单校验 → Collector 抽取 + 归因 → 逐条落账 Lead。"""
+
+    def fail(reasons: list[str]):
+        return _render(request, session, reasons, form_medium=medium_code, form_statement=statement)
+
     errors: list[str] = []
     if not medium_code:
         errors.append("请选择媒介")
@@ -80,15 +93,15 @@ def submit(
         errors.append("互联网媒介为自动拉取，不经本页录入")
 
     if errors:
-        return _render(request, session, errors)
+        return fail(errors)
 
     collector = Collector(llm=llm, session=session, model=get_settings().llm_model)
     try:
         proposals = collector.submit_manual(medium_code=medium_code, statement=statement.strip())
     except ValueError as exc:
-        return _render(request, session, [str(exc)])
+        return fail([str(exc)])
     if not proposals:
-        return _render(request, session, ["未能从提交文本中识别出情报陈述"])
+        return fail(["未能从提交文本中识别出情报陈述"])
 
     created = 0
     failed = 0
@@ -101,7 +114,7 @@ def submit(
             failed += 1
             reject_reasons.extend(exc.reasons)
     if not created:
-        return _render(request, session, reject_reasons or ["落账失败"])
+        return fail(reject_reasons or ["落账失败"])
 
     message = f"已提交：抽取陈述 {created} 条，进入流水线"
     if failed:

@@ -104,7 +104,8 @@ MANUAL_EXTRACTION_SYSTEM_PROMPT = """你是情报采集智能体的陈述抽取�
 
 要求：
 - statements：客观陈述句列表，每条独立可判定、描述事实而非评价；同义合并、按原文顺序；
-  超过 10 条时只取情报价值最高的 10 条；无情报价值内容返回空列表；
+  多人发言的素材按发言人逐要点拆分——发言人的事实性陈述、引用的数据、背景事实各自成条，
+  不要把多段发言合并成一条总结；超过 20 条时只取情报价值最高的 20 条；无情报价值内容返回空列表；
 - 每条 event_time：该事实的发生日期（ISO 格式，如 2026-08-30），文本无明确日期依据则留空，不得编造；
 - 每条 rationale：一句话抽取依据。"""
 
@@ -164,7 +165,7 @@ class Collector:
         )
         self._meter(target="manual_submission", usage=completion.usage)
 
-        statements = [s for s in extraction.statements if s.statement.strip()]
+        statements = [s for s in extraction.statements if s.statement.strip()][:20]
         if not statements:
             return []
 

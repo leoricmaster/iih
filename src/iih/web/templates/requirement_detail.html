@@ -71,7 +71,7 @@
   {% if hit_items %}
   {% for item in hit_items %}
   <div style="border-bottom:1px solid #eee;padding:7px 0">
-    <a href="/items/{{ item.id }}">{{ item.statement }}</a>
+    <a class="stmtline" href="/items/{{ item.id }}">{{ item.statement }}</a>
     <span class="pill {{ 'dashed' if item.retracted }}">{{ item_status_labels[item.status] }}{{ ' · 作废' if item.retracted }}</span>
     {% if item.rating %}<span class="pill rating">{{ item.rating }}</span>{% endif %}
   </div>

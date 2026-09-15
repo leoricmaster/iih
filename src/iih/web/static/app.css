@@ -101,7 +101,9 @@ dialog.modal::backdrop{background:rgba(20,24,38,.35)}
 .modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 @media(max-width:860px){.grid3{grid-template-columns:1fr}}
-.stmtline{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:720px}
+.stmtline{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+td .stmtline{max-width:340px}
+.flash.err{background:#c0392b;animation-duration:4.5s}
 .fbtype input{position:absolute;opacity:0;pointer-events:none}
 .fbtype label{display:inline-block;border:1px solid #ccc;border-radius:14px;padding:2px 10px;font-size:12px;cursor:pointer;color:#555;background:#fff}
 .fbtype input:checked+label{border-color:#2b5bd7;color:#2b5bd7;font-weight:600}
