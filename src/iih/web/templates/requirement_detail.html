@@ -33,6 +33,19 @@
   {% endif %}
 </div>
 
+<div class="box"><h2>采集概览</h2>
+  <div class="muted">{% if pipeline_interval %}每 {{ pipeline_interval // 60 }} 分钟{% else %}手动触发{% endif %} · {{ collect_outlets|length }} 个互联网途径 · 所有激活需求共享</div>
+  {% if collect_outlets %}
+  <div style="margin-top:6px">
+    {% for o in collect_outlets %}
+    <div>· <a href="/sources/{{ o.source_id }}">{{ o.source.name }}</a> · {{ o.name }}</div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty" style="margin-top:6px">暂无可用互联网途径</div>
+  {% endif %}
+</div>
+
 <div class="box"><h2>配置自检</h2>
   <form method="post" action="/requirements/{{ ir.id }}/probe">
     <button class="btn small primary">▶ 试采</button>

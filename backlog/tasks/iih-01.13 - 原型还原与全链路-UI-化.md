@@ -4,7 +4,7 @@ title: 原型还原与全链路 UI 化
 status: In Progress
 assignee: []
 created_date: '2026-09-14 12:16'
-updated_date: '2026-09-15 05:07'
+updated_date: '2026-09-15 07:56'
 labels:
   - product
   - web
@@ -139,6 +139,24 @@ created: 2026-09-14 15:51
 #15 原文快照大段平铺——元数据区原文快照改为限高滚动块（.snapbox，320px 上限，等宽小字），不再撑爆页面。
 #16 原文链接恒为采集入口页（信源官网首页）而非文章页——collect_outlet 硬编码 task.url。修复：html_normalize 增 extract_links（绝对化/去重/截断 60），LLM 抽取时从候选链接清单指认文章页 source_url，非法值回退入口 URL。
 另：条目状态迁移轨迹改为遍历全部审查决策与核实记录（升序），异议重审往返与存疑重核全程可见（配合 IIH-01.14）。门禁：ruff/mypy 通过，235 用例全绿，覆盖 94%。
+---
+
+author: Claude
+created: 2026-09-15 07:56
+---
+验收补救第六轮（2026-09-15）：情报需求详情页加「采集概览」只读区，补透明度缺口——消费方在验收时看不见「这个需求以什么节奏覆盖哪些途径在跑」。
+
+实现（零字段、零后端改动，纯 UI 聚合）：
+- requirements.py 增 _collect_outlets(session)：Director 同口径「已确认信源 × 互联网媒介 × 入口非空」的途径列表
+- _render_detail 传入 collect_outlets；pipeline_interval 已在 base_context
+- requirement_detail.html 在「内容规格」后、「配置自检」前加 box：「每 N 分钟 · M 个互联网途径 · 所有激活需求共享」+ 途径清单（信源名可点穿到信源画像）；空态「暂无可用互联网途径」
+- 测试 test_requirement_detail_shows_collect_overview
+
+设计裁决留痕：
+- 三维度（来源/时效/频率）现状——来源：笛卡尔积全站共享，无需求→信源绑定（content_spec 自由文本里写偏好）；时效：仅 content_spec 自由文本（如「时效一周内」），无过期触发；频率：全局 pipeline_interval，单需求不可配
+- 本轮只补透明度（看得见当前需求以什么节奏覆盖哪些途径跑），不动模型层——三维度真正可配属 m-1 加厚（生效窗口、采集频率、需求-信源关联、「过期」反馈学习通路）
+- 全状态显示该区（草稿态可见「激活后将这样跑」），关闭态亦显示（保留信息），最小改动不分支态
+- 文案遵极简纪律：一行节奏与覆盖统计 + 途径清单，无解释句
 ---
 <!-- COMMENTS:END -->
 

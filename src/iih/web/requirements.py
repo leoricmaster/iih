@@ -89,6 +89,22 @@ def _hit_item_ids(session: Session, requirement_id: int) -> list[int]:
     )
 
 
+def _collect_outlets(session: Session) -> list[Outlet]:
+    """采集覆盖：已确认信源 × 互联网途径 × 入口非空（Director 同口径，doc-06 §2）。"""
+    outlets = list(
+        session.scalars(
+            select(Outlet)
+            .join(Source, Outlet.source_id == Source.id)
+            .where(Source.confirmed.is_(True))
+            .where(Outlet.medium.has())
+        )
+    )
+    return [
+        o for o in outlets
+        if o.medium is not None and o.medium.code == "internet" and o.entry
+    ]
+
+
 @router.get("/requirements")
 def requirements_page(request: Request, session: Session = Depends(get_session)):
     requirements = list(
@@ -195,6 +211,7 @@ def _render_detail(
             "status_labels": IR_STATUS_LABELS,
             "item_status_labels": STATUS_LABELS,
             "hit_items": _hit_items(session, requirement_id),
+            "collect_outlets": _collect_outlets(session),
             "errors": errors or [],
             "flash": flash,
             "probe_results": probe_results,

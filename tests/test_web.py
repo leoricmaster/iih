@@ -847,6 +847,16 @@ def test_requirement_detail_404_for_unknown(inbox_client: TestClient) -> None:
     assert inbox_client.get("/requirements/9999").status_code == 404
 
 
+def test_requirement_detail_shows_collect_overview(inbox_client: TestClient, db_session) -> None:
+    """采集概览：节奏 + 覆盖途径（Director 同口径）；MVP 透明度补丁（IIH-01.13 第六轮）。"""
+    ir_id = _seed_probe_target(db_session)
+    detail = inbox_client.get(f"/requirements/{ir_id}")
+    assert "采集概览" in detail.text
+    assert "W 公司" in detail.text
+    assert "官网" in detail.text
+    assert "所有激活需求共享" in detail.text
+
+
 # ---- IIH-01.13 信源画像页 ----
 
 
