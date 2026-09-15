@@ -27,5 +27,5 @@
 - 任务 DoD 引用 doc-08 通用 DoD（完成定义与豁免规则）+ 任务特有项；豁免须在任务 comment 留痕并经用户批准。
 - 每次会话开始先运行 `backlog instructions overview` 获取工作流；创建任务前先 `backlog search` 查重。
 - 任务描述、验收标准一律用术语表内术语；涉及架构决策的任务须在描述中关联对应 decision。
-- 任务关联（文档章节、decision、原型）写入 References 字段（`task edit --add-ref`），描述末尾不另列关联行；Feature 与 US 的 type 设为 `feature`，技术/调研类用 `chore`/`spike`；判据：无新用户能力增量者（集成、交付形态改变、验收支撑）一律 `chore`，验收评审衍生的缺陷补救即使带能力增量亦 `chore`，不套用户故事格式，故事句目的从句只写客户获得什么、验证手段入 DoD/plan；同一轮验收的补救并入同一张 `chore`（一轮一单），不按补救点开新单。
+- 任务关联（文档章节、decision、原型）写入 References 字段（`task edit --add-ref`），描述末尾不另列关联行；Feature 与 US 的 type 设为 `feature`，技术/调研类用 `chore`/`spike`；判据：无新用户能力增量者（集成、交付形态改变、验收支撑）一律 `chore`，验收评审衍生的缺陷补救即使带能力增量亦 `chore`，不套用户故事格式，故事句目的从句只写客户获得什么、验证手段入 DoD/plan；验收补救**不另开新单**——各轮补救一律并入被验收的原任务，不按轮次、不按补救点开单。
 - 不手建/手改 `backlog/` 下的文件结构与元数据（ID、状态、日期），一律走 `backlog` CLI；正文内容在 CLI 创建的文件内编辑。
