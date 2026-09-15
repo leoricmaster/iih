@@ -1,11 +1,11 @@
 ---
 id: IIH-05.01
 title: 待确认信源确认闭环
-status: In Progress
+status: Done
 assignee:
   - '@lancer'
 created_date: '2026-09-15 12:31'
-updated_date: '2026-09-15 14:55'
+updated_date: '2026-09-15 14:58'
 labels:
   - product
 dependencies: []
@@ -33,11 +33,11 @@ ordinal: 18002
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Given 待确认信源 S（人工录入归因产生）When 消费方在信源库确认并给定初始信用档 Then S 进入信源库（已确认态）、建立画像、可被情报需求绑定与调度派单
-- [ ] #2 Given 待确认信源 S When 消费方拒绝 Then S 不入信源库、留痕（拒绝记录可见），已归因到 S 的既有条目不受影响
-- [ ] #3 Given 信源 S 尚未确认 When 调度器与记账运行 Then S 不参与派单、不建画像、不参与信用记账（decision-05 边界保持）
-- [ ] #4 Given 待确认信源 S When 消费方确认时改名且新名与既有已确认信源 T 同名 Then S 并入 T（条目/转引链节点/途径迁移，同名途径复用）、S 行删除、信用档沿用 T；改名未撞名 Then 以新名入池
-- [ ] #5 Given 已确认信源 T 带别名 a（确认改名/合并时自动产生）When 人工录入归因抽出 a Then 直接归因 T，不新建待确认信源；登记/改名撞别名一律驳回或并入
+- [x] #1 Given 待确认信源 S（人工录入归因产生）When 消费方在信源库确认并给定初始信用档 Then S 进入信源库（已确认态）、建立画像、可被情报需求绑定与调度派单
+- [x] #2 Given 待确认信源 S When 消费方拒绝 Then S 不入信源库、留痕（拒绝记录可见），已归因到 S 的既有条目不受影响
+- [x] #3 Given 信源 S 尚未确认 When 调度器与记账运行 Then S 不参与派单、不建画像、不参与信用记账（decision-05 边界保持）
+- [x] #4 Given 待确认信源 S When 消费方确认时改名且新名与既有已确认信源 T 同名 Then S 并入 T（条目/转引链节点/途径迁移，同名途径复用）、S 行删除、信用档沿用 T；改名未撞名 Then 以新名入池
+- [x] #5 Given 已确认信源 T 带别名 a（确认改名/合并时自动产生）When 人工录入归因抽出 a Then 直接归因 T，不新建待确认信源；登记/改名撞别名一律驳回或并入
 <!-- AC:END -->
 
 ## Definition of Done
@@ -118,4 +118,6 @@ ordinal: 18002
 - 信源库列表主体名后内联别名 pill（仅有别名时出现）。
 - 布局返工根因：全局 input[type=text]{width:100%} 优先级压过 .srcname → 输入框满宽换行；改 input.srcname 等特异度选择器（160px）+ 单表单布局（拒绝经 button formaction），确认/拒绝恒并列。自查两页 × 1280/960 四截图通过。
 - 门禁：ruff/format/mypy 绿，pytest 319 passed；docker 走查（拒绝→出队→重捞→曾拒 pill、别名 pill）通过，临时数据已清理。
+
+验收通过与收尾：用户批准提交（37e0d63），CI 绿（run 34985133147）；5 AC 全勾。
 <!-- SECTION:NOTES:END -->
