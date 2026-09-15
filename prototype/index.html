@@ -347,12 +347,15 @@ const DB = {
 
   reqs: [
     {id:'r1', name:'长期跟踪 W 公司动态', status:'激活', window:'常驻',
+     freq:'1h', sources:['s1','s2'], eventWindow:'一周内',
      spec:{topics:'矿卡 · 订单 · 业绩 · 战略动向', keywords:'W 公司；矿卡；交付量；订单；电驱', pref:'一次信源优先，媒体次之', timing:'晨间分发汇总（批量）'},
      coverage:{distr:86, cons:74}, recentHits:['i1','i6','i3','i2']},
     {id:'r2', name:'盯输入：国内露天矿数量与分布', status:'激活', window:'至 T1 结题', spawnedBy:'t1', hits:[]},
     {id:'r3', name:'盯输入：在役矿卡保有量 / 车龄与更换率', status:'激活', window:'至 T1 结题', spawnedBy:'t1', hits:['i1']},
     {id:'r4', name:'盯输入：整机均价 / 电驱渗透率', status:'激活', window:'至 T1 结题', spawnedBy:'t1', hits:['i2']},
-    {id:'r5', name:'跟踪竞品 Z 公司动态', status:'暂停', window:'常驻', coverage:{distr:12, cons:5}},
+    {id:'r5', name:'跟踪竞品 Z 公司动态', status:'暂停', window:'常驻',
+     freq:'24h', sources:null, eventWindow:'不限',
+     coverage:{distr:12, cons:5}},
   ],
 
   alerts: [
@@ -988,10 +991,13 @@ function renderReqs(){
   <div class="sub">消费方声明的兴趣配置，命中即推送条目。两类来历：声明（常驻）与催生（研究课题盯输入 / 命题盯证据，decision-06）。覆盖度量内联，不设独立仪表盘（doc-07 §3）。</div>
   <div class="box">
     <table>
-      <tr><th>需求</th><th>生效窗口</th><th>状态</th><th>覆盖 / 命中</th><th>催生关系</th></tr>
+      <tr><th>需求</th><th>频率</th><th>事件时效</th><th>来源</th><th>生效窗口</th><th>状态</th><th>覆盖 / 命中</th><th>催生关系</th></tr>
       ${DB.reqs.map(r => `
         <tr>
           <td><a href="#/requirement/${r.id}">${esc(r.name)}</a></td>
+          <td class="muted">${r.spawnedBy ? '—' : (r.freq || '全局')}</td>
+          <td class="muted">${r.spawnedBy ? '—' : (r.eventWindow || '不限')}</td>
+          <td class="muted">${r.spawnedBy ? '—' : (r.sources ? r.sources.map(sid => { const s = src(sid); return s ? esc(s.name) : ''; }).join('、') : '全部')}</td>
           <td class="muted">${esc(r.window)}</td>
           <td>${statusPill(r.status)}</td>
           <td>${r.coverage?`已分发 ${r.coverage.distr} · 已消费 ${r.coverage.cons}`:(r.hits?`命中 ${r.hits.length}`:'—')}</td>
@@ -1002,6 +1008,14 @@ function renderReqs(){
   <div class="box"><h2>新建情报需求</h2>
     ${PENDING_REQ ? `<div class="muted" style="margin-bottom:8px">由图谱断连孤岛提示进入（doc-02 §3）——已预填名称与主题。需求与实体不设关联字段：后续条目经实体提及自然把孤岛并入邻域。</div>` : ''}
     <div class="field"><label>名称</label><input type="text" id="req-name" placeholder="例：长期跟踪某公司动态" value="${PENDING_REQ ? esc(PENDING_REQ.name) : ''}"></div>
+    <div class="field"><label>采集频率（可空 = 继承全局间隔）</label><input type="text" id="req-freq" placeholder="例：1h、24h、6h；留空 = 用全局调度间隔"></div>
+    <div class="field"><label>事件时效（可空 = 不限）</label><input type="text" id="req-event-window" placeholder="例：一周内、24h 内、不限；审查据此否决过期线索"></div>
+    <div class="field"><label>来源绑定（可空 = 全部已确认信源）</label>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${DB.sources.filter(s => s.status === '已确认').map(s => `<label style="display:flex;gap:4px;align-items:center;font-size:12.5px;color:#666"><input type="checkbox" value="${s.id}" class="req-source-cb"> ${esc(s.name)}</label>`).join('')}
+      </div>
+      <div class="muted" style="margin-top:4px">不勾选 = 覆盖全部已确认信源；绑定只影响自动拉取派单，人工录入不受限</div>
+    </div>
     <div class="field"><label>生效窗口（时间窗 · 默认一个月）</label>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input type="text" id="req-start" placeholder="2026-09-10（默认今日）" style="flex:1;min-width:150px">
@@ -1024,6 +1038,9 @@ function renderReqDetail(id){
 
   <div class="box"><h2>${esc(r.name)} ${statusPill(r.status)}</h2>
     <div class="muted">生效窗口：${esc(r.window)} · ${r.spawnedBy?parentLink(r.spawnedBy):'声明'}。</div>
+    ${!r.spawnedBy ? `
+    <div class="muted" style="margin-top:4px">频率：${r.freq || '继承全局'} · 事件时效：${r.eventWindow || '不限'} · 来源：${r.sources ? r.sources.map(sid => { const s = src(sid); return s ? esc(s.name) : ''; }).join('、') : '全部已确认信源'}</div>
+    ` : ''}
     <div class="fbrow" style="margin-top:8px">
       ${r.status==='激活'?`<button class="btn small" onclick="reqAction('${r.id}','暂停')">暂停</button><button class="btn small" onclick="reqAction('${r.id}','关闭')">关闭</button>`:''}
       ${r.status==='暂停'?`<button class="btn small" onclick="reqAction('${r.id}','激活')">恢复</button><button class="btn small" onclick="reqAction('${r.id}','关闭')">关闭</button>`:''}
@@ -1562,7 +1579,11 @@ function reqCreate(){
   const start = $('#req-start').value.trim() || '2026-09-10';
   const end = $('#req-end').value.trim() || '2026-10-10';
   const topics = $('#req-topics').value.split(/[，,、]/).map(s => s.trim()).filter(Boolean).join(' · ');
+  const freq = $('#req-freq').value.trim();
+  const eventWindow = $('#req-event-window').value.trim();
+  const sourceIds = Array.from(document.querySelectorAll('.req-source-cb:checked')).map(cb => cb.value);
   DB.reqs.push({id, name, status:'草稿', window:standing ? '常驻' : start + ' 至 ' + end,
+    freq: freq || null, eventWindow: eventWindow || null, sources: sourceIds.length ? sourceIds : null,
     spec:{topics, keywords:'', pref:'', timing:'晨间分发汇总（批量）'}});
   const fromOrphan = !!PENDING_REQ;
   PENDING_REQ = null;
