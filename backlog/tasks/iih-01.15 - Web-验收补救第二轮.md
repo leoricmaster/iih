@@ -1,10 +1,10 @@
 ---
 id: IIH-01.15
 title: Web 验收补救第二轮
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-15 04:04'
-updated_date: '2026-09-15 04:05'
+updated_date: '2026-09-15 04:57'
 labels:
   - product
   - web
@@ -30,18 +30,18 @@ ordinal: 17000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Given 信源库或情报需求页 When 拖拽表头右缘 Then 列宽调整且刷新后保持（localStorage）
-- [ ] #2 Given 信源库页 When 未点开登记信源 Then 表单不占版面；点开后就地展开两行紧凑表单（主体/类型/初始评级/途径/采集入口）；校验失败自动展开回显错误
-- [ ] #3 Given 情报需求页 When 查看 Then 无「激活 × N」分组标题，单表按 激活→草稿→暂停→关闭 排序；新建入口为折叠面板
-- [ ] #4 Given 任意页面 When 点击顶栏「立即运行」Then 跑一轮流水线并跳回收件箱 toast 摘要；收件箱页内不再有运行条
-- [ ] #5 Given 自动拉取的文章页正文含事件时间 When 采集智能体抽取 Then 条目落账事件时间并在列表与详情展示；正文无时间依据则留空
-- [ ] #6 Given 已核实条目详情页 When 查看 Then 评级依据仅一行（公式版本：N=.. · R=.. → 可信度 .. → 评级 ..）
-- [ ] #7 Given 已核实条目详情页 When 反馈 Then 单表单：类型点选高亮，选「事实错误」时理由转必填并出提示，其余可选；收件箱一键反馈保留；常驻提示文字删除
+- [x] #1 Given 信源库或情报需求页 When 拖拽表头右缘 Then 列宽调整且刷新后保持（localStorage）
+- [x] #2 Given 信源库页 When 未点开登记信源 Then 表单不占版面；点开后就地展开两行紧凑表单（主体/类型/初始评级/途径/采集入口）；校验失败自动展开回显错误
+- [x] #3 Given 情报需求页 When 查看 Then 无「激活 × N」分组标题，单表按 激活→草稿→暂停→关闭 排序；新建入口为折叠面板
+- [x] #4 Given 任意页面 When 点击顶栏「立即运行」Then 跑一轮流水线并跳回收件箱 toast 摘要；收件箱页内不再有运行条
+- [x] #5 Given 自动拉取的文章页正文含事件时间 When 采集智能体抽取 Then 条目落账事件时间并在列表与详情展示；正文无时间依据则留空
+- [x] #6 Given 已核实条目详情页 When 查看 Then 评级依据仅一行（公式版本：N=.. · R=.. → 可信度 .. → 评级 ..）
+- [x] #7 Given 已核实条目详情页 When 反馈 Then 单表单：类型点选高亮，选「事实错误」时理由转必填并出提示，其余可选；收件箱一键反馈保留；常驻提示文字删除
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 符合 doc-08 通用 DoD（完成定义与豁免规则）
+- [x] #1 符合 doc-08 通用 DoD（完成定义与豁免规则）
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -59,3 +59,15 @@ ordinal: 17000
 9. 文档同步：doc-06 §3 抽取输出补事件时间；doc-07 §3 页面结构（顶栏运行、折叠面板）、§5 反馈交互（详情页单表单）。
 10. 测试与验收：pytest 全绿；本地起 uvicorn 用 seed 数据人工过一遍七条 AC；push 后 CI 绿再关单。
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+验证证据（2026-09-15）：本地门禁全绿（ruff check/format、mypy、pytest 246 通过、覆盖 92.9%）；CI gate 55s 绿（run 34930686286，commit 3fc9533）。起 8001 实例连真实库过 AC：折叠面板默认收起/错误自动展开（HTTP POST 验证）、需求页单表无分组标题、顶栏运行表单全页在位、收件箱 runbar 已删、评级依据单行渲染、反馈单表单（事实错误空理由被服务端驳回并回显预选、六类型 chip 渲染）。事件时间经单测（naive→UTC 提案与落账）。列宽拖拽与条件必填切换为 app.js 交互（语法经 node --check、脚本就位），拖拽手感以用户浏览器验收为准。既有条目 event_time 为历史空值，新一轮采集起生效。
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+七项验收补救全部落地：列宽拖拽、登记/新建折叠面板与表单紧凑化、需求页单表、立即运行移顶栏、采集抽取事件时间、评级依据一行、反馈单表单重构（收件箱一键/详情补理由分工）；本地门禁与 CI 绿，推送 3fc9533。
+<!-- SECTION:FINAL_SUMMARY:END -->
