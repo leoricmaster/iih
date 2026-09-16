@@ -11,6 +11,20 @@ document.querySelectorAll("dialog.modal").forEach((dlg) => {
   });
 });
 
+// Flash 提示：页面加载即从 URL 清掉 flash/err，防刷新重显；
+// flash 元素已渲染，CSS 动画照常播完消失。
+(() => {
+  const u = new URL(location.href);
+  let changed = false;
+  for (const k of ["flash", "err"]) {
+    if (u.searchParams.has(k)) {
+      u.searchParams.delete(k);
+      changed = true;
+    }
+  }
+  if (changed) history.replaceState(null, "", u);
+})();
+
 // 表格列宽拖拽（data-resize 表格）：冻结初始列宽后可拖，宽度按页面路径记 localStorage
 (() => {
   document.querySelectorAll("table[data-resize]").forEach((table) => {

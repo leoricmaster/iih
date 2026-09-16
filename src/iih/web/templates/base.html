@@ -15,7 +15,7 @@
   <nav id="nav">
     <div>
       <div class="grp">消费</div>
-      <a href="/" class="{{ 'active' if nav == 'inbox' }}">收件箱<span class="cnt">{{ inbox_count }}</span></a>
+      <a href="/" class="{{ 'active' if nav == 'inbox' }}">收件箱{% if inbox_count %}<span class="cnt">{{ inbox_count }}</span>{% endif %}</a>
       <a href="/items" class="{{ 'active' if nav == 'items' }}">情报条目</a>
     </div>
     <div>

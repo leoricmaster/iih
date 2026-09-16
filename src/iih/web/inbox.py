@@ -52,12 +52,17 @@ QUICK_TYPES = [
 
 
 def _feedback_items(session: Session) -> list[IntelligenceItem]:
-    """待反馈条目：已核实未作废（分发记录未建的近似，doc-07 §3）。"""
+    """待反馈条目：已核实未作废且尚无反馈（分发记录未建的近似，doc-07 §3）。
+
+    反馈落账即出队：多数类型不改条目状态（事实错误作废、审查异议重审除外），
+    故以「存在反馈记录」作为已反馈判定；反馈驳回不落账，条目仍在队。
+    """
     return list(
         session.scalars(
             select(IntelligenceItem)
             .where(IntelligenceItem.status == ItemStatus.VERIFIED)
             .where(IntelligenceItem.retracted.is_(False))
+            .where(~IntelligenceItem.feedbacks.any())
             .order_by(IntelligenceItem.created_at.desc(), IntelligenceItem.id.desc())
         )
     )

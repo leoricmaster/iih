@@ -394,6 +394,27 @@ def test_inbox_hides_unverified_items(inbox_client: TestClient, db_session) -> N
     assert "无待反馈条目" in response.text
 
 
+def test_inbox_drops_item_after_feedback_lands(inbox_client: TestClient, db_session) -> None:
+    """反馈落账即出队：提交「有效」后条目从收件箱消失（状态仍为已核实，靠反馈记录判定）。
+
+    主列表与侧栏徽标同口径：徽标归零后不渲染（避免蓝底 0 噪音）。
+    """
+    item = _seed_verified_item(db_session)
+
+    before = inbox_client.get("/")
+    assert '<span class="cnt">1</span>' in before.text
+
+    inbox_client.post(
+        f"/items/{item.id}/feedback", data={"feedback_type": "valid"}
+    )
+
+    response = inbox_client.get("/")
+    assert response.status_code == 200
+    assert "W 公司公告：与 Z 集团签署合资协议" not in response.text
+    assert "无待反馈条目" in response.text
+    assert '<span class="cnt">' not in response.text  # 0 不渲染徽标
+
+
 def test_item_detail_shows_provenance_and_rating_basis(
     inbox_client: TestClient, db_session
 ) -> None:

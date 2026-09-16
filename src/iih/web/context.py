@@ -51,15 +51,16 @@ SOURCE_TYPE_LABELS = {
 
 
 def inbox_count(session: Session) -> int:
-    """收件箱徽标：待反馈条目计数。
+    """收件箱徽标：待反馈条目计数（与 inbox._feedback_items 同口径）。
 
-    分发记录未建（后续里程碑），以已核实未作废条目近似。
+    分发记录未建（后续里程碑），以已核实未作废且尚无反馈条目近似。
     """
     return (
         session.scalar(
             select(func.count(IntelligenceItem.id)).where(
                 IntelligenceItem.status == ItemStatus.VERIFIED,
                 IntelligenceItem.retracted.is_(False),
+                ~IntelligenceItem.feedbacks.any(),
             )
         )
         or 0
