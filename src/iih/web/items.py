@@ -135,6 +135,17 @@ def items_page(
     session: Session = Depends(get_session),
 ):
     items = _filter_items(session, status, disposition, feedback, mode, q)
+    # 行内快捷反馈仅对待反馈条目开放（IIH-01.14 AC#4）：已核实 ∧ 未作废 ∧ 无反馈
+    given_ids = set(
+        session.scalars(
+            select(Feedback.item_id).where(Feedback.item_id.in_([item.id for item in items]))
+        )
+    )
+    quick_ids = {
+        item.id
+        for item in items
+        if item.status is ItemStatus.VERIFIED and not item.retracted and item.id not in given_ids
+    }
     verifications = {
         item.id: _latest_verification(session, item.id)
         for item in items
@@ -147,6 +158,7 @@ def items_page(
             **base_context(session, "items"),
             "items": items,
             "verifications": verifications,
+            "quick_ids": quick_ids,
             "status_labels": STATUS_LABELS,
             "status_filters": STATUS_FILTERS,
             "disposition_filters": DISPOSITION_FILTERS,

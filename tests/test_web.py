@@ -362,7 +362,7 @@ def _seed_verified_item(
 def test_home_redirects_to_items_and_default_view_lists_pending(
     inbox_client: TestClient, db_session
 ) -> None:
-    """对应 IIH-06 AC#1/#2：收件箱下线，/ 重定向 /items；默认视图待反馈。"""
+    """对应 IIH-01.14 AC#1/#2：收件箱下线，/ 重定向 /items；默认视图待反馈。"""
     item = _seed_verified_item(db_session)
 
     redirect = inbox_client.get("/", follow_redirects=False)
@@ -419,10 +419,48 @@ def test_default_view_drops_item_after_feedback_lands(inbox_client: TestClient, 
     assert '<span class="cnt">' not in response.text  # 0 不渲染徽标
 
 
+def test_items_list_quick_feedback_buttons_only_on_pending_rows(
+    inbox_client: TestClient, db_session
+) -> None:
+    """对应 IIH-01.14 AC#4：待反馈行 hover 出「有效 / 重复噪音」快捷按钮；线索与已反馈行不出现。"""
+    _seed_verified_item(db_session)
+    _seed_lead_item(db_session)
+    given = _seed_verified_item(db_session, statement="已反馈过的公告", source_name="Z 集团")
+    db_session.add(Feedback(item=given, feedback_type=FeedbackType.VALID, reason="快捷 · 有效"))
+    db_session.flush()
+
+    listing = inbox_client.get("/items", params={"feedback": "all", "status": "all"})
+
+    assert listing.text.count('class="rowfb"') == 1  # 仅待反馈行带快捷表单
+    assert 'value="valid"' in listing.text
+    assert 'value="duplicate_noise"' in listing.text
+
+
+def test_quick_feedback_from_list_lands_and_dequeues(inbox_client: TestClient, db_session) -> None:
+    """对应 IIH-01.14 AC#4：列表行内提交「有效」→ 落默认理由、回列表带 flash、条目出队。"""
+    item = _seed_verified_item(db_session)
+
+    response = inbox_client.post(
+        f"/items/{item.id}/feedback",
+        data={"feedback_type": "valid"},
+        headers={"referer": "http://testserver/items"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("http://testserver/items?")  # 回来源列表
+    assert "flash=" in response.headers["location"]
+    feedback = db_session.scalars(select(Feedback)).unique().one()
+    assert feedback.reason == "快捷 · 有效"
+    after = inbox_client.get("/items")
+    assert "W 公司公告：与 Z 集团签署合资协议" not in after.text  # 出队
+    assert 'class="rowfb"' not in after.text  # 无待反馈行即无快捷表单
+
+
 def test_items_page_feedback_filter_separates_pending_from_given(
     inbox_client: TestClient, db_session
 ) -> None:
-    """对应 IIH-06 AC#1：反馈维度筛选——待反馈仅无反馈条目，已反馈仅落过反馈的条目。"""
+    """对应 IIH-01.14 AC#1：反馈维度筛选——待反馈仅无反馈条目，已反馈仅落过反馈的条目。"""
     _seed_verified_item(db_session)
     given = _seed_verified_item(db_session, statement="已反馈过的公告", source_name="Z 集团")
     db_session.add(Feedback(item=given, feedback_type=FeedbackType.VALID, reason="快捷 · 有效"))
@@ -571,7 +609,7 @@ def test_shell_renders_nav_groups_and_static_css(inbox_client: TestClient, db_se
 
     assert response.status_code == 200
     assert "＋ 录入素材" in response.text  # 全局动作，不占导航位（doc-07 §3）
-    assert "收件箱" not in response.text  # 已下线（IIH-06）
+    assert "收件箱" not in response.text  # 已下线（IIH-01.14）
     for nav in ("情报条目", "警报", "研究课题", "命题", "图谱", "情报需求", "信源库"):
         assert nav in response.text
     assert "未开通" in response.text  # 警报与探究组置灰
@@ -1730,7 +1768,7 @@ def _seed_undetermined_item(
 def test_undetermined_items_reachable_via_status_filter(
     inbox_client: TestClient, db_session
 ) -> None:
-    """对应偏差 #5（IIH-06 改版）：存疑不入待反馈默认视图，但状态筛选一步可达、
+    """对应偏差 #5（IIH-01.14 改版）：存疑不入待反馈默认视图，但状态筛选一步可达、
     流水线摘要 flash 明示存疑计数——结果不消失。"""
     _seed_undetermined_item(db_session)
 

@@ -35,7 +35,7 @@
     {% endfor %}
   </div>
   <table>
-    <tr><th>陈述</th><th>评级</th><th>独立信源</th><th>状态</th><th>处置</th><th>出处信源</th><th>媒介</th><th>采集模式</th><th>事件时间</th></tr>
+    <tr><th>陈述</th><th>评级</th><th>独立信源</th><th>状态</th><th>处置</th><th>出处信源</th><th>媒介</th><th>采集模式</th><th>事件时间</th><th></th></tr>
     {% for item in items %}
     <tr>
       <td><a class="stmtline" href="/items/{{ item.id }}">{{ item.statement }}</a>{% if item.mode.value == 'manual' %} <span class="pill">人工提交</span>{% endif %}</td>
@@ -47,9 +47,13 @@
       <td class="muted">{{ item.medium.name }}</td>
       <td class="muted">{{ '自动拉取' if item.mode.value == 'automated' else '人工提交' }}</td>
       <td class="muted">{{ item.event_time | dtstr('%Y-%m-%d') if item.event_time else '—' }}</td>
+      <td>{% if item.id in quick_ids %}<form class="rowfb" method="post" action="/items/{{ item.id }}/feedback">
+        <button class="chip" name="feedback_type" value="valid" title="快捷反馈（默认理由）">有效</button>
+        <button class="chip" name="feedback_type" value="duplicate_noise" title="快捷反馈（默认理由）">重复 / 噪音</button>
+      </form>{% endif %}</td>
     </tr>
     {% else %}
-    <tr><td colspan="9"><div class="empty">当前筛选下无条目</div></td></tr>
+    <tr><td colspan="10"><div class="empty">当前筛选下无条目</div></td></tr>
     {% endfor %}
   </table>
 </div>
