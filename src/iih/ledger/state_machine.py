@@ -45,6 +45,7 @@ from iih.ledger.proposal import (
     ProvenanceData,
     ReviewProposal,
     SourceConfirmProposal,
+    SourceDiscoveryProposal,
     SourceRegisterProposal,
     SourceRejectProposal,
     VerificationProposal,
@@ -81,6 +82,8 @@ class StateMachineExecutor:
                 return self._execute_source_confirm(proposal, session)
             case SourceRejectProposal():
                 return self._execute_source_reject(proposal, session)
+            case SourceDiscoveryProposal():
+                return self._execute_source_discovery(proposal, session)
             case IntelligenceRequirementRegisterProposal():
                 return self._execute_ir_register(proposal, session)
             case IntelligenceRequirementActivateProposal():
@@ -517,6 +520,39 @@ class StateMachineExecutor:
         session.commit()
         return ExecutionResult(source_id=source_id)
 
+    def _execute_source_discovery(
+        self, proposal: SourceDiscoveryProposal, session: Session
+    ) -> ExecutionResult:
+        """新信源发现（doc-06 §3、decision-05 通道二）：池外自由探索发现的信源入待确认队列。
+
+        校验：信源名非空白 + 依据非空白 + 名不撞既有信源（正名或别名）。
+        落账 Source(confirmed=False)，不建画像、不设档、不记账（由 confirmed 边界保持，AC#3）。
+        撞名一律驳回（含已拒绝的待确认信源）——已存在记录不重复建，由确认/拒绝入口处理。
+        """
+        payload = proposal.payload
+        reasons: list[str] = []
+        if not payload.source_name.strip():
+            reasons.append("信源名缺失")
+        if not proposal.rationale.strip():
+            reasons.append("依据缺失")
+        if reasons:
+            raise ProposalRejectedError(reasons)
+
+        existing = self._source_by_name_or_alias(session, payload.source_name.strip())
+        if existing is not None:
+            raise ProposalRejectedError([f"信源名已存在：{payload.source_name}——{existing.name}"])
+
+        source = Source(
+            name=payload.source_name.strip(),
+            type=payload.source_type,
+            confirmed=False,
+        )
+        session.add(source)
+        session.flush()
+        source_id = source.id
+        session.commit()
+        return ExecutionResult(source_id=source_id)
+
     # ---- IIH-01.08 互联网信源自动拉取 ----
 
     def _execute_ir_register(
@@ -547,6 +583,8 @@ class StateMachineExecutor:
                 reasons.append(f"事件时效格式非法：{payload.event_freshness}（须 Nh/Nd/Nw/Nm）")
         if payload.valid_from and payload.valid_until and payload.valid_until < payload.valid_from:
             reasons.append("生效窗口结束日早于起始日")
+        if payload.explore_ratio is not None and not 0 <= payload.explore_ratio <= 1:
+            reasons.append(f"池外探索比例非法：{payload.explore_ratio}（须 0–1）")
         bound_sources: list[Source] = []
         if payload.source_ids:
             for sid in payload.source_ids:
@@ -572,6 +610,7 @@ class StateMachineExecutor:
             else None,
             valid_from=payload.valid_from,
             valid_until=payload.valid_until,
+            explore_ratio=payload.explore_ratio,
         )
         if bound_sources:
             ir.sources = bound_sources

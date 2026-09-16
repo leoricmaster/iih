@@ -16,6 +16,7 @@ services:
       OSS_BUCKET: ${OSS_BUCKET:-}
       OSS_REGION: ${OSS_REGION:-cn-hangzhou}
       TINGWU_REGION_ID: ${TINGWU_REGION_ID:-cn-beijing}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
       interval: 5s

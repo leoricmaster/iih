@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     oss_region: str = "cn-hangzhou"
     tingwu_region_id: str = "cn-beijing"
 
+    # Tavily 搜索 API（IIH-05.02 池外自由探索）：留空则探索环节静默跳过
+    tavily_api_key: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 

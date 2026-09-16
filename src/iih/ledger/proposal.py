@@ -127,11 +127,33 @@ class SourceRejectProposal(Proposal):
     payload: SourceRejectPayload
 
 
+class SourceDiscoveryPayload(BaseModel):
+    """「新信源发现」产出：信源主体字段（decision-05 通道二，IIH-05.02）。
+
+    发现来源 URL 与依据记入提案 rationale，payload 仅含信源主体。
+    """
+
+    source_name: str
+    source_type: SourceType
+
+
+class SourceDiscoveryProposal(Proposal):
+    """提案类型「新信源发现」：池外自由探索发现的新信源（doc-06 §3、decision-05 通道二）。
+
+    非情报产出，无 formula_version；落账 Source(confirmed=False) 进待确认队列，
+    与人工归因产生的待确认信源同通路确认（IIH-05.01 确认入口）。
+    """
+
+    PROPOSAL_TYPE = "source_discovery"
+
+    payload: SourceDiscoveryPayload
+
+
 # ---- IIH-01.08 互联网信源自动拉取 ----
 
 
 class IntelligenceRequirementRegisterPayload(BaseModel):
-    """「情报需求登记」产出：name + content_spec + 需求级采集配置（IIH-03.01）。"""
+    """「情报需求登记」产出：name + content_spec + 需求级采集配置（IIH-03.01/05.02）。"""
 
     name: str
     content_spec: str  # 主题、关键词、信源偏好、时效要求等自由文本
@@ -140,6 +162,7 @@ class IntelligenceRequirementRegisterPayload(BaseModel):
     valid_from: date | None = None  # 生效窗口起；空=常驻
     valid_until: date | None = None  # 生效窗口止；空=常驻
     source_ids: list[int] = []  # 信源绑定；空=全部已确认信源
+    explore_ratio: float | None = None  # 池外自由探索触发概率 0–1；None=0（IIH-05.02）
 
 
 class IntelligenceRequirementRegisterProposal(Proposal):

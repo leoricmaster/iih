@@ -89,6 +89,16 @@ def test_factual_error_with_reason_lands_and_routes(db_session, verified_item) -
     assert result.channels == frozenset({DISPOSITION, CREDIT, ITERATION})
 
 
+def test_factual_error_rejects_non_verified_item(noise_item, db_session) -> None:
+    """事实错误仅对已核实条目开放（doc-02 §4：作废打在已核实条目上）——噪音态不给打作废标记。"""
+    with pytest.raises(FeedbackRejectedError) as excinfo:
+        _submit(db_session, noise_item.id, FeedbackType.FACTUAL_ERROR, reason="陈述有误")
+
+    assert any("已核实" in r for r in excinfo.value.reasons)
+    assert db_session.scalars(select(Feedback)).first() is None
+    assert noise_item.retracted is False
+
+
 def test_unknown_item_rejected(db_session) -> None:
     with pytest.raises(FeedbackRejectedError) as excinfo:
         _submit(db_session, 9999, FeedbackType.VALID)

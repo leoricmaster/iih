@@ -44,6 +44,8 @@ from iih.ledger.models import (
     VerificationOutcome,
     VerificationRecord,
 )
+from iih.ledger.proposal import SourceDiscoveryPayload, SourceDiscoveryProposal
+from iih.ledger.state_machine import StateMachineExecutor
 from iih.tools.fetcher import FetcherError
 from iih.web.app import create_app
 from iih.web.deps import get_session
@@ -357,22 +359,26 @@ def _seed_verified_item(
     return item
 
 
-def test_inbox_is_homepage_and_lists_verified_items(inbox_client: TestClient, db_session) -> None:
-    """对应 IIH-01.04 AC#1：收件箱为首页，列表展示陈述摘要 + 二维评级 + 状态。"""
+def test_home_redirects_to_items_and_default_view_lists_pending(
+    inbox_client: TestClient, db_session
+) -> None:
+    """对应 IIH-06 AC#1/#2：收件箱下线，/ 重定向 /items；默认视图待反馈。"""
     item = _seed_verified_item(db_session)
 
-    response = inbox_client.get("/")
+    redirect = inbox_client.get("/", follow_redirects=False)
 
+    assert redirect.status_code == 303
+    assert redirect.headers["location"] == "/items"
+
+    response = inbox_client.get("/items")
     assert response.status_code == 200
-    assert "收件箱" in response.text
     assert "W 公司公告：与 Z 集团签署合资协议" in response.text  # 陈述摘要
     assert "B2" in response.text  # 二维评级
-    assert "已核实" in response.text  # 状态
     assert f'href="/items/{item.id}"' in response.text  # 条目链接进详情
 
 
-def test_inbox_hides_unverified_items(inbox_client: TestClient, db_session) -> None:
-    """收件箱只收已核实条目：线索/候选不出现；空态有提示。"""
+def test_default_view_hides_non_pending_items(inbox_client: TestClient, db_session) -> None:
+    """默认待反馈：线索/候选不出现；空态有提示。"""
     medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
     modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
     db_session.add(
@@ -387,30 +393,48 @@ def test_inbox_hides_unverified_items(inbox_client: TestClient, db_session) -> N
         )
     )
 
-    response = inbox_client.get("/")
+    response = inbox_client.get("/items")
 
     assert response.status_code == 200
     assert "未经核实的线索" not in response.text
-    assert "无待反馈条目" in response.text
+    assert "当前筛选下无条目" in response.text
 
 
-def test_inbox_drops_item_after_feedback_lands(inbox_client: TestClient, db_session) -> None:
-    """反馈落账即出队：提交「有效」后条目从收件箱消失（状态仍为已核实，靠反馈记录判定）。
+def test_default_view_drops_item_after_feedback_lands(inbox_client: TestClient, db_session) -> None:
+    """反馈落账即出队：提交「有效」后条目从默认视图消失（状态仍为已核实，靠反馈记录判定）。
 
-    主列表与侧栏徽标同口径：徽标归零后不渲染（避免蓝底 0 噪音）。
+    列表与侧栏徽标同口径：徽标归零后不渲染（避免蓝底 0 噪音）。
     """
     item = _seed_verified_item(db_session)
 
-    before = inbox_client.get("/")
+    before = inbox_client.get("/items")
     assert '<span class="cnt">1</span>' in before.text
 
     inbox_client.post(f"/items/{item.id}/feedback", data={"feedback_type": "valid"})
 
-    response = inbox_client.get("/")
+    response = inbox_client.get("/items")
     assert response.status_code == 200
     assert "W 公司公告：与 Z 集团签署合资协议" not in response.text
-    assert "无待反馈条目" in response.text
+    assert "当前筛选下无条目" in response.text
     assert '<span class="cnt">' not in response.text  # 0 不渲染徽标
+
+
+def test_items_page_feedback_filter_separates_pending_from_given(
+    inbox_client: TestClient, db_session
+) -> None:
+    """对应 IIH-06 AC#1：反馈维度筛选——待反馈仅无反馈条目，已反馈仅落过反馈的条目。"""
+    _seed_verified_item(db_session)
+    given = _seed_verified_item(db_session, statement="已反馈过的公告", source_name="Z 集团")
+    db_session.add(Feedback(item=given, feedback_type=FeedbackType.VALID, reason="快捷 · 有效"))
+    db_session.flush()
+
+    pending_view = inbox_client.get("/items", params={"feedback": "pending"})
+    assert "W 公司公告：与 Z 集团签署合资协议" in pending_view.text
+    assert "已反馈过的公告" not in pending_view.text
+
+    given_view = inbox_client.get("/items", params={"feedback": "given"})
+    assert "已反馈过的公告" in given_view.text
+    assert "W 公司公告：与 Z 集团签署合资协议" not in given_view.text
 
 
 def test_item_detail_shows_provenance_and_rating_basis(
@@ -445,16 +469,14 @@ def test_item_detail_returns_404_for_unknown_item(inbox_client: TestClient) -> N
 # ---- IIH-01.05 一键类型化反馈 ----
 
 
-def test_quick_feedback_from_inbox_card_lands_with_default_reason(
-    inbox_client: TestClient, db_session
-) -> None:
-    """对应 IIH-01.05 AC#1：收件箱卡片一键「有效」→ 落账、默认理由「快捷 · 有效」、回来源页。"""
+def test_quick_feedback_lands_with_default_reason(inbox_client: TestClient, db_session) -> None:
+    """对应 IIH-01.05 AC#1：详情表单「有效」理由留空 → 落账、默认理由「快捷 · 有效」、回来源页。"""
     item = _seed_verified_item(db_session)
 
     response = inbox_client.post(
         f"/items/{item.id}/feedback",
         data={"feedback_type": "valid"},
-        headers={"referer": "http://testserver/"},
+        headers={"referer": f"http://testserver/items/{item.id}"},
         follow_redirects=False,
     )
 
@@ -462,7 +484,7 @@ def test_quick_feedback_from_inbox_card_lands_with_default_reason(
     from urllib.parse import parse_qs, urlsplit
 
     loc = response.headers["location"]
-    assert loc.startswith("http://testserver/?flash=")  # 回来源页且带提示
+    assert loc.startswith(f"http://testserver/items/{item.id}?flash=")  # 回来源页且带提示
     assert parse_qs(urlsplit(loc).query)["flash"] == ["已记录反馈：有效"]
     feedback = db_session.scalars(select(Feedback)).unique().one()
     assert feedback.item_id == item.id
@@ -537,36 +559,23 @@ def test_item_detail_shows_feedback_form_and_records(inbox_client: TestClient, d
     assert "快捷 · 有效" in response.text
 
 
-def test_inbox_offers_one_click_feedback_entry(inbox_client: TestClient, db_session) -> None:
-    """收件箱卡片一键反馈：五类型直发 + 事实错误跳详情补理由（doc-07 §5）。"""
-    item = _seed_verified_item(db_session)
-
-    response = inbox_client.get("/")
-
-    assert response.status_code == 200
-    assert f'action="/items/{item.id}/feedback"' in response.text
-    for button_type in ("valid", "duplicate_noise", "irrelevant", "outdated", "rating_dispute"):
-        assert f'name="feedback_type" value="{button_type}"' in response.text
-    # 事实错误跳详情补理由（fb_type 预选）
-    assert f'href="/items/{item.id}?fb_type=factual_error#feedback"' in response.text
-
-
 # ---- IIH-01.13 壳与原型还原 ----
 
 
 def test_shell_renders_nav_groups_and_static_css(inbox_client: TestClient, db_session) -> None:
-    """对应 IIH-01.13 AC#2：三组导航 + 录入素材全局按钮；探究组置灰标未开通。"""
+    """对应 IIH-01.13 AC#2：三组导航 + 录入素材全局按钮；警报与探究组置灰标未开通。"""
     _seed_verified_item(db_session)
 
-    response = inbox_client.get("/")
+    response = inbox_client.get("/items")
     css = inbox_client.get("/static/app.css")
 
     assert response.status_code == 200
     assert "＋ 录入素材" in response.text  # 全局动作，不占导航位（doc-07 §3）
-    for nav in ("收件箱", "情报条目", "研究课题", "命题", "图谱", "情报需求", "信源库"):
+    assert "收件箱" not in response.text  # 已下线（IIH-06）
+    for nav in ("情报条目", "警报", "研究课题", "命题", "图谱", "情报需求", "信源库"):
         assert nav in response.text
-    assert "未开通" in response.text  # 探究组置灰
-    assert '<span class="cnt">1</span>' in response.text  # 收件箱徽标计数
+    assert "未开通" in response.text  # 警报与探究组置灰
+    assert '情报条目<span class="cnt">1</span>' in response.text  # 待反馈徽标
     assert css.status_code == 200
     assert "#sidebar" in css.text
 
@@ -594,7 +603,7 @@ def _seed_lead_item(
 
 
 def test_items_page_default_hides_leads(inbox_client: TestClient, db_session) -> None:
-    """默认「已核实起」：线索不入默认视图（doc-07 §3）。"""
+    """默认「待反馈」（已核实 ∧ 未作废 ∧ 无反馈）：线索不入默认视图（doc-07 §3）。"""
     _seed_verified_item(db_session)
     _seed_lead_item(db_session)
 
@@ -605,18 +614,50 @@ def test_items_page_default_hides_leads(inbox_client: TestClient, db_session) ->
     assert "未经核实的线索" not in response.text
 
 
+def test_items_page_disposition_filter_is_independent_dimension(
+    inbox_client: TestClient, db_session
+) -> None:
+    """处置独立于状态（doc-02 §4 作废为标记位）：已作废仅列 retracted 条目、pill 不再拼「作废」。"""
+    _seed_verified_item(db_session)
+    retracted = _seed_verified_item(
+        db_session, statement="已被推翻的合资公告", source_name="Z 集团"
+    )
+    retracted.retracted = True
+    db_session.flush()
+
+    retracted_view = inbox_client.get(
+        "/items", params={"feedback": "all", "disposition": "retracted"}
+    )
+    assert "已被推翻的合资公告" in retracted_view.text
+    assert "W 公司公告：与 Z 集团签署合资协议" not in retracted_view.text
+
+    active_view = inbox_client.get(
+        "/items", params={"feedback": "all", "status": "all", "disposition": "active"}
+    )
+    assert "W 公司公告：与 Z 集团签署合资协议" in active_view.text
+    assert "已被推翻的合资公告" not in active_view.text
+
+    # 状态与处置正交：作废条目状态列仍显示「已核实」，处置列单独示「作废」
+    assert '<td><span class="pill">已核实</span></td>' in retracted_view.text
+    assert " · 作废" not in retracted_view.text
+
+
 def test_items_page_status_and_mode_filters(inbox_client: TestClient, db_session) -> None:
     _seed_verified_item(db_session)  # 已核实 · 自动拉取
     _seed_lead_item(db_session)  # 线索 · 人工提交
 
-    leads = inbox_client.get("/items", params={"status": "lead"})
+    leads = inbox_client.get("/items", params={"feedback": "all", "status": "lead"})
     assert "未经核实的线索" in leads.text
     assert "W 公司公告" not in leads.text
 
-    empty = inbox_client.get("/items", params={"status": "lead", "mode": "automated"})
+    empty = inbox_client.get(
+        "/items", params={"feedback": "all", "status": "lead", "mode": "automated"}
+    )
     assert "当前筛选下无条目" in empty.text
 
-    manual = inbox_client.get("/items", params={"status": "all", "mode": "manual"})
+    manual = inbox_client.get(
+        "/items", params={"feedback": "all", "status": "all", "mode": "manual"}
+    )
     assert "未经核实的线索" in manual.text
     assert "W 公司公告" not in manual.text
 
@@ -774,6 +815,61 @@ def test_requirement_missing_fields_blocked(inbox_client: TestClient, db_session
     assert "请填写需求名称" in response.text
     assert "请填写内容规格" in response.text
     assert db_session.scalars(select(IntelligenceRequirement)).first() is None
+
+
+def test_requirement_create_with_explore_ratio_lands(inbox_client: TestClient, db_session) -> None:
+    """IIH-05.02：IR 登记表单含 explore_ratio 字段，落账可读。"""
+    ir_id = _create_ir_via_form_with_explore(inbox_client, explore_ratio="0.5")
+
+    ir = db_session.get(IntelligenceRequirement, ir_id)
+    assert ir is not None
+    assert ir.explore_ratio == 0.5
+
+    detail = inbox_client.get(f"/requirements/{ir_id}")
+    assert "池外探索" in detail.text  # 详情页展示字段
+    assert "0.5" in detail.text
+
+
+def test_requirement_create_explore_ratio_blank_means_zero(
+    inbox_client: TestClient, db_session
+) -> None:
+    """IIH-05.02 DoD#2：未填 explore_ratio 即 None=0，不影响既有采集行为。"""
+    ir_id = _create_ir_via_form(inbox_client)
+
+    ir = db_session.get(IntelligenceRequirement, ir_id)
+    assert ir is not None
+    assert ir.explore_ratio is None
+
+
+def test_requirement_create_explore_ratio_invalid_rejected(
+    inbox_client: TestClient, db_session
+) -> None:
+    """IIH-05.02：explore_ratio 非法（>1）回显错误，不落账。"""
+    response = inbox_client.post(
+        "/requirements",
+        data={"name": "探索", "content_spec": "主题", "explore_ratio": "1.5"},
+        follow_redirects=False,
+    )
+
+    assert "池外探索比例非法" in response.text
+    assert (
+        db_session.scalars(
+            select(IntelligenceRequirement).where(IntelligenceRequirement.name == "探索")
+        ).first()
+        is None
+    )
+
+
+def _create_ir_via_form_with_explore(
+    inbox_client: TestClient, *, explore_ratio: str, name: str = "探索需求"
+) -> int:
+    response = inbox_client.post(
+        "/requirements",
+        data={"name": name, "content_spec": "主题", "explore_ratio": explore_ratio},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    return int(response.headers["location"].rsplit("/", 1)[-1])
 
 
 def test_requirement_full_lifecycle_via_browser(inbox_client: TestClient, db_session) -> None:
@@ -1225,7 +1321,7 @@ def test_reject_pending_source_leaves_audit_trail(inbox_client: TestClient, db_s
 
 
 def test_confirm_entry_points_replace_placeholders(inbox_client: TestClient, db_session) -> None:
-    """对应 IIH-05.01 DoD#2：四处「确认功能即将上线」占位全部替换为确认入口。"""
+    """对应 IIH-05.01 DoD#2：确认入口全站无占位——信源库页 + 画像页 + 条目详情指引。"""
     item = _seed_pending_with_item(db_session)
     source = item.source
     assert source is not None
@@ -1235,10 +1331,6 @@ def test_confirm_entry_points_replace_placeholders(inbox_client: TestClient, db_
     assert "确认功能即将上线" not in sources_page.text
     assert ">确认</button>" in sources_page.text
 
-    inbox_page = inbox_client.get("/")
-    assert "确认功能即将上线" not in inbox_page.text
-    assert ">确认</button>" in inbox_page.text
-
     profile = inbox_client.get(f"/sources/{source.id}")
     assert "确认功能即将上线" not in profile.text
     assert ">确认</button>" in profile.text
@@ -1246,6 +1338,16 @@ def test_confirm_entry_points_replace_placeholders(inbox_client: TestClient, db_
     item_detail = inbox_client.get(f"/items/{undetermined.id}")
     assert "确认功能即将上线" not in item_detail.text
     assert "去确认" in item_detail.text
+
+
+def test_sources_nav_badge_counts_pending(inbox_client: TestClient, db_session) -> None:
+    """待确认信源归宿信源库（doc-07 §3）：侧栏信源库徽标按待确认计数。"""
+    _seed_pending_with_item(db_session, source_name="证券时报")
+    _seed_pending_with_item(db_session, source_name="工程机械品牌网")
+
+    response = inbox_client.get("/items")
+
+    assert '信源库<span class="cnt">2</span>' in response.text
 
 
 def test_confirm_with_illegal_credit_redirects_with_err(
@@ -1365,6 +1467,89 @@ def test_confirm_rename_alias_visible_on_profile(inbox_client: TestClient, db_se
     detail = inbox_client.get(f"/sources/{source.id}")
     assert "别名" in detail.text
     assert '<span class="pill">三一</span>' in detail.text
+
+
+# ---- IIH-05.02 池外自由探索与新信源发现 ----
+
+
+def test_discovered_source_confirmed_then_ir_bindable_end_to_end(
+    inbox_client: TestClient, db_session
+) -> None:
+    """对应 IIH-05.02 AC#2：新信源发现提案经确认入口入池后可被 IR 绑定（与人工归因同通路）。"""
+    # 池外探索产出待确认信源
+    result = StateMachineExecutor().execute(
+        SourceDiscoveryProposal(
+            payload=SourceDiscoveryPayload(source_name="行业媒体 Z", source_type=SourceType.MEDIA),
+            rationale="池外自由探索：从 W 公司·官网的入口页候选链接中发现 行业媒体 Z",
+        ),
+        session=db_session,
+    )
+    source = db_session.get(Source, result.source_id)
+    assert source is not None
+    assert source.confirmed is False
+
+    # 经确认入口入池
+    response = inbox_client.post(
+        f"/sources/{source.id}/confirm",
+        data={"initial_credit": "C", "next": "/sources"},
+        follow_redirects=True,
+    )
+    assert "已确认入信源库" in response.text
+    db_session.expire_all()
+    confirmed = db_session.get(Source, source.id)
+    assert confirmed is not None
+    assert confirmed.confirmed is True
+
+    # 可被 IR 绑定（confirmed 边界放开）
+    ir_response = inbox_client.post(
+        "/requirements",
+        data={
+            "name": "跟踪行业媒体 Z",
+            "content_spec": "主题：行业观察",
+            "source_ids": [str(source.id)],
+        },
+        follow_redirects=False,
+    )
+    assert ir_response.status_code == 303
+    ir = db_session.scalars(
+        select(IntelligenceRequirement).where(IntelligenceRequirement.name == "跟踪行业媒体 Z")
+    ).one()
+    assert [s.id for s in ir.sources] == [source.id]
+
+
+def test_discovered_source_unconfirmed_blocked_from_ir_binding(
+    inbox_client: TestClient, db_session
+) -> None:
+    """对应 IIH-05.02 AC#3：新信源发现提案未经确认 → 不入信源库（confirmed=False），
+    不可被 IR 绑定（decision-05 边界由状态机校验保持）。"""
+    result = StateMachineExecutor().execute(
+        SourceDiscoveryProposal(
+            payload=SourceDiscoveryPayload(source_name="行业媒体 Q", source_type=SourceType.MEDIA),
+            rationale="依据",
+        ),
+        session=db_session,
+    )
+    source = db_session.get(Source, result.source_id)
+    assert source is not None
+    assert source.confirmed is False
+
+    # IR 登记 + 绑定未确认信源 → 表单回显错误（Web 层校验）
+    response = inbox_client.post(
+        "/requirements",
+        data={
+            "name": "测试绑定未确认",
+            "content_spec": "主题",
+            "source_ids": [str(source.id)],
+        },
+        follow_redirects=False,
+    )
+    assert "信源不可绑定" in response.text
+    assert (
+        db_session.scalars(
+            select(IntelligenceRequirement).where(IntelligenceRequirement.name == "测试绑定未确认")
+        ).first()
+        is None
+    )
 
 
 def test_sources_list_shows_alias_pills(sources_client: TestClient, db_session) -> None:
@@ -1542,18 +1727,22 @@ def _seed_undetermined_item(
     return item
 
 
-def test_inbox_points_to_undetermined_items(inbox_client: TestClient, db_session) -> None:
-    """对应偏差 #5：运行结果含存疑时收件箱显式指向，不再「结果消失」。"""
-    empty = inbox_client.get("/")
-    assert "待复核（存疑）" not in empty.text
-
+def test_undetermined_items_reachable_via_status_filter(
+    inbox_client: TestClient, db_session
+) -> None:
+    """对应偏差 #5（IIH-06 改版）：存疑不入待反馈默认视图，但状态筛选一步可达、
+    流水线摘要 flash 明示存疑计数——结果不消失。"""
     _seed_undetermined_item(db_session)
 
-    response = inbox_client.get("/")
+    default_view = inbox_client.get("/items")
+    assert "W 公司公告：与 Z 集团签署合资协议" not in default_view.text  # 不在待反馈队列
 
-    assert "待复核（存疑）" in response.text
-    assert "存疑 1 条" in response.text
-    assert 'href="/items?status=undetermined"' in response.text
+    undetermined = inbox_client.get("/items", params={"feedback": "all", "status": "undetermined"})
+    assert "W 公司公告：与 Z 集团签署合资协议" in undetermined.text
+    assert 'href="/items?status=undetermined&disposition=' in default_view.text  # 存疑入口
+
+    flash = inbox_client.get("/items", params={"flash": "运行一轮完成：……已核实 0、存疑 1"})
+    assert "存疑 1" in flash.text
 
 
 def test_source_credit_set_via_profile_page(sources_client: TestClient, db_session) -> None:

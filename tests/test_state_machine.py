@@ -44,6 +44,8 @@ from iih.ledger.proposal import (
     ReviewProposal,
     SourceConfirmPayload,
     SourceConfirmProposal,
+    SourceDiscoveryPayload,
+    SourceDiscoveryProposal,
     SourceRegisterPayload,
     SourceRegisterProposal,
     SourceRejectPayload,
@@ -714,6 +716,128 @@ def test_source_register_rejects_alias_collision(db_session) -> None:
     assert any("别名" in reason for reason in excinfo.value.reasons)
 
 
+# ---- IIH-05.02 池外自由探索与新信源发现 ----
+
+
+def test_source_discovery_lands_pending(db_session) -> None:
+    """对应 IIH-05.02 AC#1：池外探索发现的信源落账 confirmed=False 进待确认队列。"""
+    result = StateMachineExecutor().execute(
+        SourceDiscoveryProposal(
+            payload=SourceDiscoveryPayload(
+                source_name="行业媒体 Z",
+                source_type=SourceType.MEDIA,
+            ),
+            rationale="池外自由探索：从 W 公司·官网的入口页候选链接中发现 行业媒体 Z"
+            "（发现来源 URL：https://z.example/article；选链依据：长标题叶子路径）",
+        ),
+        session=db_session,
+    )
+
+    db_session.expire_all()
+    source = db_session.get(Source, result.source_id)
+    assert source is not None
+    assert source.confirmed is False  # 待确认
+    assert source.rejected_at is None
+    assert source.type is SourceType.MEDIA
+    assert source.name == "行业媒体 Z"
+
+
+def test_source_discovery_rejects_missing_name_or_rationale(db_session) -> None:
+    """空信源名或空依据驳回，状态不变。"""
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            SourceDiscoveryProposal(
+                payload=SourceDiscoveryPayload(source_name="", source_type=SourceType.MEDIA),
+                rationale="依据",
+            ),
+            session=db_session,
+        )
+    assert any("信源名缺失" in r for r in excinfo.value.reasons)
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            SourceDiscoveryProposal(
+                payload=SourceDiscoveryPayload(
+                    source_name="行业媒体 Z", source_type=SourceType.MEDIA
+                ),
+                rationale="  ",
+            ),
+            session=db_session,
+        )
+    assert any("依据缺失" in r for r in excinfo.value.reasons)
+
+
+def test_source_discovery_rejects_colliding_with_pending(db_session) -> None:
+    """撞既有待确认信源名驳回——已存在不重复建。"""
+    _seed_pending_source(db_session, name="行业媒体 A")
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            SourceDiscoveryProposal(
+                payload=SourceDiscoveryPayload(
+                    source_name="行业媒体 A", source_type=SourceType.MEDIA
+                ),
+                rationale="依据",
+            ),
+            session=db_session,
+        )
+    assert any("信源名已存在" in r for r in excinfo.value.reasons)
+
+
+def test_source_discovery_rejects_colliding_with_confirmed(db_session) -> None:
+    """撞既有已确认信源名驳回。"""
+    db_session.add(Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, credit="B"))
+    db_session.flush()
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            SourceDiscoveryProposal(
+                payload=SourceDiscoveryPayload(
+                    source_name="W 公司", source_type=SourceType.COMPANY
+                ),
+                rationale="依据",
+            ),
+            session=db_session,
+        )
+    assert any("信源名已存在" in r for r in excinfo.value.reasons)
+
+
+def test_source_discovery_rejects_colliding_with_alias(db_session) -> None:
+    """撞既有已确认信源别名驳回（别名归一到归属信源）。"""
+    confirmed = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, credit="B")
+    db_session.add(confirmed)
+    db_session.flush()
+    db_session.add(SourceAlias(source=confirmed, name="W 集团"))
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            SourceDiscoveryProposal(
+                payload=SourceDiscoveryPayload(
+                    source_name="W 集团", source_type=SourceType.COMPANY
+                ),
+                rationale="依据",
+            ),
+            session=db_session,
+        )
+    assert any("信源名已存在" in r for r in excinfo.value.reasons)
+
+
+def test_source_discovery_unconfirmed_does_not_count_credit(db_session) -> None:
+    """对应 IIH-05.02 AC#3：未确认信源不参与信用记账（边界沿用既有 confirmed 守护）。"""
+    result = StateMachineExecutor().execute(
+        SourceDiscoveryProposal(
+            payload=SourceDiscoveryPayload(source_name="行业媒体 Q", source_type=SourceType.MEDIA),
+            rationale="依据",
+        ),
+        session=db_session,
+    )
+    db_session.expire_all()
+    source = db_session.get(Source, result.source_id)
+    assert source is not None
+    assert source.confirmed is False
+    assert source.credit is None  # 未设档——确认时才设（IIH-05.01）
+
+
 # ---- IIH-01.08 互联网信源自动拉取 ----
 
 
@@ -938,6 +1062,53 @@ def test_ir_register_rejects_invalid_freshness_format(db_session) -> None:
         StateMachineExecutor().execute(proposal, session=db_session)
 
     assert any("事件时效格式非法" in r for r in excinfo.value.reasons)
+
+
+def test_ir_register_with_explore_ratio_lands(db_session) -> None:
+    """IIH-05.02：登记带 explore_ratio，落账读取。"""
+    proposal = IntelligenceRequirementRegisterProposal(
+        payload=IntelligenceRequirementRegisterPayload(
+            name="探索需求",
+            content_spec="主题",
+            explore_ratio=0.5,
+        ),
+        rationale="消费方声明",
+    )
+
+    result = StateMachineExecutor().execute(proposal, session=db_session)
+
+    ir = db_session.get(IntelligenceRequirement, result.requirement_id)
+    assert ir is not None
+    assert ir.explore_ratio == 0.5
+
+
+def test_ir_register_explore_ratio_none_default_zero(db_session) -> None:
+    """IIH-05.02 DoD#2：未设 explore_ratio 默认 None=0，不影响既有采集行为。"""
+    proposal = IntelligenceRequirementRegisterProposal(
+        payload=IntelligenceRequirementRegisterPayload(name="常驻需求", content_spec="主题"),
+        rationale="消费方声明",
+    )
+
+    result = StateMachineExecutor().execute(proposal, session=db_session)
+
+    ir = db_session.get(IntelligenceRequirement, result.requirement_id)
+    assert ir is not None
+    assert ir.explore_ratio is None  # None=0，不触发探索
+
+
+def test_ir_register_rejects_invalid_explore_ratio(db_session) -> None:
+    """IIH-05.02：explore_ratio 须 0–1。"""
+    proposal = IntelligenceRequirementRegisterProposal(
+        payload=IntelligenceRequirementRegisterPayload(
+            name="test", content_spec="主题", explore_ratio=1.5
+        ),
+        rationale="消费方声明",
+    )
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(proposal, session=db_session)
+
+    assert any("池外探索比例非法" in r for r in excinfo.value.reasons)
 
 
 def test_ir_register_rejects_valid_until_before_valid_from(db_session) -> None:

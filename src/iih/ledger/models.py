@@ -9,6 +9,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     String,
     Table,
@@ -380,6 +381,9 @@ class IntelligenceRequirement(Base):
     valid_from: Mapped[date | None] = mapped_column(Date)
     valid_until: Mapped[date | None] = mapped_column(Date)
     last_collected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    explore_ratio: Mapped[float | None] = mapped_column(
+        Float
+    )  # 池外自由探索触发概率 0–1；None=0（IIH-05.02）
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

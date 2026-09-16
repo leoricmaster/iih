@@ -1,5 +1,6 @@
 """采集智能体 Collector 单测（doc-06 §3）：人工提交归因 + 自动拉取两跳路径。"""
 
+import dataclasses
 from datetime import UTC, datetime
 
 import pytest
@@ -9,12 +10,17 @@ from conftest import (
     FakeSnapshotStore,
     make_fake_llm,
     make_fake_llm_collect,
+    make_fake_llm_explore,
     make_fake_llm_manual,
+    make_fake_tavily,
     make_selection_article,
     make_selection_self,
 )
 from iih.agents.collector import (
     Collector,
+    ExplorationAttributionResult,
+    ExplorationKeywordResult,
+    ExplorationResultSelectionResult,
     ManualExtractionResult,
     ManualStatement,
     StatementExtractionResult,
@@ -36,7 +42,9 @@ from iih.ledger.proposal import (
     ItemProvenanceAppendProposal,
 )
 from iih.ledger.state_machine import StateMachineExecutor
+from iih.tools import search as search_module
 from iih.tools.html_normalize import fingerprint, normalize
+from iih.tools.search import SearchResult
 
 STATEMENT = "W 公司渠道大会：下一代电驱矿卡计划 2027Q2 量产"
 
@@ -515,3 +523,297 @@ def test_collect_without_store_lands_no_snapshot_key(db_session) -> None:
 
     assert isinstance(proposal, IntelligenceItemNewProposal)
     assert proposal.payload.snapshot_object_key is None
+
+
+# ---- 池外自由探索（IIH-05.02） ----
+
+
+OUTSIDE_URL = "https://outside.example/news/release"
+OUTSIDE_HTML = """
+<html><head><title>行业媒体 Z</title></head><body>
+  <main><p>行业媒体 Z 报道：某公司 Q3 财报发布。</p></main>
+</body></html>
+"""
+
+
+def _make_task_with_explore(
+    source: Source,
+    outlet: Outlet,
+    *,
+    explore_ratio: float = 1.0,
+    url: str = ENTRY_URL,
+    content_spec: str = "主题：W 公司矿卡订单",
+) -> CollectionTask:
+    task = _make_task(source, outlet, url=url)
+    return dataclasses.replace(task, explore_ratio=explore_ratio, content_spec=content_spec)
+
+
+def _patch_tavily(monkeypatch, results: list[SearchResult]) -> None:
+    """注入 Tavily 替身，避免真实 HTTP 调用。"""
+    monkeypatch.setattr(search_module, "search", make_fake_tavily(results))
+
+
+def test_explore_ratio_zero_skips_exploration(db_session, monkeypatch) -> None:
+    """IIH-05.02 DoD#2：explore_ratio=0 不触发探索，无探索 LLM 调用。"""
+    source = _seed_confirmed_w_outlet(db_session)
+    task = _make_task_with_explore(source, source.outlets[0], explore_ratio=0.0)
+    extraction = StatementExtractionResult(
+        statement="W 公司公告：与 Z 集团签署合资协议，Q4 设立合资公司",
+        rationale="文章公告段主体陈述",
+    )
+    exploration_keywords = ExplorationKeywordResult(
+        keywords=["W 公司", "矿卡", "订单"], rationale="提取自内容规格"
+    )
+    exploration_selection = ExplorationResultSelectionResult(
+        url=OUTSIDE_URL, rationale="明确发布主体"
+    )
+    exploration_attr = ExplorationAttributionResult(
+        source_name="行业媒体 Z",
+        source_type=SourceType.MEDIA,
+        rationale="探索目标主体为行业媒体 Z",
+    )
+    collector = Collector(
+        llm=make_fake_llm_explore(
+            make_selection_article(),
+            extraction,
+            exploration_keywords,
+            exploration_selection,
+            exploration_attr,
+        ),
+        session=db_session,
+        model="deepseek-chat",
+    )
+    _patch_tavily(
+        monkeypatch,
+        [SearchResult(url=OUTSIDE_URL, title="行业媒体 Z：Q3 财报", content="某公司 Q3 财报")],
+    )
+
+    proposal = collector.collect_outlet(
+        task=task,
+        html=ENTRY_LISTING_HTML,
+        fetch_article=_fetch_pages({ARTICLE_URL: ARTICLE_HTML, OUTSIDE_URL: OUTSIDE_HTML}),
+        store=FakeSnapshotStore(),
+    )
+
+    assert isinstance(proposal, IntelligenceItemNewProposal)
+    calls = db_session.scalars(select(LlmCall)).all()
+    assert [c.target for c in calls] == ["outlet_link_select", "outlet_collection"]
+    # 无新信源落账
+    assert db_session.scalars(select(Source).where(Source.name == "行业媒体 Z")).first() is None
+
+
+def test_explore_ratio_one_triggers_source_discovery(db_session, monkeypatch) -> None:
+    """IIH-05.02 AC#1：explore_ratio=1 触发池外探索，Tavily 检索 → LLM 选链
+    → fetch → 归因 → 信源未登记产出 SourceDiscoveryProposal 落账 confirmed=False。"""
+    source = _seed_confirmed_w_outlet(db_session)
+    task = _make_task_with_explore(source, source.outlets[0], explore_ratio=1.0)
+    extraction = StatementExtractionResult(
+        statement="W 公司公告：与 Z 集团签署合资协议，Q4 设立合资公司",
+        rationale="文章公告段主体陈述",
+    )
+    exploration_keywords = ExplorationKeywordResult(
+        keywords=["W 公司", "矿卡", "订单"], rationale="提取自内容规格"
+    )
+    exploration_selection = ExplorationResultSelectionResult(
+        url=OUTSIDE_URL, rationale="明确发布主体"
+    )
+    exploration_attr = ExplorationAttributionResult(
+        source_name="行业媒体 Z",
+        source_type=SourceType.MEDIA,
+        rationale="探索目标主体为行业媒体 Z",
+    )
+    collector = Collector(
+        llm=make_fake_llm_explore(
+            make_selection_article(),
+            extraction,
+            exploration_keywords,
+            exploration_selection,
+            exploration_attr,
+        ),
+        session=db_session,
+        model="deepseek-chat",
+    )
+    _patch_tavily(
+        monkeypatch,
+        [SearchResult(url=OUTSIDE_URL, title="行业媒体 Z：Q3 财报", content="某公司 Q3 财报")],
+    )
+
+    proposal = collector.collect_outlet(
+        task=task,
+        html=ENTRY_LISTING_HTML,
+        fetch_article=_fetch_pages({ARTICLE_URL: ARTICLE_HTML, OUTSIDE_URL: OUTSIDE_HTML}),
+        store=FakeSnapshotStore(),
+    )
+
+    # 主任务照常产出（探索为副产品，不阻断）
+    assert isinstance(proposal, IntelligenceItemNewProposal)
+    # 探索新信源落账
+    discovered = db_session.scalars(select(Source).where(Source.name == "行业媒体 Z")).first()
+    assert discovered is not None
+    assert discovered.confirmed is False  # 待确认
+    assert discovered.type is SourceType.MEDIA
+    # 计量：选链 + 抽取 + 关键词 + 选链 + 归因（5 次 LLM，4 次在探索段）
+    calls = db_session.scalars(select(LlmCall)).all()
+    assert [c.target for c in calls] == [
+        "outlet_link_select",
+        "outlet_collection",
+        "outlet_exploration",  # 关键词提取
+        "outlet_exploration",  # 检索结果选链
+        "outlet_exploration",  # 归因
+    ]
+
+
+def test_explore_skips_when_source_already_registered(db_session, monkeypatch) -> None:
+    """探索归因命中介于已登记信源名：不重复建，主任务不受影响。"""
+    source = _seed_confirmed_w_outlet(db_session)
+    db_session.add(Source(name="行业媒体 Z", type=SourceType.MEDIA, confirmed=True, credit="C"))
+    db_session.flush()
+    task = _make_task_with_explore(source, source.outlets[0], explore_ratio=1.0)
+    extraction = StatementExtractionResult(statement="...", rationale="依据")
+    exploration_keywords = ExplorationKeywordResult(keywords=["W 公司"], rationale="依据")
+    exploration_selection = ExplorationResultSelectionResult(url=OUTSIDE_URL, rationale="依据")
+    exploration_attr = ExplorationAttributionResult(
+        source_name="行业媒体 Z", source_type=SourceType.MEDIA, rationale="依据"
+    )
+    collector = Collector(
+        llm=make_fake_llm_explore(
+            make_selection_article(),
+            extraction,
+            exploration_keywords,
+            exploration_selection,
+            exploration_attr,
+        ),
+        session=db_session,
+        model="deepseek-chat",
+    )
+    _patch_tavily(
+        monkeypatch,
+        [SearchResult(url=OUTSIDE_URL, title="行业媒体 Z", content="...")],
+    )
+
+    proposal = collector.collect_outlet(
+        task=task,
+        html=ENTRY_LISTING_HTML,
+        fetch_article=_fetch_pages({ARTICLE_URL: ARTICLE_HTML, OUTSIDE_URL: OUTSIDE_HTML}),
+        store=FakeSnapshotStore(),
+    )
+
+    assert isinstance(proposal, IntelligenceItemNewProposal)
+    # 不重复建「行业媒体 Z」
+    zs = db_session.scalars(select(Source).where(Source.name == "行业媒体 Z")).all()
+    assert len(zs) == 1
+    assert zs[0].confirmed is True  # 仍是已确认原行
+
+
+def test_explore_skips_when_attribution_empty(db_session, monkeypatch) -> None:
+    """探索目标无明确主体信息：归因返回空 source_name，不产出提案。"""
+    source = _seed_confirmed_w_outlet(db_session)
+    task = _make_task_with_explore(source, source.outlets[0], explore_ratio=1.0)
+    extraction = StatementExtractionResult(statement="...", rationale="依据")
+    exploration_keywords = ExplorationKeywordResult(keywords=["W 公司"], rationale="依据")
+    exploration_selection = ExplorationResultSelectionResult(url=OUTSIDE_URL, rationale="依据")
+    exploration_attr = ExplorationAttributionResult(
+        source_name="", source_type=SourceType.OTHER, rationale="无明确主体"
+    )
+    collector = Collector(
+        llm=make_fake_llm_explore(
+            make_selection_article(),
+            extraction,
+            exploration_keywords,
+            exploration_selection,
+            exploration_attr,
+        ),
+        session=db_session,
+        model="deepseek-chat",
+    )
+    _patch_tavily(
+        monkeypatch,
+        [SearchResult(url=OUTSIDE_URL, title="...", content="...")],
+    )
+
+    collector.collect_outlet(
+        task=task,
+        html=ENTRY_LISTING_HTML,
+        fetch_article=_fetch_pages({ARTICLE_URL: ARTICLE_HTML, OUTSIDE_URL: OUTSIDE_HTML}),
+        store=FakeSnapshotStore(),
+    )
+
+    assert db_session.scalars(select(Source).where(Source.name == "")).first() is None
+
+
+def test_explore_search_failure_does_not_block_main(db_session, monkeypatch) -> None:
+    """Tavily 检索失败：静默跳过，主任务照常产出。"""
+    source = _seed_confirmed_w_outlet(db_session)
+    task = _make_task_with_explore(source, source.outlets[0], explore_ratio=1.0)
+    extraction = StatementExtractionResult(statement="...", rationale="依据")
+    exploration_keywords = ExplorationKeywordResult(keywords=["W 公司"], rationale="依据")
+    exploration_selection = ExplorationResultSelectionResult(url=OUTSIDE_URL, rationale="依据")
+    exploration_attr = ExplorationAttributionResult(
+        source_name="行业媒体 Z", source_type=SourceType.MEDIA, rationale="依据"
+    )
+    collector = Collector(
+        llm=make_fake_llm_explore(
+            make_selection_article(),
+            extraction,
+            exploration_keywords,
+            exploration_selection,
+            exploration_attr,
+        ),
+        session=db_session,
+        model="deepseek-chat",
+    )
+
+    def _failing_search(*args, **kwargs):
+        from iih.tools.search import SearchError
+
+        raise SearchError("Tavily 不可用")
+
+    monkeypatch.setattr(search_module, "search", _failing_search)
+
+    proposal = collector.collect_outlet(
+        task=task,
+        html=ENTRY_LISTING_HTML,
+        fetch_article=_fetch_pages({ARTICLE_URL: ARTICLE_HTML}),
+        store=FakeSnapshotStore(),
+    )
+
+    assert isinstance(proposal, IntelligenceItemNewProposal)  # 主任务不受影响
+    assert (
+        db_session.scalars(select(Source).where(Source.name == "行业媒体 Z")).first() is None
+    )  # 探索失败未建信源
+
+
+def test_explore_skips_when_content_spec_blank(db_session, monkeypatch) -> None:
+    """IR.content_spec 为空：探索环节静默跳过（无关键词来源）。"""
+    source = _seed_confirmed_w_outlet(db_session)
+    task = _make_task_with_explore(source, source.outlets[0], explore_ratio=1.0, content_spec="")
+    extraction = StatementExtractionResult(statement="...", rationale="依据")
+    exploration_keywords = ExplorationKeywordResult(keywords=[], rationale="空")
+    exploration_selection = ExplorationResultSelectionResult(url="", rationale="空")
+    exploration_attr = ExplorationAttributionResult(
+        source_name="", source_type=SourceType.OTHER, rationale="空"
+    )
+    collector = Collector(
+        llm=make_fake_llm_explore(
+            make_selection_article(),
+            extraction,
+            exploration_keywords,
+            exploration_selection,
+            exploration_attr,
+        ),
+        session=db_session,
+        model="deepseek-chat",
+    )
+    _patch_tavily(monkeypatch, [])
+
+    collector.collect_outlet(
+        task=task,
+        html=ENTRY_LISTING_HTML,
+        fetch_article=_fetch_pages({ARTICLE_URL: ARTICLE_HTML}),
+        store=FakeSnapshotStore(),
+    )
+
+    # content_spec 空 → 不调关键词 LLM，不落新信源
+    calls = db_session.scalars(select(LlmCall)).all()
+    assert all(c.target != "outlet_exploration" for c in calls)
+    assert db_session.scalars(select(Source).where(Source.name == "")).first() is None

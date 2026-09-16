@@ -11,14 +11,16 @@
   {% if next_id %}<a class="btn small" href="/items/{{ next_id }}">›</a>{% else %}<span class="btn small" style="opacity:.4;cursor:default">›</span>{% endif %}
   <span class="stmt">{{ item.statement }}</span>
   {% if item.rating %}<span class="pill rating">{{ item.rating }}</span>{% endif %}
-  <span class="pill {{ 'dashed' if item.retracted }}">{{ status_labels[item.status] }}{{ ' · 作废' if item.retracted }}</span>
+  <span class="pill">{{ status_labels[item.status] }}</span>
+  {% if item.retracted %}<span class="pill dashed">作废</span>{% endif %}
   {% if latest_verification %}<span class="pill">独立 ×{{ latest_verification.independent_source_count }}</span>{% endif %}
 </div>
 
 <div class="box">
   <h2>{{ item.statement }}</h2>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:4px 0 8px">
-    <span class="pill {{ 'dashed' if item.retracted }}">{{ status_labels[item.status] }}{{ ' · 作废' if item.retracted }}</span>
+    <span class="pill">{{ status_labels[item.status] }}</span>
+    {% if item.retracted %}<span class="pill dashed">作废</span>{% endif %}
     {% if item.rating %}<span class="pill rating">{{ item.rating }}</span>
     <span class="muted">信源{{ item.rating[0] }} · 可信度{{ item.rating[1:] }}</span>{% endif %}
     {% if latest_verification %}<span class="pill">独立信源 ×{{ latest_verification.independent_source_count }}</span>{% endif %}
@@ -111,7 +113,8 @@
 
 <details class="box"><summary>元数据</summary>
   <dl class="kv">
-    <dt>状态</dt><dd>{{ status_labels[item.status] }}{{ ' · 作废' if item.retracted }}</dd>
+    <dt>状态</dt><dd>{{ status_labels[item.status] }}</dd>
+    <dt>处置</dt><dd>{% if item.retracted %}作废（事实错误）{% else %}—{% endif %}</dd>
     <dt>事件时间</dt><dd>{{ item.event_time | dtstr if item.event_time else '—' }}</dd>
     <dt>采集时间</dt><dd>{{ item.collected_at | dtstr }}</dd>
     <dt>媒介 / 载体</dt><dd>{{ item.medium.name }} / {{ item.modality.name }}</dd>

@@ -1,17 +1,13 @@
-"""收件箱（首页）与反馈提交（doc-07 §3、§5，原型「收件箱」页）。
+"""反馈提交与异议重审编排（doc-02 §6、doc-07 §5）。
 
-三类待办聚合：待反馈条目 · 警报汇总 · 待确认信源（decision-05）。
-本里程碑分发记录与警报未建：待反馈以已核实未作废条目近似、警报区块空态呈现；
-待确认信源为素材归因补记产生（decision-05 通道二），确认/拒绝入口随 IIH-05.01 开通。
+收件箱页已下线（IIH-06）：待反馈队列归宿情报条目列表默认视图，反馈入口落条目详情页；
+/ 重定向 /items。分发记录未建：待反馈以已核实未作废无反馈条目近似（doc-02 §4.3）。
 """
 
-from pathlib import Path
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from iih.agents.reviewer import Reviewer
@@ -21,108 +17,19 @@ from iih.ledger.feedback_router import TYPE_LABELS, FeedbackRejectedError, Feedb
 from iih.ledger.models import (
     FeedbackType,
     IntelligenceItem,
-    ItemStatus,
     ReviewDecisionEnum,
-    Source,
-    VerificationRecord,
 )
 from iih.ledger.proposal import ItemReviewDisputePayload, ItemReviewDisputeProposal
 from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
-from iih.web.context import (
-    SOURCE_TYPE_LABELS,
-    STATUS_LABELS,
-    base_context,
-    register_template_filters,
-)
 from iih.web.deps import get_llm_client, get_session
 from iih.web.flash import redirect_with_flash
 
-TEMPLATES_DIR = Path(__file__).parent / "templates"
-templates = register_template_filters(Jinja2Templates(directory=TEMPLATES_DIR))
-
 router = APIRouter()
-
-QUICK_TYPES = [
-    FeedbackType.VALID,
-    FeedbackType.DUPLICATE_NOISE,
-    FeedbackType.IRRELEVANT,
-    FeedbackType.OUTDATED,
-    FeedbackType.RATING_DISPUTE,
-]
-
-
-def _feedback_items(session: Session) -> list[IntelligenceItem]:
-    """待反馈条目：已核实未作废且尚无反馈（分发记录未建的近似，doc-07 §3）。
-
-    反馈落账即出队：多数类型不改条目状态（事实错误作废、审查异议重审除外），
-    故以「存在反馈记录」作为已反馈判定；反馈驳回不落账，条目仍在队。
-    """
-    return list(
-        session.scalars(
-            select(IntelligenceItem)
-            .where(IntelligenceItem.status == ItemStatus.VERIFIED)
-            .where(IntelligenceItem.retracted.is_(False))
-            .where(~IntelligenceItem.feedbacks.any())
-            .order_by(IntelligenceItem.created_at.desc(), IntelligenceItem.id.desc())
-        )
-    )
-
-
-def _latest_verifications(session: Session, item_ids: list[int]) -> dict[int, VerificationRecord]:
-    """各条目最新核实记录（独立信源计数 N 与评级依据来源）。"""
-    result: dict[int, VerificationRecord] = {}
-    for item_id in item_ids:
-        record = session.scalars(
-            select(VerificationRecord)
-            .where(VerificationRecord.item_id == item_id)
-            .order_by(VerificationRecord.created_at.desc(), VerificationRecord.id.desc())
-            .limit(1)
-        ).first()
-        if record is not None:
-            result[item_id] = record
-    return result
-
-
-def _pending_sources(session: Session) -> list[Source]:
-    """待确认信源：素材归因补记产生；拒绝即出队，再归因命中时重捞。"""
-    return list(
-        session.scalars(
-            select(Source).where(Source.confirmed.is_(False), Source.rejected_at.is_(None))
-        )
-    )
-
-
-def _undetermined_count(session: Session) -> int:
-    """待复核（存疑）条目计数：运行结果不在待反馈队列，需显式指向防「结果消失」。"""
-    return (
-        session.scalar(
-            select(func.count())
-            .select_from(IntelligenceItem)
-            .where(IntelligenceItem.status == ItemStatus.UNDETERMINED)
-        )
-        or 0
-    )
 
 
 @router.get("/")
-def inbox_page(request: Request, flash: str = "", session: Session = Depends(get_session)):
-    items = _feedback_items(session)
-    return templates.TemplateResponse(
-        request,
-        "inbox.html",
-        {
-            **base_context(session, "inbox"),
-            "items": items,
-            "verifications": _latest_verifications(session, [i.id for i in items]),
-            "undetermined_count": _undetermined_count(session),
-            "pending_sources": _pending_sources(session),
-            "source_types": list(SOURCE_TYPE_LABELS.items()),
-            "quick_types": QUICK_TYPES,
-            "type_labels": TYPE_LABELS,
-            "status_labels": STATUS_LABELS,
-            "flash": flash,
-        },
-    )
+def home():
+    return RedirectResponse("/items", status_code=303)
 
 
 @router.post("/items/{item_id}/feedback")

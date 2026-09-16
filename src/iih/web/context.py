@@ -13,6 +13,7 @@ from iih.ledger.models import (
     IntelligenceItem,
     ItemStatus,
     RejectionReasonEnum,
+    Source,
     SourceType,
 )
 
@@ -50,8 +51,8 @@ SOURCE_TYPE_LABELS = {
 }
 
 
-def inbox_count(session: Session) -> int:
-    """收件箱徽标：待反馈条目计数（与 inbox._feedback_items 同口径）。
+def feedback_pending_count(session: Session) -> int:
+    """情报条目徽标：待反馈条目计数（与 items 页「待反馈」筛选同口径）。
 
     分发记录未建（后续里程碑），以已核实未作废且尚无反馈条目近似。
     """
@@ -67,11 +68,24 @@ def inbox_count(session: Session) -> int:
     )
 
 
+def sources_pending_count(session: Session) -> int:
+    """信源库徽标：待确认信源计数（与 sources._pending_sources 同口径）。"""
+    return (
+        session.scalar(
+            select(func.count(Source.id)).where(
+                Source.confirmed.is_(False), Source.rejected_at.is_(None)
+            )
+        )
+        or 0
+    )
+
+
 def base_context(session: Session, nav: str) -> dict:
     """全站壳所需上下文（base.html）。"""
     return {
         "nav": nav,
-        "inbox_count": inbox_count(session),
+        "feedback_pending_count": feedback_pending_count(session),
+        "sources_pending_count": sources_pending_count(session),
         "pipeline_interval": get_settings().pipeline_interval_seconds,
         "css_version": CSS_VERSION,
         "js_version": JS_VERSION,

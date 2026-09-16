@@ -40,8 +40,8 @@ def run_round_with_lock(lock: threading.Lock, session_factory: sessionmaker[Sess
 
 @router.post("/pipeline/run")
 def run_now(request: Request):
-    """立即运行一轮：采集 → 审查 → 核实，完成后回首件箱并回显摘要。"""
+    """立即运行一轮：采集 → 审查 → 核实，完成后回情报条目页并回显摘要。"""
     flash = run_round_with_lock(request.app.state.pipeline_lock, request.app.state.session_factory)
     if flash is None:
         flash = "上一轮仍在运行，请稍后再试。"
-    return RedirectResponse("/?flash=" + quote_plus(flash), status_code=303)
+    return RedirectResponse("/items?flash=" + quote_plus(flash), status_code=303)

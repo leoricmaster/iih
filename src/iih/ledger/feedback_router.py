@@ -91,6 +91,7 @@ class FeedbackRouter:
     ) -> FeedbackSubmitResult:
         """快捷反馈口径（doc-07 §5）：一键反馈以「快捷 · {类型}」为默认理由；事实错误理由必填。
 
+        事实错误仅对已核实条目开放（doc-02 §4：作废打在已核实条目上、保留原状态）；
         审查异议仅对噪音态条目开放且理由必填（doc-02 §6：理由为重审输入）。
         """
         reasons: list[str] = []
@@ -100,6 +101,12 @@ class FeedbackRouter:
             reasons.append("情报条目不存在")
         if feedback_type is FeedbackType.FACTUAL_ERROR and not reason.strip():
             reasons.append("事实错误反馈必须填写理由")
+        if (
+            feedback_type is FeedbackType.FACTUAL_ERROR
+            and item is not None
+            and item.status is not ItemStatus.VERIFIED
+        ):
+            reasons.append(f"事实错误仅对已核实条目开放，当前状态 {item.status.value}")
         if feedback_type is FeedbackType.REVIEW_DISPUTE:
             if not reason.strip():
                 reasons.append("审查异议必须填写理由（将作为重审输入）")

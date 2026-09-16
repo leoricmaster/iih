@@ -54,6 +54,7 @@ class RoundSummary:
     appended_nodes: int = 0
     collect_skipped: int = 0
     collect_failed: int = 0
+    discovered_sources: int = 0
     review_passed: int = 0
     review_rejected: int = 0
     review_failed: int = 0
@@ -72,6 +73,9 @@ class RoundSummary:
             if self.material_done or self.material_failed
             else ""
         )
+        discovery_part = (
+            f"；发现新信源 {self.discovered_sources}" if self.discovered_sources else ""
+        )
         return (
             f"运行一轮完成：任务 {self.tasks}（新建 {self.new_items}、追加节点 "
             f"{self.appended_nodes}、跳过 {self.collect_skipped}、失败 {self.collect_failed}）；"
@@ -79,6 +83,7 @@ class RoundSummary:
             f"否决 {self.review_rejected}）；核实 {self.verified + self.undetermined}"
             f"（已核实 {self.verified}、存疑 {self.undetermined}）"
             + material_part
+            + discovery_part
             + (f"；失败 {len(self.errors)} 项" if self.errors else "")
         )
 
@@ -385,7 +390,11 @@ def run_collect_stage(
             collector = Collector(llm=llm, session=session, model=settings.llm_model)
             try:
                 proposal = collector.collect_outlet(
-                    task=task, html=html, fetch_article=fetch, store=store
+                    task=task,
+                    html=html,
+                    fetch_article=fetch,
+                    store=store,
+                    summary=summary,
                 )
             except Exception as exc:  # LLM 调用失败 / 文章页抓取失败等
                 summary.collect_failed += 1

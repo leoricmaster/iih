@@ -36,6 +36,8 @@ class CollectionTask:
     """定向智能体任务化产物（内存对象，不落账）。
 
     检索参数最简：无关键词过滤；URL 取自途径 entry。
+    explore_ratio：池外自由探索触发概率 0–1（IIH-05.02）；None 视作 0。
+    content_spec：情报需求内容规格——池外探索检索词来源（IIH-05.02 检索式探索）。
     """
 
     requirement_id: int
@@ -46,6 +48,8 @@ class CollectionTask:
     source_type: SourceType
     outlet_name: str
     url: str
+    explore_ratio: float = 0.0
+    content_spec: str = ""
 
 
 class Director:
@@ -107,6 +111,8 @@ class Director:
                         source_type=outlet.source.type,
                         outlet_name=outlet.name,
                         url=outlet.entry or "",
+                        explore_ratio=ir.explore_ratio or 0.0,
+                        content_spec=ir.content_spec,
                     )
                 )
         return tasks

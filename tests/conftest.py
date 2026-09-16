@@ -13,6 +13,9 @@ from sqlalchemy.orm import Session
 from iih.agents.collector import (
     ArticleSelectionResult,
     AttributionResult,
+    ExplorationAttributionResult,
+    ExplorationKeywordResult,
+    ExplorationResultSelectionResult,
     ManualExtractionResult,
     ManualStatement,
     StatementExtractionResult,
@@ -20,6 +23,7 @@ from iih.agents.collector import (
 from iih.agents.reviewer import ReviewJudgmentResult
 from iih.config import get_settings
 from iih.tools.asr import TingwuAsrError, TranscriptionResult
+from iih.tools.search import SearchResult
 
 TEST_DB_NAME = "iih_test"
 
@@ -175,6 +179,36 @@ def make_fake_llm_collect(selection: ArticleSelectionResult, extraction: Stateme
         prompt_tokens=200,
         completion_tokens=80,
     )
+
+
+def make_fake_llm_explore(
+    selection: ArticleSelectionResult,
+    extraction: StatementExtractionResult,
+    exploration_keywords: ExplorationKeywordResult,
+    exploration_selection: ExplorationResultSelectionResult,
+    exploration_attribution: ExplorationAttributionResult,
+):
+    """instructor 替身：池外探索场景——分发选链/抽取/关键词/检索结果选链/归因。"""
+    return _make_dispatch_llm(
+        {
+            ArticleSelectionResult: selection,
+            StatementExtractionResult: extraction,
+            ExplorationKeywordResult: exploration_keywords,
+            ExplorationResultSelectionResult: exploration_selection,
+            ExplorationAttributionResult: exploration_attribution,
+        },
+        prompt_tokens=200,
+        completion_tokens=80,
+    )
+
+
+def make_fake_tavily(results: list[SearchResult]):
+    """Tavily search 替身：固定结果列表，不发起真实 HTTP。"""
+
+    def _fake_search(query, *, api_key, max_results=5, timeout=15.0):
+        return list(results)
+
+    return _fake_search
 
 
 def make_fake_llm_review(

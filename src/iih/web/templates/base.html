@@ -15,8 +15,8 @@
   <nav id="nav">
     <div>
       <div class="grp">消费</div>
-      <a href="/" class="{{ 'active' if nav == 'inbox' }}">收件箱{% if inbox_count %}<span class="cnt">{{ inbox_count }}</span>{% endif %}</a>
-      <a href="/items" class="{{ 'active' if nav == 'items' }}">情报条目</a>
+      <a href="/items" class="{{ 'active' if nav == 'items' }}">情报条目{% if feedback_pending_count %}<span class="cnt">{{ feedback_pending_count }}</span>{% endif %}</a>
+      <span class="navoff" title="即将上线">警报<span class="tag">未开通</span></span>
     </div>
     <div>
       <div class="grp">探究</div>
@@ -27,7 +27,7 @@
     <div>
       <div class="grp">管理</div>
       <a href="/requirements" class="{{ 'active' if nav == 'reqs' }}">情报需求</a>
-      <a href="/sources" class="{{ 'active' if nav == 'sources' }}">信源库</a>
+      <a href="/sources" class="{{ 'active' if nav == 'sources' }}">信源库{% if sources_pending_count %}<span class="cnt">{{ sources_pending_count }}</span>{% endif %}</a>
     </div>
   </nav>
 </aside>

@@ -138,6 +138,21 @@ def _parse_date(s: str | None) -> date | None:
         return None
 
 
+def _parse_explore_ratio(s: str | None, errors: list[str]) -> float | None:
+    """池外探索比例解析：空=None=0；非法值入 errors 返回 None。"""
+    if not s or not s.strip():
+        return None
+    try:
+        value = float(s.strip())
+    except ValueError:
+        errors.append(f"池外探索比例非法：{s}（须 0–1 数字）")
+        return None
+    if not 0 <= value <= 1:
+        errors.append(f"池外探索比例非法：{value}（须 0–1）")
+        return None
+    return value
+
+
 @router.get("/requirements")
 def requirements_page(request: Request, session: Session = Depends(get_session)):
     requirements = list(
@@ -176,10 +191,11 @@ def requirement_create(
     event_freshness: str = Form(""),
     valid_from: str = Form(""),
     valid_until: str = Form(""),
+    explore_ratio: str = Form(""),
     source_ids: list[int] = Form([]),
     session: Session = Depends(get_session),
 ):
-    """新建情报需求：[*] → 草稿 Draft（doc-02 §4.1）+ 需求级采集配置（IIH-03.01）。"""
+    """新建情报需求：[*] → 草稿 Draft（doc-02 §4.1）+ 需求级采集配置（IIH-03.01/05.02）。"""
     errors: list[str] = []
     if not name.strip():
         errors.append("请填写需求名称")
@@ -195,6 +211,7 @@ def requirement_create(
     v_until = _parse_date(valid_until)
     if v_from and v_until and v_until < v_from:
         errors.append("生效窗口结束日早于起始日")
+    ratio = _parse_explore_ratio(explore_ratio, errors)
     bound_sources: list[Source] = []
     for sid in source_ids:
         src = session.get(Source, sid)
@@ -226,6 +243,7 @@ def requirement_create(
                 "form_freshness": event_freshness,
                 "form_valid_from": valid_from,
                 "form_valid_until": valid_until,
+                "form_explore_ratio": explore_ratio,
                 "form_source_ids": source_ids,
             },
         )
@@ -239,6 +257,7 @@ def requirement_create(
             valid_from=v_from,
             valid_until=v_until,
             source_ids=[s.id for s in bound_sources],
+            explore_ratio=ratio,
         ),
         rationale="Web 登记（消费方声明）",
     )
@@ -353,10 +372,11 @@ def requirement_config_update(
     event_freshness: str = Form(""),
     valid_from: str = Form(""),
     valid_until: str = Form(""),
+    explore_ratio: str = Form(""),
     source_ids: list[int] = Form([]),
     session: Session = Depends(get_session),
 ):
-    """采集配置编辑（IIH-03.01）：频率/事件时效/生效窗口/信源绑定，直接更新字段。
+    """采集配置编辑（IIH-03.01/05.02）：频率/时效/窗口/信源绑定/探索比例，直接更新字段。
 
     与 spec_update 同模式：消费方配置编辑非智能体写入，激活态可改。
     """
@@ -377,6 +397,7 @@ def requirement_config_update(
     v_until = _parse_date(valid_until)
     if v_from and v_until and v_until < v_from:
         errors.append("生效窗口结束日早于起始日")
+    ratio = _parse_explore_ratio(explore_ratio, errors)
     bound_sources: list[Source] = []
     for sid in source_ids:
         src = session.get(Source, sid)
@@ -392,6 +413,7 @@ def requirement_config_update(
     ir.event_freshness = freshness
     ir.valid_from = v_from
     ir.valid_until = v_until
+    ir.explore_ratio = ratio
     ir.sources = bound_sources
     session.commit()
     return redirect_with_flash(f"/requirements/{requirement_id}", "采集配置已保存")
@@ -476,6 +498,8 @@ def requirement_probe(
             source_type=outlet.source.type,
             outlet_name=outlet.name,
             url=url,
+            explore_ratio=0.0,  # 试采集预览不触发池外探索（避免 Tavily 副作用与费用）
+            content_spec=ir.content_spec,
         )
         try:
             html = fetch(url)

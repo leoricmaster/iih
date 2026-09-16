@@ -1,7 +1,7 @@
-"""情报条目列表与详情（doc-07 §3，原型「情报条目」页）。
+"""情报条目列表与详情（doc-07 §3）。
 
-对象一页制：列表（已核实起全状态可滤 + 采集模式 + 检索）+ 详情
-（摘要优先 + 状态自适应主区 + 核查深区折叠，doc-07 §3）。
+对象一页制：列表（默认待反馈 = 已核实 ∧ 未作废 ∧ 无反馈；状态 / 处置 / 反馈 / 采集模式可滤 + 检索）
++ 详情（摘要优先 + 状态自适应主区 + 核查深区折叠，反馈入口一步可达）。
 """
 
 from pathlib import Path
@@ -42,21 +42,29 @@ templates = register_template_filters(Jinja2Templates(directory=TEMPLATES_DIR))
 
 router = APIRouter()
 
-# 已核实起 = 审查迁移之后的所有状态（doc-07 §3：线索/候选不入默认视图）
-VERIFIED_UP_STATUSES = (
-    ItemStatus.VERIFIED,
-    ItemStatus.UNDETERMINED,
-    ItemStatus.NOISE,
-    ItemStatus.REJECTED,
-)
+STATUS_KEYS = {
+    "verified": ItemStatus.VERIFIED,
+    "undetermined": ItemStatus.UNDETERMINED,
+    "noise": ItemStatus.NOISE,
+    "rejected": ItemStatus.REJECTED,
+    "lead": ItemStatus.LEAD,
+    "candidate": ItemStatus.CANDIDATE,
+}
 
-STATUS_FILTERS = [
-    ("verified_up", "已核实起"),
-    ("lead", "线索"),
-    ("candidate", "候选"),
-    ("undetermined", "存疑"),
-    ("retracted", "作废"),
-    ("all", "全部状态"),
+STATUS_FILTERS = [("all", "全部")] + [(k, STATUS_LABELS[s]) for k, s in STATUS_KEYS.items()]
+
+# 处置是独立维度（doc-02 §4：作废为标记位非状态），不与状态复合
+DISPOSITION_FILTERS = [
+    ("all", "全部"),
+    ("active", "未作废"),
+    ("retracted", "已作废"),
+]
+
+# 待反馈 = 已核实 ∧ 未作废 ∧ 无反馈（原收件箱口径，doc-02 §4.3 分发以反馈闭环）
+FEEDBACK_FILTERS = [
+    ("all", "全部"),
+    ("pending", "待反馈"),
+    ("given", "已反馈"),
 ]
 
 MODE_FILTERS = [
@@ -66,21 +74,26 @@ MODE_FILTERS = [
 ]
 
 
-def _filter_items(session: Session, status: str, mode: str, q: str) -> list[IntelligenceItem]:
+def _filter_items(
+    session: Session, status: str, disposition: str, feedback: str, mode: str, q: str
+) -> list[IntelligenceItem]:
     query = select(IntelligenceItem)
-    match status:
-        case "verified_up":
-            query = query.where(IntelligenceItem.status.in_(VERIFIED_UP_STATUSES))
-        case "lead":
-            query = query.where(IntelligenceItem.status == ItemStatus.LEAD)
-        case "candidate":
-            query = query.where(IntelligenceItem.status == ItemStatus.CANDIDATE)
-        case "undetermined":
-            query = query.where(IntelligenceItem.status == ItemStatus.UNDETERMINED)
+    match feedback:
+        case "pending":
+            query = query.where(
+                IntelligenceItem.status == ItemStatus.VERIFIED,
+                IntelligenceItem.retracted.is_(False),
+                ~IntelligenceItem.feedbacks.any(),
+            )
+        case "given":
+            query = query.where(IntelligenceItem.feedbacks.any())
+    if status in STATUS_KEYS:
+        query = query.where(IntelligenceItem.status == STATUS_KEYS[status])
+    match disposition:
+        case "active":
+            query = query.where(IntelligenceItem.retracted.is_(False))
         case "retracted":
             query = query.where(IntelligenceItem.retracted.is_(True))
-        case _:
-            pass  # all
     match mode:
         case "automated":
             query = query.where(IntelligenceItem.mode == ItemMode.AUTOMATED)
@@ -113,12 +126,15 @@ def _latest_verification(session: Session, item_id: int) -> VerificationRecord |
 @router.get("/items")
 def items_page(
     request: Request,
-    status: str = "verified_up",
+    status: str = "all",
+    disposition: str = "all",
+    feedback: str = "pending",
     mode: str = "all",
     q: str = "",
+    flash: str = "",
     session: Session = Depends(get_session),
 ):
-    items = _filter_items(session, status, mode, q)
+    items = _filter_items(session, status, disposition, feedback, mode, q)
     verifications = {
         item.id: _latest_verification(session, item.id)
         for item in items
@@ -133,10 +149,19 @@ def items_page(
             "verifications": verifications,
             "status_labels": STATUS_LABELS,
             "status_filters": STATUS_FILTERS,
+            "disposition_filters": DISPOSITION_FILTERS,
+            "feedback_filters": FEEDBACK_FILTERS,
             "mode_filters": MODE_FILTERS,
-            "cur_status": status if any(k == status for k, _ in STATUS_FILTERS) else "verified_up",
+            "cur_status": status if any(k == status for k, _ in STATUS_FILTERS) else "all",
+            "cur_disposition": (
+                disposition if any(k == disposition for k, _ in DISPOSITION_FILTERS) else "all"
+            ),
+            "cur_feedback": (
+                feedback if any(k == feedback for k, _ in FEEDBACK_FILTERS) else "pending"
+            ),
             "cur_mode": mode if any(k == mode for k, _ in MODE_FILTERS) else "all",
             "cur_q": q.strip(),
+            "flash": flash,
         },
     )
 
