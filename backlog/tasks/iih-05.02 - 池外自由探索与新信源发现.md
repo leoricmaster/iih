@@ -123,4 +123,11 @@ ordinal: 19002
 3. 处置独立成维度（doc-02 §4/§6 对齐）：列表页加「处置」窄列（—/作废）与独立筛选（全部/未作废/已作废）；详情页状态与作废 pill 拆开、元数据加处置行；「作废」chip 移出状态行。
 4. 后端状态门：FeedbackRouter FACTUAL_ERROR 仅对已核实条目开放（doc-02 §4「作废打在已核实条目上」），堵住「噪音+作废」异常数据来源；既有异常条目待用户裁决是否清理。
 测试：test_web 更新（导航含警报、默认已核实、处置正交、信源库徽标、确认入口三处）+ test_feedback_router 加状态门用例；374 passed 覆盖 89.5%；ruff/mypy 绿；Docker 重建后逐页核对。
+
+【验收补救 · 第 2 轮（2026-09-16，发现信源带途径 + 后台循环加固）】
+- 根因：①发现来源 URL 只记在提案 rationale、落账即丢弃，确认入池也不建途径——发现信源与人工登记信源不同构（无采集入口，入池后仍不可被采集）；②后台采集循环的 asyncio task 无强引用被 GC 静默回收（循环停摆无报错），tick INFO 日志又被 uvicorn 默认配置吞掉、不可发现。
+- 发现信源带途径：Source.discovered_entry 可空列（迁移 o4p5q6r7s8t9）；SourceDiscoveryPayload 加必填 outlet_entry（发现来源 URL 落账 discovered_entry，rationale 去重）；SourceConfirmPayload 加 outlet_name/outlet_entry——确认携带采集入口即建互联网途径（名默认「网站」可改；并入路径建到目标信源、同名跳过；留空不建，兼容人工归因的待确认信源）；待确认行内途径名/采集入口输入（预填发现 URL）；collector 传 target_url 入 payload。doc-04（实体属性表 + §2.3 确认措辞）、doc-06 §3 同步。
+- 循环加固：loop task 挂 app.state.pipeline_loop_task 强引用（防 GC）；logging.basicConfig(INFO) 使 tick 日志可见（停摆可发现）。
+- 遗留：旧代码发现的 9 行待确认信源 discovered_entry 为 NULL，确认时可手填采集入口（留空不建途径）。
+- 验证：379 passed 覆盖 89.5%；ruff/mypy 绿；Docker 重建后核对（迁移生效、待确认行途径输入、tick 日志可见且循环存活）。
 <!-- SECTION:FINAL_SUMMARY:END -->

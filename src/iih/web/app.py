@@ -47,16 +47,20 @@ async def _pipeline_loop(app: FastAPI, interval: int) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # 事件循环只持弱引用：无强引用的 task 会被 GC 静默回收（循环停摆无报错），挂 state 保命
+    logging.basicConfig(level=logging.INFO)
     settings = get_settings()
     engine = make_engine(settings)
     app.state.engine = engine
     app.state.session_factory = make_session_factory(engine)
     app.state.pipeline_lock = threading.Lock()
 
-    loop_task: asyncio.Task | None = None
     if settings.pipeline_interval_seconds > 0:
-        loop_task = asyncio.create_task(_pipeline_loop(app, settings.pipeline_interval_seconds))
+        app.state.pipeline_loop_task = asyncio.create_task(
+            _pipeline_loop(app, settings.pipeline_interval_seconds)
+        )
     yield
+    loop_task: asyncio.Task | None = getattr(app.state, "pipeline_loop_task", None)
     if loop_task is not None:
         loop_task.cancel()
         await asyncio.gather(loop_task, return_exceptions=True)

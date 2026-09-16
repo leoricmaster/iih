@@ -132,5 +132,9 @@ input.srcname{width:160px;flex:none;font-weight:600;font-size:13.5px;padding:3px
 input.srcname:hover{border-color:#d5d5d5;background:#fff}
 input.srcname:focus{border-color:#2b5bd7;outline:none;background:#fff}
 .srctype{width:auto;flex:none;padding:3px 6px;font-size:12.5px}
+.srcrow-outlet{display:flex;align-items:center;gap:6px;min-width:0;flex:0 1 340px}
+.srcrow-outlet input{padding:3px 6px;font-size:12.5px}
+.srcrow-outlet .outletname{width:72px;flex:none}
+.srcrow-outlet .outletentry{flex:1;min-width:0}
 .srcrow-acts{display:flex;align-items:center;gap:6px;margin-left:auto;white-space:nowrap}
 .srcrow-acts select{width:auto;padding:3px 6px;font-size:12.5px}

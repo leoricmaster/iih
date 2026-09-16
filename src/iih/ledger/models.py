@@ -172,6 +172,8 @@ class Source(Base):
     # 拒绝出队标记（IIH-05.01）：非 None 即不在待确认队列；确认时清空；再次归因命中时清空重捞
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     credit: Mapped[str | None] = mapped_column(String(1))  # 信源信用 A–F（信用记账归 IIH-01.06）
+    # 发现来源 URL（IIH-05.02 补救）：池外探索发现该信源的页面，确认时作为默认采集入口建途径
+    discovered_entry: Mapped[str | None] = mapped_column(Text)
 
     outlets: Mapped[list["Outlet"]] = relationship(back_populates="source")
     credit_adjustments: Mapped[list["CreditAdjustment"]] = relationship(back_populates="source")

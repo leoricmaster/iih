@@ -652,6 +652,7 @@ def test_explore_ratio_one_triggers_source_discovery(db_session, monkeypatch) ->
     assert discovered is not None
     assert discovered.confirmed is False  # 待确认
     assert discovered.type is SourceType.MEDIA
+    assert discovered.discovered_entry == OUTSIDE_URL  # 发现来源 URL（确认时建途径）
     # 计量：选链 + 抽取 + 关键词 + 选链 + 归因（5 次 LLM，4 次在探索段）
     calls = db_session.scalars(select(LlmCall)).all()
     assert [c.target for c in calls] == [

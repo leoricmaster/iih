@@ -388,6 +388,8 @@ class StateMachineExecutor:
         三分支：未改名 → 直接入池；改名未撞名 → 以新名入池，旧名留档为别名；撞既有已确认
         信源名 → 并入该信源（条目/转引链节点/途径迁移，同名途径复用），待确认行删除，
         旧名留档为目标信源别名，信用档沿用目标信源。类型仅在非并入路径修正。
+        途径（IIH-05.02 补救）：outlet_entry 非空则建互联网途径（名默认「网站」，并入路径建到
+        目标信源、同名跳过），留空不建——入池即可被采集，与人工登记同构。
         """
         payload = proposal.payload
         reasons: list[str] = []
@@ -419,7 +421,13 @@ class StateMachineExecutor:
                 raise ProposalRejectedError(
                     [f"信源名已存在（待确认）：{target_name}——先处理该信源"]
                 )
-            return self._merge_into_confirmed(session, pending=source, target=existing)
+            return self._merge_into_confirmed(
+                session,
+                pending=source,
+                target=existing,
+                outlet_name=payload.outlet_name,
+                outlet_entry=payload.outlet_entry,
+            )
         alias_hit = session.scalars(
             select(SourceAlias).where(SourceAlias.name == target_name)
         ).first()
@@ -436,18 +444,33 @@ class StateMachineExecutor:
         source.rejected_at = None
         if payload.source_type is not None:
             source.type = payload.source_type
+        entry = (payload.outlet_entry or "").strip()
+        if entry:
+            self._ensure_internet_outlet(
+                session,
+                source=source,
+                name=(payload.outlet_name or "").strip() or "网站",
+                entry=entry,
+            )
         session.flush()
         source_id = source.id
         session.commit()
         return ExecutionResult(source_id=source_id)
 
     def _merge_into_confirmed(
-        self, session: Session, *, pending: Source, target: Source
+        self,
+        session: Session,
+        *,
+        pending: Source,
+        target: Source,
+        outlet_name: str | None = None,
+        outlet_entry: str | None = None,
     ) -> ExecutionResult:
         """待确认信源并入既有已确认信源：条目/转引链节点/途径迁移，待确认行删除。
 
         同名途径不迁移——条目/节点改指目标信源既有途径（归属唯一信源约束），待确认途径行删除；
         旧名留档为目标信源别名（后续归因按别名直接归入）；信用档沿用目标信源。
+        确认携带采集入口时建到目标信源（IIH-05.02 补救），同名途径跳过。
         """
         self._record_alias(session, source=target, name=pending.name)
         outlet_remap: dict[int, Outlet] = {}
@@ -459,6 +482,11 @@ class StateMachineExecutor:
             else:
                 outlet_remap[outlet.id] = kept
                 duplicated.append(outlet)
+        entry = (outlet_entry or "").strip()
+        if entry:
+            self._ensure_internet_outlet(
+                session, source=target, name=(outlet_name or "").strip() or "网站", entry=entry
+            )
         nodes = session.scalars(
             select(ProvenanceChainNode).where(ProvenanceChainNode.source_id == pending.id)
         ).all()
@@ -480,6 +508,17 @@ class StateMachineExecutor:
         target_id = target.id
         session.commit()
         return ExecutionResult(source_id=target_id)
+
+    def _ensure_internet_outlet(
+        self, session: Session, *, source: Source, name: str, entry: str
+    ) -> None:
+        """确认时建互联网途径（IIH-05.02 补救）：同主体同名途径已存在则跳过。"""
+        if any(o.name == name for o in source.outlets):
+            return
+        medium = session.scalars(select(Medium).where(Medium.code == "internet")).first()
+        if medium is None:
+            raise ProposalRejectedError(["媒介引用不可解析：internet"])
+        session.add(Outlet(source=source, name=name, entry=entry, medium=medium))
 
     def _record_alias(self, session: Session, *, source: Source, name: str) -> None:
         """旧名留档为别名（全局唯一）：同信源幂等跳过，撞他信源别名即驳回。"""
@@ -525,14 +564,17 @@ class StateMachineExecutor:
     ) -> ExecutionResult:
         """新信源发现（doc-06 §3、decision-05 通道二）：池外自由探索发现的信源入待确认队列。
 
-        校验：信源名非空白 + 依据非空白 + 名不撞既有信源（正名或别名）。
-        落账 Source(confirmed=False)，不建画像、不设档、不记账（由 confirmed 边界保持，AC#3）。
+        校验：信源名非空白 + 发现来源 URL 非空白 + 依据非空白 + 名不撞既有信源（正名或别名）。
+        落账 Source(confirmed=False)，不建画像、不设档、不记账（由 confirmed 边界保持，AC#3）；
+        发现来源 URL 落账 discovered_entry（确认时作为默认采集入口建途径）。
         撞名一律驳回（含已拒绝的待确认信源）——已存在记录不重复建，由确认/拒绝入口处理。
         """
         payload = proposal.payload
         reasons: list[str] = []
         if not payload.source_name.strip():
             reasons.append("信源名缺失")
+        if not payload.outlet_entry.strip():
+            reasons.append("发现来源 URL 缺失")
         if not proposal.rationale.strip():
             reasons.append("依据缺失")
         if reasons:
@@ -546,6 +588,7 @@ class StateMachineExecutor:
             name=payload.source_name.strip(),
             type=payload.source_type,
             confirmed=False,
+            discovered_entry=payload.outlet_entry.strip(),
         )
         session.add(source)
         session.flush()

@@ -720,15 +720,17 @@ def test_source_register_rejects_alias_collision(db_session) -> None:
 
 
 def test_source_discovery_lands_pending(db_session) -> None:
-    """对应 IIH-05.02 AC#1：池外探索发现的信源落账 confirmed=False 进待确认队列。"""
+    """对应 IIH-05.02 AC#1：池外探索发现的信源落账 confirmed=False 进待确认队列，
+    发现来源 URL 落账 discovered_entry（确认时作为默认采集入口）。"""
     result = StateMachineExecutor().execute(
         SourceDiscoveryProposal(
             payload=SourceDiscoveryPayload(
                 source_name="行业媒体 Z",
                 source_type=SourceType.MEDIA,
+                outlet_entry="https://z.example/article",
             ),
             rationale="池外自由探索：从 W 公司·官网的入口页候选链接中发现 行业媒体 Z"
-            "（发现来源 URL：https://z.example/article；选链依据：长标题叶子路径）",
+            "（选链依据：长标题叶子路径）",
         ),
         session=db_session,
     )
@@ -740,14 +742,18 @@ def test_source_discovery_lands_pending(db_session) -> None:
     assert source.rejected_at is None
     assert source.type is SourceType.MEDIA
     assert source.name == "行业媒体 Z"
+    assert source.discovered_entry == "https://z.example/article"
+    assert source.outlets == []  # 途径待确认时才建
 
 
 def test_source_discovery_rejects_missing_name_or_rationale(db_session) -> None:
-    """空信源名或空依据驳回，状态不变。"""
+    """空信源名/空发现 URL/空依据驳回，状态不变。"""
     with pytest.raises(ProposalRejectedError) as excinfo:
         StateMachineExecutor().execute(
             SourceDiscoveryProposal(
-                payload=SourceDiscoveryPayload(source_name="", source_type=SourceType.MEDIA),
+                payload=SourceDiscoveryPayload(
+                    source_name="", source_type=SourceType.MEDIA, outlet_entry="https://z.example"
+                ),
                 rationale="依据",
             ),
             session=db_session,
@@ -758,7 +764,21 @@ def test_source_discovery_rejects_missing_name_or_rationale(db_session) -> None:
         StateMachineExecutor().execute(
             SourceDiscoveryProposal(
                 payload=SourceDiscoveryPayload(
-                    source_name="行业媒体 Z", source_type=SourceType.MEDIA
+                    source_name="行业媒体 Z", source_type=SourceType.MEDIA, outlet_entry="  "
+                ),
+                rationale="依据",
+            ),
+            session=db_session,
+        )
+    assert any("发现来源 URL 缺失" in r for r in excinfo.value.reasons)
+
+    with pytest.raises(ProposalRejectedError) as excinfo:
+        StateMachineExecutor().execute(
+            SourceDiscoveryProposal(
+                payload=SourceDiscoveryPayload(
+                    source_name="行业媒体 Z",
+                    source_type=SourceType.MEDIA,
+                    outlet_entry="https://z.example",
                 ),
                 rationale="  ",
             ),
@@ -775,7 +795,9 @@ def test_source_discovery_rejects_colliding_with_pending(db_session) -> None:
         StateMachineExecutor().execute(
             SourceDiscoveryProposal(
                 payload=SourceDiscoveryPayload(
-                    source_name="行业媒体 A", source_type=SourceType.MEDIA
+                    source_name="行业媒体 A",
+                    source_type=SourceType.MEDIA,
+                    outlet_entry="https://a.example",
                 ),
                 rationale="依据",
             ),
@@ -793,7 +815,9 @@ def test_source_discovery_rejects_colliding_with_confirmed(db_session) -> None:
         StateMachineExecutor().execute(
             SourceDiscoveryProposal(
                 payload=SourceDiscoveryPayload(
-                    source_name="W 公司", source_type=SourceType.COMPANY
+                    source_name="W 公司",
+                    source_type=SourceType.COMPANY,
+                    outlet_entry="https://w.example",
                 ),
                 rationale="依据",
             ),
@@ -813,7 +837,9 @@ def test_source_discovery_rejects_colliding_with_alias(db_session) -> None:
         StateMachineExecutor().execute(
             SourceDiscoveryProposal(
                 payload=SourceDiscoveryPayload(
-                    source_name="W 集团", source_type=SourceType.COMPANY
+                    source_name="W 集团",
+                    source_type=SourceType.COMPANY,
+                    outlet_entry="https://w.example",
                 ),
                 rationale="依据",
             ),
@@ -826,7 +852,11 @@ def test_source_discovery_unconfirmed_does_not_count_credit(db_session) -> None:
     """对应 IIH-05.02 AC#3：未确认信源不参与信用记账（边界沿用既有 confirmed 守护）。"""
     result = StateMachineExecutor().execute(
         SourceDiscoveryProposal(
-            payload=SourceDiscoveryPayload(source_name="行业媒体 Q", source_type=SourceType.MEDIA),
+            payload=SourceDiscoveryPayload(
+                source_name="行业媒体 Q",
+                source_type=SourceType.MEDIA,
+                outlet_entry="https://q.example",
+            ),
             rationale="依据",
         ),
         session=db_session,
@@ -836,6 +866,131 @@ def test_source_discovery_unconfirmed_does_not_count_credit(db_session) -> None:
     assert source is not None
     assert source.confirmed is False
     assert source.credit is None  # 未设档——确认时才设（IIH-05.01）
+
+
+def test_confirm_with_entry_creates_internet_outlet(db_session) -> None:
+    """IIH-05.02 补救：确认携带采集入口 → 建互联网途径（名默认「网站」，可改），入池即可被采集。"""
+    result = StateMachineExecutor().execute(
+        SourceDiscoveryProposal(
+            payload=SourceDiscoveryPayload(
+                source_name="行业媒体 Z",
+                source_type=SourceType.MEDIA,
+                outlet_entry="https://z.example/article",
+            ),
+            rationale="依据",
+        ),
+        session=db_session,
+    )
+
+    StateMachineExecutor().execute(
+        SourceConfirmProposal(
+            payload=SourceConfirmPayload(
+                source_id=result.source_id or 0,
+                initial_credit="C",
+                outlet_entry="https://z.example/article",
+            ),
+            rationale="人工确认",
+        ),
+        session=db_session,
+    )
+
+    db_session.expire_all()
+    source = db_session.get(Source, result.source_id)
+    assert source is not None
+    assert source.confirmed is True
+    assert len(source.outlets) == 1
+    outlet = source.outlets[0]
+    assert outlet.name == "网站"  # 默认途径名
+    assert outlet.entry == "https://z.example/article"
+    assert outlet.medium.code == "internet"
+
+
+def test_confirm_without_entry_lands_without_outlet(db_session) -> None:
+    """IIH-05.02 补救：采集入口留空不建途径（兼容人工归因的待确认信源）。"""
+    source = _seed_pending_source(db_session, name="行业媒体 B")
+
+    StateMachineExecutor().execute(
+        SourceConfirmProposal(
+            payload=SourceConfirmPayload(source_id=source.id, initial_credit="C"),
+            rationale="人工确认",
+        ),
+        session=db_session,
+    )
+
+    db_session.expire_all()
+    confirmed = db_session.get(Source, source.id)
+    assert confirmed is not None
+    assert confirmed.confirmed is True
+    assert confirmed.outlets == []
+
+
+def test_confirm_merge_with_entry_builds_outlet_on_target(db_session) -> None:
+    """IIH-05.02 补救：并入路径采集入口建到目标信源；目标已有同名途径则跳过。"""
+    target = Source(name="三一集团", type=SourceType.COMPANY, confirmed=True, credit="A")
+    db_session.add(target)
+    db_session.flush()
+    result = StateMachineExecutor().execute(
+        SourceDiscoveryProposal(
+            payload=SourceDiscoveryPayload(
+                source_name="三一",
+                source_type=SourceType.MEDIA,
+                outlet_entry="https://sany.example/news",
+            ),
+            rationale="依据",
+        ),
+        session=db_session,
+    )
+
+    StateMachineExecutor().execute(
+        SourceConfirmProposal(
+            payload=SourceConfirmPayload(
+                source_id=result.source_id or 0,
+                initial_credit="C",
+                name="三一集团",
+                outlet_name="官网",
+                outlet_entry="https://sany.example/news",
+            ),
+            rationale="人工确认",
+        ),
+        session=db_session,
+    )
+
+    db_session.expire_all()
+    merged = db_session.get(Source, target.id)
+    assert merged is not None
+    assert [o.name for o in merged.outlets] == ["官网"]
+    assert merged.outlets[0].entry == "https://sany.example/news"
+
+    # 同名途径再并入一次（新发现同站异名）→ 跳过不重复建
+    result2 = StateMachineExecutor().execute(
+        SourceDiscoveryProposal(
+            payload=SourceDiscoveryPayload(
+                source_name="三一重工网",
+                source_type=SourceType.MEDIA,
+                outlet_entry="https://sany.example/other",
+            ),
+            rationale="依据",
+        ),
+        session=db_session,
+    )
+    StateMachineExecutor().execute(
+        SourceConfirmProposal(
+            payload=SourceConfirmPayload(
+                source_id=result2.source_id or 0,
+                initial_credit="C",
+                name="三一集团",
+                outlet_name="官网",
+                outlet_entry="https://sany.example/other",
+            ),
+            rationale="人工确认",
+        ),
+        session=db_session,
+    )
+    db_session.expire_all()
+    final = db_session.get(Source, target.id)
+    assert final is not None
+    assert [o.name for o in final.outlets] == ["官网"]  # 不重复
+    assert final.outlets[0].entry == "https://sany.example/news"  # 首建为准
 
 
 # ---- IIH-01.08 互联网信源自动拉取 ----

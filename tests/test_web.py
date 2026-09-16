@@ -1517,7 +1517,11 @@ def test_discovered_source_confirmed_then_ir_bindable_end_to_end(
     # 池外探索产出待确认信源
     result = StateMachineExecutor().execute(
         SourceDiscoveryProposal(
-            payload=SourceDiscoveryPayload(source_name="行业媒体 Z", source_type=SourceType.MEDIA),
+            payload=SourceDiscoveryPayload(
+                source_name="行业媒体 Z",
+                source_type=SourceType.MEDIA,
+                outlet_entry="https://z.example/article",
+            ),
             rationale="池外自由探索：从 W 公司·官网的入口页候选链接中发现 行业媒体 Z",
         ),
         session=db_session,
@@ -1526,10 +1530,18 @@ def test_discovered_source_confirmed_then_ir_bindable_end_to_end(
     assert source is not None
     assert source.confirmed is False
 
-    # 经确认入口入池
+    # 待确认行展示发现来源 URL（预填采集入口）
+    listing = inbox_client.get("/sources")
+    assert "https://z.example/article" in listing.text
+
+    # 经确认入口入池：表单携带途径字段（模板预填发现 URL）→ 建互联网途径
     response = inbox_client.post(
         f"/sources/{source.id}/confirm",
-        data={"initial_credit": "C", "next": "/sources"},
+        data={
+            "initial_credit": "C",
+            "outlet_entry": "https://z.example/article",
+            "next": "/sources",
+        },
         follow_redirects=True,
     )
     assert "已确认入信源库" in response.text
@@ -1537,6 +1549,9 @@ def test_discovered_source_confirmed_then_ir_bindable_end_to_end(
     confirmed = db_session.get(Source, source.id)
     assert confirmed is not None
     assert confirmed.confirmed is True
+    assert len(confirmed.outlets) == 1
+    assert confirmed.outlets[0].name == "网站"
+    assert confirmed.outlets[0].entry == "https://z.example/article"
 
     # 可被 IR 绑定（confirmed 边界放开）
     ir_response = inbox_client.post(
@@ -1562,7 +1577,11 @@ def test_discovered_source_unconfirmed_blocked_from_ir_binding(
     不可被 IR 绑定（decision-05 边界由状态机校验保持）。"""
     result = StateMachineExecutor().execute(
         SourceDiscoveryProposal(
-            payload=SourceDiscoveryPayload(source_name="行业媒体 Q", source_type=SourceType.MEDIA),
+            payload=SourceDiscoveryPayload(
+                source_name="行业媒体 Q",
+                source_type=SourceType.MEDIA,
+                outlet_entry="https://q.example",
+            ),
             rationale="依据",
         ),
         session=db_session,

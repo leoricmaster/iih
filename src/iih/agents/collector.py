@@ -532,10 +532,11 @@ class Collector:
             payload=SourceDiscoveryPayload(
                 source_name=source_name,
                 source_type=attribution.source_type,
+                outlet_entry=target_url,
             ),
             rationale=(
                 f"池外自由探索：按「{query}」检索发现 {source_name}"
-                f"（发现来源 URL：{target_url}；关键词依据：{keywords.rationale}；"
+                f"（关键词依据：{keywords.rationale}；"
                 f"选链依据：{selection.rationale}；归因依据：{attribution.rationale}）"
             ),
         )

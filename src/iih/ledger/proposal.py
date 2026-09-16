@@ -88,12 +88,14 @@ class SourceRegisterProposal(Proposal):
 
 
 class SourceConfirmPayload(BaseModel):
-    """「待确认信源确认」产出：目标信源 ID + 初始信用档 + 修正名/类型（可空，IIH-05.01）。"""
+    """「待确认信源确认」产出：目标信源 ID + 初始信用档 + 修正名/类型/途径（可空，IIH-05.01）。"""
 
     source_id: int
     initial_credit: str
     name: str | None = None  # 修正信源名；撞既有已确认信源名即合并迁移，旧名留档为别名
     source_type: SourceType | None = None  # 修正类型；空 = 沿用提取结果，并入路径忽略
+    outlet_name: str | None = None  # 途径名；空 = 「网站」
+    outlet_entry: str | None = None  # 采集入口（发现来源 URL 预填）；空 = 不建途径
 
 
 class SourceConfirmProposal(Proposal):
@@ -103,6 +105,8 @@ class SourceConfirmProposal(Proposal):
     确认必设初始信用档（doc-04 §2.3 解死锁）；拒绝留痕（rejected_at）随确认清空；
     携带修正名时改名入池（旧名留档为别名，归因解析按别名归到本信源），
     撞既有已确认信源名则并入该信源（条目/转引链/途径迁移）。
+    途径字段非空则确认时建互联网途径（默认预填发现来源 URL；并入路径建到目标信源，同名跳过），
+    留空不建（兼容无发现 URL 的待确认信源）。
     """
 
     PROPOSAL_TYPE = "source_confirm"
@@ -128,13 +132,14 @@ class SourceRejectProposal(Proposal):
 
 
 class SourceDiscoveryPayload(BaseModel):
-    """「新信源发现」产出：信源主体字段（decision-05 通道二，IIH-05.02）。
+    """「新信源发现」产出：信源主体字段 + 发现来源 URL（decision-05 通道二，IIH-05.02）。
 
-    发现来源 URL 与依据记入提案 rationale，payload 仅含信源主体。
+    发现来源 URL 落账 Source.discovered_entry，确认时作为默认采集入口建途径。
     """
 
     source_name: str
     source_type: SourceType
+    outlet_entry: str  # 发现来源 URL（页面即证据出处，亦为采集入口起点）
 
 
 class SourceDiscoveryProposal(Proposal):

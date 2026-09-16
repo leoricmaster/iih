@@ -291,10 +291,16 @@ def source_confirm(
     initial_credit: str = Form(""),
     name: str = Form(""),
     source_type: str = Form(""),
+    outlet_name: str = Form(""),
+    outlet_entry: str = Form(""),
     next_url: str = Form("", alias="next"),
     session: Session = Depends(get_session),
 ):
-    """待确认信源确认入池（IIH-05.01）：可修正名/类型 + 初始档 → 提案落账。"""
+    """待确认信源确认入池（IIH-05.01）：可修正名/类型 + 初始档 + 途径 → 提案落账。
+
+    途径（IIH-05.02 补救）：采集入口非空即建互联网途径（名默认「网站」），
+    预填发现来源 URL；留空不建（兼容人工归因的待确认信源）。
+    """
     target = _safe_next(next_url)
     try:
         type_enum = SourceType(source_type) if source_type else None
@@ -308,6 +314,8 @@ def source_confirm(
                     initial_credit=initial_credit.strip(),
                     name=name.strip() or None,
                     source_type=type_enum,
+                    outlet_name=outlet_name.strip() or None,
+                    outlet_entry=outlet_entry.strip() or None,
                 ),
                 rationale=CONFIRM_RATIONALE,
             ),
