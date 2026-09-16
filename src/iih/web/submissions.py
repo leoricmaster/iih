@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session, selectinload
 from iih.agents.collector import Collector
 from iih.config import get_settings
 from iih.ledger.models import (
+    Derivation,
+    DerivationProducer,
     IntelligenceItem,
     ItemMode,
     Material,
@@ -22,7 +24,7 @@ from iih.ledger.models import (
 )
 from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
 from iih.pipeline import process_material
-from iih.tools.asr import make_tingwu_asr
+from iih.tools.asr import make_tingwu_asr, relabel_speakers, speaker_hints, split_speakers
 from iih.tools.snapshot_store import make_snapshot_store
 from iih.web.context import STATUS_LABELS, base_context, register_template_filters
 from iih.web.deps import get_llm_client, get_session
@@ -40,6 +42,7 @@ AUDIO_EXTENSIONS = {"mp3", "wav", "m4a", "aac", "ogg", "opus", "flac", "amr"}
 MATERIAL_STATUS_LABELS = {
     MaterialStatus.UPLOADED: "待加工",
     MaterialStatus.PROCESSING: "转写中",
+    MaterialStatus.TRANSCRIBED: "待标记",
     MaterialStatus.EXTRACTING: "抽取中",
     MaterialStatus.COMPLETED: "已完成",
     MaterialStatus.PROCESS_FAILED: "转写失败",
@@ -65,8 +68,9 @@ def _recent_manual_items(session: Session) -> list[IntelligenceItem]:
     )
 
 
-def _recent_materials(session: Session) -> list[Material]:
-    return list(
+def _recent_materials(session: Session) -> list[dict[str, Any]]:
+    """近期素材行：挂最新转写稿与发言人清单（待标记表单 / 转写稿查看用）。"""
+    materials = list(
         session.scalars(
             select(Material)
             .options(selectinload(Material.medium))
@@ -74,6 +78,40 @@ def _recent_materials(session: Session) -> list[Material]:
             .limit(RECENT_LIMIT)
         )
     )
+    if not materials:
+        return []
+    transcripts: dict[int, str] = {}
+    rows = session.execute(
+        select(Derivation.material_id, Derivation.output_text)
+        .where(
+            Derivation.material_id.in_([m.id for m in materials]),
+            Derivation.output_text.isnot(None),
+        )
+        .order_by(Derivation.id)
+    ).all()
+    for material_id, text in rows:
+        if text is not None:
+            transcripts[material_id] = text
+    return [
+        {
+            "m": m,
+            "transcript": transcripts.get(m.id),
+            "speakers": (
+                [{"label": s, "hint": hint} for s, hint in speaker_hints(transcripts[m.id]).items()]
+                if m.status is MaterialStatus.TRANSCRIBED and m.id in transcripts
+                else []
+            ),
+        }
+        for m in materials
+    ]
+
+
+def _latest_transcript(session: Session, material_id: int) -> Derivation | None:
+    return session.scalars(
+        select(Derivation)
+        .where(Derivation.material_id == material_id, Derivation.output_text.isnot(None))
+        .order_by(Derivation.id.desc())
+    ).first()
 
 
 def _kickoff(request: Request, material_id: int, asr, store) -> None:
@@ -234,3 +272,47 @@ def retry_material(material_id: int, request: Request, session: Session = Depend
     if asr is not None:
         _kickoff(request, material_id, asr, make_snapshot_store(settings))
     return redirect_with_flash("/submissions", "已重试")
+
+
+@router.post("/materials/{material_id}/mark")
+async def mark_speakers(
+    material_id: int, request: Request, session: Session = Depends(get_session)
+):
+    """发言人标记：全部发言人实名替换转写稿（追加人工派生）→ 抽取中；标记完成转写稿才算完成。"""
+    material = session.get(Material, material_id)
+    if material is None or material.status is not MaterialStatus.TRANSCRIBED:
+        return redirect_with_flash("/submissions", "素材不在待标记状态", param="err")
+    form = await request.form()
+    marks = {k: v.strip()[:80] for k, v in form.items() if isinstance(v, str) and v.strip()}
+    derivation = _latest_transcript(session, material_id)
+    if derivation is None or not marks:
+        return redirect_with_flash("/submissions", "未填写任何发言人实名", param="err")
+    missing = {s for s, _ in split_speakers(derivation.output_text or "") if s} - marks.keys()
+    if missing:
+        names = "、".join(sorted(missing))
+        return redirect_with_flash(
+            "/submissions", f"还有 {len(missing)} 位发言人未填实名：{names}", param="err"
+        )
+
+    claimed = cast(
+        "CursorResult[Any]",
+        session.execute(
+            update(Material)
+            .where(Material.id == material_id, Material.status == MaterialStatus.TRANSCRIBED)
+            .values(status=MaterialStatus.EXTRACTING)
+        ),
+    )
+    if claimed.rowcount != 1:
+        session.rollback()
+        return redirect_with_flash("/submissions", "素材不在待标记状态", param="err")
+    session.add(
+        Derivation(
+            material_id=material_id,
+            parent_id=derivation.id,
+            producer=DerivationProducer.HUMAN,
+            producer_ref="speaker-mark",
+            output_text=relabel_speakers(derivation.output_text or "", marks),
+        )
+    )
+    session.commit()
+    return redirect_with_flash("/submissions", f"已标记 {len(marks)} 位发言人，抽取中")

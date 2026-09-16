@@ -38,6 +38,7 @@ from iih.ledger.proposal import (
     ItemProvenanceAppendProposal,
     ProvenanceData,
 )
+from iih.tools.asr import split_speakers
 from iih.tools.html_normalize import extract_link_candidates, fingerprint, normalize
 from iih.tools.snapshot_store import SnapshotStore
 
@@ -188,39 +189,43 @@ class Collector:
     def submit_material(
         self, *, material: Material, derivation: Derivation
     ) -> list[IntelligenceItemNewProposal]:
-        """附件路径（IIH-02.01 录音）：转写稿派生 → LLM 抽取陈述 + 最简归因 → 线索提案。
+        """附件路径（IIH-02.01 录音）：转写稿逐发言人切段，每段抽取陈述 + 归因 → 线索提案。
 
+        发言人已人工标记实名则逐人各自成源；未标记保留「发言人N」原名，经待确认
+        信源闭环（decision-05）确认时改名并入。无发言人前缀回退整稿单归因。
         原文快照走第三轨（挂素材 + 派生级，doc-04 §1），条目不内嵌转写稿；
         采集时间取素材采集时间，载体取素材载体。
         """
         transcript = derivation.output_text or ""
-        statements = self._extract_statements(medium=material.medium, text=transcript)
-        if not statements:
-            return []
-        attribution = self._attribute(medium=material.medium, text=transcript)
-
-        return [
-            IntelligenceItemNewProposal(
-                payload=IntelligenceItemNewPayload(
-                    statement=s.statement.strip(),
-                    mode=ItemMode.MANUAL,
-                    event_time=_as_utc(s.event_time),
-                    content_fingerprint=fingerprint(s.statement.strip()),
-                    material_id=material.id,
-                    derivation_id=derivation.id,
-                ),
-                provenance=ProvenanceData(
-                    modality_code=material.modality.code,
-                    medium_code=material.medium.code,
-                    collected_at=material.collected_at,
-                    source_name=attribution.source_name,
-                    source_type=attribution.source_type,
-                    outlet_name=attribution.outlet_name or None,
-                ),
-                rationale=f"{s.rationale}（归因：{attribution.rationale}）",
+        proposals: list[IntelligenceItemNewProposal] = []
+        for _speaker, segment in split_speakers(transcript):
+            statements = self._extract_statements(medium=material.medium, text=segment)
+            if not statements:
+                continue
+            attribution = self._attribute(medium=material.medium, text=segment)
+            proposals.extend(
+                IntelligenceItemNewProposal(
+                    payload=IntelligenceItemNewPayload(
+                        statement=s.statement.strip(),
+                        mode=ItemMode.MANUAL,
+                        event_time=_as_utc(s.event_time),
+                        content_fingerprint=fingerprint(s.statement.strip()),
+                        material_id=material.id,
+                        derivation_id=derivation.id,
+                    ),
+                    provenance=ProvenanceData(
+                        modality_code=material.modality.code,
+                        medium_code=material.medium.code,
+                        collected_at=material.collected_at,
+                        source_name=attribution.source_name,
+                        source_type=attribution.source_type,
+                        outlet_name=attribution.outlet_name or None,
+                    ),
+                    rationale=f"{s.rationale}（归因：{attribution.rationale}）",
+                )
+                for s in statements
             )
-            for s in statements
-        ]
+        return proposals
 
     def _extract_statements(self, *, medium: Medium, text: str) -> list[ManualStatement]:
         """纪要抽取（文字纪要与附件转写稿共用）：空结果不计量归因、直接返回。"""

@@ -62,6 +62,7 @@ class MaterialStatus(enum.StrEnum):
 
     UPLOADED = "uploaded"  # 已上传：原件入对象存储
     PROCESSING = "processing"  # 加工中：管线任务已提交（ASR/OCR/解析）
+    TRANSCRIBED = "transcribed"  # 待标记：转写稿已派生，待人工标记发言人实名
     EXTRACTING = "extracting"  # 抽取中：加工派生落账，采集智能体抽取陈述
     COMPLETED = "completed"  # 已完成：陈述落账（零陈述亦完成留痕）
     PROCESS_FAILED = "process_failed"  # 加工失败：留痕，可重试

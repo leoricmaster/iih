@@ -73,6 +73,12 @@ form .field{margin-bottom:10px}
 .dropzone{border:2px dashed #c9c9c9;border-radius:8px;padding:18px;text-align:center;background:#fafafa;cursor:pointer;font-size:13.5px;color:#555}
 .dropzone .dz-hint{font-size:11.5px;margin-top:4px;color:#999}
 .filerow{display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid #eee}
+.markdetails summary{cursor:pointer;user-select:none;font-size:13px;color:#444;margin-top:4px}
+.transcript{white-space:pre-wrap;max-height:320px;overflow:auto;background:#fafafa;border:1px solid #eee;border-radius:8px;padding:10px;font-size:12.5px;margin:8px 0}
+.markrow{display:flex;gap:8px;align-items:center;padding:3px 0;max-width:420px}
+.markhint{font-size:12px;color:#999;padding:0 0 3px 72px;max-width:480px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.marklabel{flex:0 0 auto;min-width:64px;font-size:12.5px;color:#555}
+.markname{flex:1}
 label{display:block;font-size:12.5px;color:#666;margin-bottom:3px}
 input[type=text],select,textarea{width:100%;padding:6px 8px;border:1px solid #ccc;border-radius:6px;font:inherit;background:#fff}
 textarea{min-height:64px;resize:vertical}

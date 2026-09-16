@@ -128,6 +128,7 @@ def process_material(
     """单个素材推进一步（doc-02 §4.5）：提交 / 轮询 / 抽取，返回 done | pending | failed。
 
     每素材独立事务；上传端点（事件驱动）与循环兜底共用本入口，条件抢占防双跑；
+    转写完成停「待标记」，经 Web 发言人标记（全部实名）转抽取中后本入口才抽取；
     失败留痕不抛出（AC#2 不静默、不产半成品——线索仅在转写稿派生存在后落账）。
     """
     say = log or (lambda _msg: None)
@@ -154,6 +155,7 @@ def process_material(
                 if result is None:
                     return PENDING  # 未完成，下轮再查
                 # 派生落账与状态迁移同事务：抢占失败即他方已办
+                # 停「待标记」：转写完成先经人工发言人标记（全部实名）再抽取
                 transitioned = (
                     cast(
                         "CursorResult[Any]",
@@ -164,7 +166,7 @@ def process_material(
                                 Material.status == MaterialStatus.PROCESSING,
                             )
                             .values(
-                                status=MaterialStatus.EXTRACTING,
+                                status=MaterialStatus.TRANSCRIBED,
                                 duration_seconds=result.duration_seconds,
                                 failure_reason=None,
                             )
@@ -185,7 +187,10 @@ def process_material(
                 session.commit()
                 if not transitioned:
                     return PENDING
-                say(f"  [转写完成] 素材 #{material.id}：{result.duration_seconds}s 转写稿已派生")
+                say(
+                    f"  [转写完成] 素材 #{material.id}：{result.duration_seconds}s "
+                    "转写稿已派生，待标记发言人"
+                )
                 session.refresh(material)
             else:
                 # uploaded / process_failed（含自动重试）/ processing 丢任务号（崩溃恢复）→ 提交
@@ -295,7 +300,8 @@ def run_material_stage(
     """素材段（doc-02 §4.5）：兜底推进全部在途素材。
 
     上传端点已内联即时提交（事件驱动）；本段接手未提交的 uploaded、轮询 processing、
-    抽取 extracting、自动重试未达上限的失败素材。ASR 未配置则跳过（素材留队不失败）。
+    抽取 extracting、自动重试未达上限的失败素材。待标记素材留待人工（不经本段）。
+    ASR 未配置则跳过（素材留队不失败）。
     """
     say = log or (lambda _msg: None)
     if asr is None:

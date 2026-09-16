@@ -7,6 +7,7 @@
 
 import hashlib
 import json
+import re
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
@@ -19,6 +20,9 @@ from alibabacloud_tingwu20230930.client import Client as TingwuClient
 TINGWU_ENDPOINT = "tingwu.cn-beijing.aliyuncs.com"
 DONE_STATUSES = {"COMPLETED", "SUCCEEDED", "TranscriptionCompleted"}
 FAILED_STATUSES = {"FAILED", "CANCELED", "TranscriptionFailed"}
+
+# 转写稿行格式（说话人分离）：[mm:ss] 发言人N：文本
+SPEAKER_LINE_RE = re.compile(r"^\[(\d{2,}):(\d{2})\] (.+?)：", re.MULTILINE)
 
 
 class TingwuAsrError(Exception):
@@ -173,6 +177,57 @@ class TingwuAsr:
         if not lines:
             raise TingwuAsrError("转写结果无段落内容")
         return TranscriptionResult(text="\n".join(lines), duration_seconds=int(duration_ms / 1000))
+
+
+def split_speakers(text: str) -> list[tuple[str, str]]:
+    """转写稿按发言人聚合切段：同发言人各行归一段（首现顺序），逐发言人归因用。
+
+    无发言人前缀的行归入当前发言人段（开头散行归匿名段）；整稿无前缀则返回单一匿名段。
+    """
+    order: list[str] = []
+    parts: dict[str, list[str]] = {}
+    current = ""
+    for line in text.splitlines():
+        matched = SPEAKER_LINE_RE.match(line)
+        if matched is not None:
+            current = matched.group(3)
+        if current not in parts:
+            parts[current] = []
+            order.append(current)
+        parts[current].append(line)
+    return [(speaker, "\n".join(parts[speaker])) for speaker in order]
+
+
+def speaker_hints(text: str, *, max_lines: int = 2, max_chars: int = 100) -> dict[str, str]:
+    """每位发言人开头发言片段（去时间戳与发言人前缀，首现顺序）：标记表单认人上下文。"""
+
+    hints: dict[str, str] = {}
+    for speaker, segment in split_speakers(text):
+        if not speaker or speaker in hints:
+            continue
+        contents: list[str] = []
+        for line in segment.splitlines():
+            matched = SPEAKER_LINE_RE.match(line)
+            content = line[matched.end() :].strip() if matched else line.strip()
+            if content:
+                contents.append(content)
+            if len(contents) == max_lines:
+                break
+        hint = " / ".join(contents)
+        if len(hint) > max_chars:
+            hint = hint[: max_chars - 1] + "…"
+        hints[speaker] = hint
+    return hints
+
+
+def relabel_speakers(text: str, marks: dict[str, str]) -> str:
+    """按映射把转写稿发言人标签替换为实名（发言人N → 实名）；映射外标签保留。"""
+
+    def _sub(matched: re.Match[str]) -> str:
+        name = marks.get(matched.group(3))
+        return f"[{matched.group(1)}:{matched.group(2)}] {name or matched.group(3)}："
+
+    return SPEAKER_LINE_RE.sub(_sub, text)
 
 
 def make_tingwu_asr(settings) -> TingwuAsr | None:

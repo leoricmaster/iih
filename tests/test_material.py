@@ -1,10 +1,12 @@
-"""素材管线单测（IIH-02.01、doc-02 §4.5）：状态推进、失败留痕、重试上限、上传与人工重试端点。"""
+"""素材管线单测（IIH-02.01、doc-02 §4.5）：状态推进、待标记门控、逐发言人归因、标记端点。"""
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
+from urllib.parse import unquote, unquote_plus
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import sessionmaker
 
 from conftest import (
@@ -14,7 +16,7 @@ from conftest import (
     make_fake_llm_manual,
     make_manual_extraction,
 )
-from iih.agents.collector import AttributionResult, ManualExtractionResult
+from iih.agents.collector import AttributionResult, Collector, ManualExtractionResult
 from iih.agents.reviewer import ReviewJudgmentResult
 from iih.config import get_settings
 from iih.ledger.models import (
@@ -37,6 +39,7 @@ from iih.ledger.proposal import (
 )
 from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
 from iih.pipeline import DONE, FAILED, PENDING, process_material, run_pipeline_round
+from iih.tools.asr import relabel_speakers, speaker_hints, split_speakers
 from iih.web.app import create_app
 from iih.web.deps import get_session
 
@@ -64,7 +67,7 @@ def _session_factory(db_session):
 
 
 def test_material_lifecycle_submit_poll_extract(db_session, w_attribution) -> None:
-    """上传 → 提交转写 → 轮询完成 → 抽取落账：素材 Completed、派生转写稿、条目挂第三轨。"""
+    """上传 → 提交转写 → 停待标记 → 标记完成 → 抽取落账：Completed、派生、条目挂第三轨。"""
     material = _seed_material(db_session)
     store = FakeSnapshotStore()
     store.materials[material.object_key] = b"fake-audio-bytes"
@@ -92,6 +95,28 @@ def test_material_lifecycle_submit_poll_extract(db_session, w_attribution) -> No
     assert asr.submitted == [b"fake-audio-bytes"]
 
     asr.finish("fake-task-1")
+    outcome = process_material(
+        settings=get_settings(),
+        session_factory=factory,
+        llm=llm,
+        asr=asr,
+        store=store,
+        material_id=material.id,
+    )
+
+    assert outcome == PENDING  # 门控：转写完成停待标记，不自动抽取
+    db_session.expire_all()
+    material = db_session.get(Material, material.id)
+    assert material is not None
+    assert material.status is MaterialStatus.TRANSCRIBED
+
+    with factory() as mark_session:  # 模拟标记完成 → 抽取中
+        mark_session.execute(
+            update(Material)
+            .where(Material.id == material.id)
+            .values(status=MaterialStatus.EXTRACTING)
+        )
+        mark_session.commit()
     outcome = process_material(
         settings=get_settings(),
         session_factory=factory,
@@ -302,6 +327,20 @@ def test_pipeline_round_counts_material_done(db_session, w_attribution) -> None:
     )
     asr.finish("fake-task-1")
 
+    gated = run_pipeline_round(  # 门控：轮询完成停待标记，本轮不抽取
+        settings=get_settings(), session_factory=factory, llm=llm, store=store, asr=asr
+    )
+    assert gated.material_done == 0
+    db_session.expire_all()
+    assert db_session.get(Material, material.id).status is MaterialStatus.TRANSCRIBED
+
+    with factory() as mark_session:  # 模拟标记完成 → 抽取中
+        mark_session.execute(
+            update(Material)
+            .where(Material.id == material.id)
+            .values(status=MaterialStatus.EXTRACTING)
+        )
+        mark_session.commit()
     summary = run_pipeline_round(
         settings=get_settings(), session_factory=factory, llm=llm, store=store, asr=asr
     )
@@ -488,3 +527,226 @@ def test_round_summary_flash_includes_material_part() -> None:
 
     active = RoundSummary(material_done=2, material_failed=1).flash()
     assert "素材 3（完成 2、失败 1）" in active
+
+
+def test_split_speakers_aggregates_by_speaker() -> None:
+    """切段：同发言人全局聚合为一段（首现顺序），无前缀归当前段，整稿无前缀单一匿名段。"""
+    text = (
+        "[00:00] 发言人1：张三第一句\n"
+        "接续行\n"
+        "[00:30] 发言人2：李四一句\n"
+        "[01:00] 发言人1：张三第二句\n"
+    )
+    assert split_speakers(text) == [
+        ("发言人1", "[00:00] 发言人1：张三第一句\n接续行\n[01:00] 发言人1：张三第二句"),
+        ("发言人2", "[00:30] 发言人2：李四一句"),
+    ]
+    assert split_speakers("无前缀整稿") == [("", "无前缀整稿")]
+
+
+def test_relabel_speakers_replaces_marked_only() -> None:
+    """改名：映射内标签替换为实名，映射外保留；时间戳不动。"""
+    text = "[00:00] 发言人1：甲发言\n[00:30] 发言人2：乙发言\n"
+    relabeled = relabel_speakers(text, {"发言人1": "黄胜"})
+    assert relabeled == "[00:00] 黄胜：甲发言\n[00:30] 发言人2：乙发言\n"
+
+
+def test_speaker_hints_first_utterances() -> None:
+    """认人提示：每人前两句发言（去前缀，同人聚合后按序取），超长截断。"""
+    text = (
+        "[00:00] 发言人1：大家好，今天讨论矿卡\n"
+        "[00:30] 发言人2：我先说说出口\n"
+        "出口订单排到明年\n"
+        "[01:00] 发言人1：国内呢\n"
+        "[01:30] 发言人1：第三句不进提示\n"
+    )
+    assert speaker_hints(text) == {
+        "发言人1": "大家好，今天讨论矿卡 / 国内呢",
+        "发言人2": "我先说说出口 / 出口订单排到明年",
+    }
+    assert len(speaker_hints("[00:00] 发言人1：" + "长" * 150)["发言人1"]) == 100
+
+
+class _SpeakerEchoLlm:
+    """prompt-aware 替身：抽取按段逐行出陈述；归因取段内首个发言人标签为信源名。"""
+
+    def __init__(self) -> None:
+        self.extraction_calls: list[str] = []
+        self.attribution_calls: list[str] = []
+        self.chat = SimpleNamespace(completions=_SpeakerEchoCompletions(self))
+
+
+class _SpeakerEchoCompletions:
+    def __init__(self, outer: "_SpeakerEchoLlm") -> None:
+        self.outer = outer
+
+    def create_with_completion(self, *, response_model, messages, **kwargs):
+        user = next(m["content"] for m in messages if m["role"] == "user")
+        if response_model is ManualExtractionResult:
+            self.outer.extraction_calls.append(user)
+            body = user.split("素材文本：\n", 1)[1]
+            result: object = make_manual_extraction(
+                *(line.split("：", 1)[1] for line in body.splitlines() if "：" in line)
+            )
+        else:
+            assert response_model is AttributionResult
+            self.outer.attribution_calls.append(user)
+            body = user.split("陈述：", 1)[1]
+            speaker = next(label for label, _ in split_speakers(body) if label)
+            result = AttributionResult(
+                source_name=speaker,
+                source_type="person",
+                outlet_name=None,
+                rationale=f"段内发言人标签 {speaker}",
+            )
+        return result, SimpleNamespace(usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5))
+
+
+def test_submit_material_attributes_per_speaker(db_session) -> None:
+    """逐发言人归因：标记实名的转写稿按人切段，各自成源（同人聚合一次归因）。"""
+    material = _seed_material(db_session, status=MaterialStatus.EXTRACTING)
+    derivation = Derivation(
+        material_id=material.id,
+        producer=DerivationProducer.TOOL,
+        producer_ref="tingwu-offline",
+        output_text=(
+            "[00:00] 黄胜：三一挖掘机国内销量增长\n"
+            "[00:30] 王博：出口订单排到明年\n"
+            "[01:00] 黄胜：电动化占比过半\n"
+        ),
+    )
+    db_session.add(derivation)
+    db_session.flush()
+    llm = _SpeakerEchoLlm()
+
+    proposals = Collector(llm=llm, session=db_session, model="test").submit_material(
+        material=material, derivation=derivation
+    )
+
+    assert len(llm.extraction_calls) == 2  # 黄胜两行聚合一段、王博一段
+    assert len(llm.attribution_calls) == 2
+    assert {p.provenance.source_name for p in proposals} == {"黄胜", "王博"}
+    assert {p.payload.statement for p in proposals} == {
+        "三一挖掘机国内销量增长",
+        "电动化占比过半",
+        "出口订单排到明年",
+    }
+
+
+def _transcribed_client(db_session, upload_client):
+    """推到待标记态：上传 → 转写完成，返回 (client, material_id)。"""
+    client, store, asr = upload_client
+    client.post(
+        "/submissions",
+        data={"medium_code": "meeting_discussion"},
+        files={"files": ("meeting.mp3", b"fake-audio-bytes", "audio/mpeg")},
+    )
+    asr.finish("fake-task-1")
+    process_material(
+        settings=get_settings(),
+        session_factory=client.app.state.session_factory,
+        llm=client.app.state.llm,
+        asr=asr,
+        store=store,
+        material_id=db_session.scalars(select(Material.id)).one(),
+    )
+    db_session.expire_all()
+    material = db_session.scalars(select(Material)).one()
+    assert material.status is MaterialStatus.TRANSCRIBED
+    return client, material.id
+
+
+def test_mark_speakers_appends_human_derivation(db_session, upload_client) -> None:
+    """标记：实名替换转写稿追加人工派生（父级=ASR 派生），状态转抽取中。"""
+    client, material_id = _transcribed_client(db_session, upload_client)
+
+    response = client.post(
+        f"/materials/{material_id}/mark", data={"发言人1": "黄胜"}, follow_redirects=True
+    )
+
+    assert response.status_code == 200
+    assert "已标记 1 位发言人" in response.text
+    db_session.expire_all()
+    material = db_session.get(Material, material_id)
+    assert material is not None
+    assert material.status is MaterialStatus.EXTRACTING
+    derivations = db_session.scalars(
+        select(Derivation).where(Derivation.material_id == material_id).order_by(Derivation.id)
+    ).all()
+    assert [d.producer for d in derivations] == [DerivationProducer.TOOL, DerivationProducer.HUMAN]
+    assert derivations[1].parent_id == derivations[0].id
+    assert (
+        derivations[1].output_text == "[00:00] 黄胜：W 公司与 Z 集团签署合资协议，Q4 设立合资公司"
+    )
+
+
+def test_mark_form_shows_speaker_hints(db_session, upload_client) -> None:
+    """标记行上下文：待标记表单每人附其发言片段（认人用，与转写稿并存）。"""
+    client, _ = _transcribed_client(db_session, upload_client)
+
+    response = client.get("/submissions")
+
+    assert response.status_code == 200
+    assert 'class="markhint"' in response.text
+    # 转写稿 pre、title 属性、提示文本各一次
+    assert response.text.count("W 公司与 Z 集团签署合资协议") == 3
+
+
+def test_mark_rejects_blank_and_wrong_state(db_session, upload_client) -> None:
+    """标记校验：全空实名拒绝且状态不动；非待标记态拒绝。"""
+    client, material_id = _transcribed_client(db_session, upload_client)
+
+    blank = client.post(
+        f"/materials/{material_id}/mark", data={"发言人1": " "}, follow_redirects=False
+    )
+    assert blank.status_code == 303
+    assert "未填写任何发言人实名" in unquote(blank.headers["location"])
+    db_session.expire_all()
+    assert db_session.get(Material, material_id).status is MaterialStatus.TRANSCRIBED
+
+    done = client.post(
+        f"/materials/{material_id}/mark", data={"发言人1": "黄胜"}, follow_redirects=True
+    )
+    assert done.status_code == 200
+    db_session.expire_all()
+    assert db_session.get(Material, material_id).status is MaterialStatus.EXTRACTING
+    again = client.post(
+        f"/materials/{material_id}/mark", data={"发言人1": "黄胜"}, follow_redirects=False
+    )
+    assert again.status_code == 303
+    db_session.expire_all()
+    assert db_session.get(Material, material_id).status is MaterialStatus.EXTRACTING
+
+
+def test_mark_requires_all_speakers_named(db_session, upload_client) -> None:
+    """强制全量实名：漏标拒绝（报缺谁、状态不动），全标放行。"""
+    client, _, _ = upload_client
+    material = _seed_material(db_session, status=MaterialStatus.TRANSCRIBED)
+    db_session.add(
+        Derivation(
+            material_id=material.id,
+            producer=DerivationProducer.TOOL,
+            producer_ref="tingwu-offline",
+            output_text="[00:00] 发言人1：甲发言\n[00:30] 发言人2：乙发言\n",
+        )
+    )
+    db_session.flush()
+
+    partial = client.post(
+        f"/materials/{material.id}/mark", data={"发言人1": "黄胜"}, follow_redirects=False
+    )
+    assert partial.status_code == 303
+    location = unquote_plus(partial.headers["location"])
+    assert "还有 1 位发言人未填实名：发言人2" in location
+    db_session.expire_all()
+    assert db_session.get(Material, material.id).status is MaterialStatus.TRANSCRIBED
+
+    full = client.post(
+        f"/materials/{material.id}/mark",
+        data={"发言人1": "黄胜", "发言人2": "主机厂专家"},
+        follow_redirects=True,
+    )
+    assert full.status_code == 200
+    assert "已标记 2 位发言人" in full.text
+    db_session.expire_all()
+    assert db_session.get(Material, material.id).status is MaterialStatus.EXTRACTING
