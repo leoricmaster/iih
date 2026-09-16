@@ -479,6 +479,7 @@ def test_upload_rejects_when_asr_unconfigured(db_session, monkeypatch) -> None:
     monkeypatch.setattr("iih.web.submissions.make_snapshot_store", lambda _s: FakeSnapshotStore())
     app = create_app()
     app.dependency_overrides[get_session] = lambda: db_session
+    app.state.llm = object()  # 拒绝路径不调 LLM；占位避免懒建真实客户端（CI 无 LLM_API_KEY）
     with TestClient(app) as client:
         app.state.session_factory = _session_factory(db_session)
         response = client.post(
