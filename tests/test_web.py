@@ -404,9 +404,7 @@ def test_inbox_drops_item_after_feedback_lands(inbox_client: TestClient, db_sess
     before = inbox_client.get("/")
     assert '<span class="cnt">1</span>' in before.text
 
-    inbox_client.post(
-        f"/items/{item.id}/feedback", data={"feedback_type": "valid"}
-    )
+    inbox_client.post(f"/items/{item.id}/feedback", data={"feedback_type": "valid"})
 
     response = inbox_client.get("/")
     assert response.status_code == 200
