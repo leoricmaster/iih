@@ -20,3 +20,6 @@ htmlcov/
 
 # 本地数据
 filestore/
+
+# 钩子侧产物：容器重建时间戳
+.claude/.web-rebuild-stamp

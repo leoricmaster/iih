@@ -11,6 +11,17 @@
             "statusMessage": "DoD#3 门禁：校验推送与 CI 状态"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/commit-requires-rebuild.sh\"",
+            "timeout": 15,
+            "statusMessage": "提交门禁：校验容器已重建"
+          }
+        ]
       }
     ]
   }
