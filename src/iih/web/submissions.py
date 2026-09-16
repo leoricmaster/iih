@@ -25,7 +25,7 @@ from iih.ledger.models import (
 from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
 from iih.pipeline import process_material
 from iih.tools.asr import make_tingwu_asr, relabel_speakers, speaker_hints, split_speakers
-from iih.tools.snapshot_store import make_snapshot_store
+from iih.tools.snapshot_store import make_snapshot_store, material_key
 from iih.web.context import STATUS_LABELS, base_context, register_template_filters
 from iih.web.deps import get_llm_client, get_session
 from iih.web.flash import redirect_with_flash
@@ -160,6 +160,17 @@ def submissions_page(request: Request, flash: str = "", session: Session = Depen
     return _render(request, session, flash=flash)
 
 
+@router.get("/submissions/status")
+def submissions_status(session: Session = Depends(get_session)):
+    """近期素材在途状态（前端轮询用）：转写/抽取完成即触发页面刷新。"""
+    materials = session.scalars(
+        select(Material)
+        .order_by(Material.collected_at.desc(), Material.id.desc())
+        .limit(RECENT_LIMIT)
+    ).all()
+    return [{"id": m.id, "status": m.status.value} for m in materials]
+
+
 @router.post("/submissions")
 def submit(
     request: Request,
@@ -203,21 +214,35 @@ def submit(
         if medium is None or modality is None:
             return fail(["媒介不存在"])
         store = make_snapshot_store(get_settings())
+        uploaded = 0
+        duplicates = 0
         for upload in uploads:
             filename = upload.filename or ""
             ext = filename.rsplit(".", 1)[-1].lower()
+            data = upload.file.read()
+            key = material_key(data, ext)
+            if session.scalars(select(Material).where(Material.object_key == key)).first():
+                duplicates += 1
+                continue
             material = Material(
                 modality_id=modality.id,
                 medium_id=medium.id,
                 collected_at=datetime.now(UTC),
-                object_key=store.put_material(upload.file.read(), ext),
+                object_key=store.put_material(data, ext),
                 filename=filename[:500],
                 status=MaterialStatus.UPLOADED,
             )
             session.add(material)
             session.commit()
             _kickoff(request, material.id, asr, store)
-        messages.append(f"录音已上传 {len(uploads)} 个，转写中")
+            uploaded += 1
+        if uploaded:
+            message = f"录音已上传 {uploaded} 个，转写中"
+            if duplicates:
+                message += f"；{duplicates} 个与既有素材重复，未重复上传"
+            messages.append(message)
+        elif duplicates:
+            messages.append(f"{duplicates} 个附件与既有素材重复，未重复上传")
 
     if text:
         collector = Collector(llm=llm, session=session, model=get_settings().llm_model)
@@ -316,3 +341,60 @@ async def mark_speakers(
     )
     session.commit()
     return redirect_with_flash("/submissions", f"已标记 {len(marks)} 位发言人，抽取中")
+
+
+@router.post("/materials/{material_id}/transcript")
+async def edit_transcript(
+    material_id: int, request: Request, session: Session = Depends(get_session)
+):
+    """转写稿编辑：追加人工派生为最新权威；已完成素材可勾选重抽（撤回旧线索由重抽替换）。"""
+    material = session.get(Material, material_id)
+    if material is None or material.status not in (
+        MaterialStatus.TRANSCRIBED,
+        MaterialStatus.COMPLETED,
+    ):
+        return redirect_with_flash("/submissions", "素材不在可编辑状态", param="err")
+    form = await request.form()
+    transcript_value = form.get("transcript")
+    transcript = transcript_value.strip() if isinstance(transcript_value, str) else ""
+    if not transcript:
+        return redirect_with_flash("/submissions", "转写稿为空，未保存", param="err")
+    derivation = _latest_transcript(session, material_id)
+    if derivation is None:
+        return redirect_with_flash("/submissions", "无可编辑的转写稿", param="err")
+
+    respecify = form.get("respecify") == "on" and material.status is MaterialStatus.COMPLETED
+    session.add(
+        Derivation(
+            material_id=material_id,
+            parent_id=derivation.id,
+            producer=DerivationProducer.HUMAN,
+            producer_ref="transcript-edit",
+            output_text=transcript,
+        )
+    )
+    if respecify:
+        session.execute(
+            update(IntelligenceItem)
+            .where(IntelligenceItem.material_id == material_id)
+            .values(retracted=True, content_fingerprint=None)
+        )
+        claimed = (
+            cast(
+                "CursorResult[Any]",
+                session.execute(
+                    update(Material)
+                    .where(Material.id == material_id, Material.status == MaterialStatus.COMPLETED)
+                    .values(status=MaterialStatus.EXTRACTING)
+                ),
+            ).rowcount
+            == 1
+        )
+        if not claimed:
+            session.rollback()
+            return redirect_with_flash("/submissions", "素材状态已变化，未重抽", param="err")
+    session.commit()
+
+    if respecify:
+        return redirect_with_flash("/submissions", "转写稿已保存，将重新抽取")
+    return redirect_with_flash("/submissions", "转写稿已保存")

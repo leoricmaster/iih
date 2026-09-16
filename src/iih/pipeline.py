@@ -448,7 +448,10 @@ def run_review_stage(
     with session_factory() as session:
         lead_ids = list(
             session.scalars(
-                select(IntelligenceItem.id).where(IntelligenceItem.status == ItemStatus.LEAD)
+                select(IntelligenceItem.id).where(
+                    IntelligenceItem.status == ItemStatus.LEAD,
+                    IntelligenceItem.retracted.is_(False),
+                )
             )
         )
     if not lead_ids:
@@ -505,7 +508,10 @@ def run_verify_stage(
     with session_factory() as session:
         candidate_ids = list(
             session.scalars(
-                select(IntelligenceItem.id).where(IntelligenceItem.status == ItemStatus.CANDIDATE)
+                select(IntelligenceItem.id).where(
+                    IntelligenceItem.status == ItemStatus.CANDIDATE,
+                    IntelligenceItem.retracted.is_(False),
+                )
             )
         )
     if not candidate_ids:

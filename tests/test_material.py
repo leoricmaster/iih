@@ -14,6 +14,7 @@ from conftest import (
     FakeSnapshotStore,
     _make_dispatch_llm,
     make_fake_llm_manual,
+    make_fake_llm_review,
     make_manual_extraction,
 )
 from iih.agents.collector import AttributionResult, Collector, ManualExtractionResult
@@ -31,6 +32,9 @@ from iih.ledger.models import (
     MaterialStatus,
     Medium,
     Modality,
+    ProvenanceChainNode,
+    Source,
+    SourceType,
 )
 from iih.ledger.proposal import (
     IntelligenceItemNewPayload,
@@ -689,8 +693,8 @@ def test_mark_form_shows_speaker_hints(db_session, upload_client) -> None:
 
     assert response.status_code == 200
     assert 'class="markhint"' in response.text
-    # 转写稿 pre、title 属性、提示文本各一次
-    assert response.text.count("W 公司与 Z 集团签署合资协议") == 3
+    # 转写稿 pre、title 属性、提示文本、编辑框预填各一次
+    assert response.text.count("W 公司与 Z 集团签署合资协议") == 4
 
 
 def test_mark_rejects_blank_and_wrong_state(db_session, upload_client) -> None:
@@ -751,3 +755,239 @@ def test_mark_requires_all_speakers_named(db_session, upload_client) -> None:
     assert "已标记 2 位发言人" in full.text
     db_session.expire_all()
     assert db_session.get(Material, material.id).status is MaterialStatus.EXTRACTING
+
+
+def test_upload_deduplicates_same_content(db_session, upload_client) -> None:
+    """同内容二次上传不重复建素材、不重提 ASR，flash 提示重复。"""
+    client, _, asr = upload_client
+    client.post(
+        "/submissions",
+        data={"medium_code": "meeting_discussion"},
+        files={"files": ("meeting.mp3", b"fake-audio-bytes", "audio/mpeg")},
+    )
+    response = client.post(
+        "/submissions",
+        data={"medium_code": "meeting_discussion"},
+        files={"files": ("meeting.mp3", b"fake-audio-bytes", "audio/mpeg")},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "与既有素材重复" in response.text
+    db_session.expire_all()
+    assert len(db_session.scalars(select(Material)).all()) == 1
+    assert asr.submitted == [b"fake-audio-bytes"]
+
+
+def test_edit_transcript_appends_derivation(db_session, upload_client) -> None:
+    """待标记编辑：追加人工派生为新权威，状态仍待标记。"""
+    client, material_id = _transcribed_client(db_session, upload_client)
+
+    response = client.post(
+        f"/materials/{material_id}/transcript",
+        data={"transcript": "修正后的转写稿"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "转写稿已保存" in response.text
+    db_session.expire_all()
+    material = db_session.get(Material, material_id)
+    assert material is not None
+    assert material.status is MaterialStatus.TRANSCRIBED
+    derivations = db_session.scalars(
+        select(Derivation).where(Derivation.material_id == material_id).order_by(Derivation.id)
+    ).all()
+    assert [d.producer for d in derivations] == [DerivationProducer.TOOL, DerivationProducer.HUMAN]
+    assert derivations[-1].producer_ref == "transcript-edit"
+    assert derivations[-1].output_text == "修正后的转写稿"
+    assert derivations[-1].parent_id == derivations[0].id
+
+
+def test_edit_transcript_respecify_retracts_and_reextracts(db_session, upload_client) -> None:
+    """已完成编辑+重抽：旧线索作废、状态回抽取中，新转写稿为最新派生。"""
+    client, _, _ = upload_client
+    material = _seed_material(db_session, status=MaterialStatus.COMPLETED)
+    derivation = Derivation(
+        material_id=material.id,
+        producer=DerivationProducer.TOOL,
+        producer_ref="tingwu-offline",
+        output_text="[00:00] 发言人1：旧陈述",
+    )
+    db_session.add(derivation)
+    db_session.flush()
+    StateMachineExecutor().execute(_third_track_payload(material, derivation), session=db_session)
+    db_session.expire_all()
+    assert db_session.scalars(select(IntelligenceItem)).one().retracted is False
+
+    response = client.post(
+        f"/materials/{material.id}/transcript",
+        data={"transcript": "[00:00] 发言人1：新陈述", "respecify": "on"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "将重新抽取" in response.text
+    db_session.expire_all()
+    material = db_session.get(Material, material.id)
+    assert material is not None
+    assert material.status is MaterialStatus.EXTRACTING
+    assert db_session.scalars(select(IntelligenceItem)).one().retracted is True
+    derivations = db_session.scalars(
+        select(Derivation).where(Derivation.material_id == material.id).order_by(Derivation.id)
+    ).all()
+    assert derivations[-1].producer_ref == "transcript-edit"
+    assert derivations[-1].output_text == "[00:00] 发言人1：新陈述"
+
+
+def test_edit_transcript_rejects_wrong_state(db_session, upload_client) -> None:
+    """非待标记/已完成态拒绝编辑（处理中）。"""
+    client, _, _ = upload_client
+    material = _seed_material(db_session, status=MaterialStatus.PROCESSING)
+
+    response = client.post(
+        f"/materials/{material.id}/transcript",
+        data={"transcript": "x"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert "不在可编辑状态" in unquote(response.headers["location"])
+    db_session.expire_all()
+    assert db_session.get(Material, material.id).status is MaterialStatus.PROCESSING
+
+
+def test_retracted_item_frees_fingerprint(db_session) -> None:
+    """撤回清指纹后同陈述可重落账（部分唯一索引仅约束 IS NOT NULL 行）。"""
+    material = _seed_material(db_session)
+    derivation = Derivation(
+        material_id=material.id,
+        producer=DerivationProducer.TOOL,
+        producer_ref="tingwu-offline",
+        output_text="[00:00] 发言人1：陈述",
+    )
+    db_session.add(derivation)
+    db_session.flush()
+
+    StateMachineExecutor().execute(_third_track_payload(material, derivation), session=db_session)
+    item = db_session.scalars(select(IntelligenceItem)).one()
+    item.retracted = True
+    item.content_fingerprint = None
+    db_session.flush()
+
+    StateMachineExecutor().execute(_third_track_payload(material, derivation), session=db_session)
+
+    assert len(db_session.scalars(select(IntelligenceItem)).all()) == 2
+
+
+def test_review_stage_skips_retracted(db_session, w_review_pass_factory) -> None:
+    """撤回（作废）线索不进入审查段：正常 Lead → Candidate，作废 Lead 保持。"""
+    from iih.pipeline import RoundSummary, run_review_stage
+
+    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True)
+    ir = IntelligenceRequirement(
+        name="跟踪 W 公司", content_spec="主题", status=IntelligenceRequirementStatus.ACTIVE
+    )
+    normal = IntelligenceItem(
+        statement="正常陈述",
+        status=ItemStatus.LEAD,
+        mode=ItemMode.AUTOMATED,
+        medium=medium,
+        modality=modality,
+        collected_at=datetime.now(UTC),
+        original_snapshot="x",
+        source=source,
+    )
+    retracted = IntelligenceItem(
+        statement="作废陈述",
+        status=ItemStatus.LEAD,
+        mode=ItemMode.AUTOMATED,
+        medium=medium,
+        modality=modality,
+        collected_at=datetime.now(UTC),
+        original_snapshot="x",
+        source=source,
+        retracted=True,
+    )
+    db_session.add_all([ir, normal, retracted])
+    db_session.flush()
+
+    llm = make_fake_llm_review(w_review_pass_factory(matched_requirement_id=ir.id))
+    run_review_stage(
+        settings=get_settings(),
+        session_factory=_session_factory(db_session),
+        llm=llm,
+        summary=RoundSummary(),
+    )
+
+    db_session.expire_all()
+    assert db_session.get(IntelligenceItem, normal.id).status is ItemStatus.CANDIDATE
+    assert db_session.get(IntelligenceItem, retracted.id).status is ItemStatus.LEAD
+
+
+def test_verify_stage_skips_retracted(db_session) -> None:
+    """撤回（作废）线索不进入核实段：正常 Candidate → Verified，作废 Candidate 保持。"""
+    from iih.pipeline import RoundSummary, run_verify_stage
+
+    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
+    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, credit="B")
+    normal = IntelligenceItem(
+        statement="正常陈述",
+        status=ItemStatus.CANDIDATE,
+        mode=ItemMode.AUTOMATED,
+        medium=medium,
+        modality=modality,
+        collected_at=datetime.now(UTC),
+        original_snapshot="x",
+        source=source,
+    )
+    retracted = IntelligenceItem(
+        statement="作废陈述",
+        status=ItemStatus.CANDIDATE,
+        mode=ItemMode.AUTOMATED,
+        medium=medium,
+        modality=modality,
+        collected_at=datetime.now(UTC),
+        original_snapshot="x",
+        source=source,
+        retracted=True,
+    )
+    db_session.add_all([source, normal, retracted])
+    db_session.flush()
+    for it in (normal, retracted):
+        db_session.add(
+            ProvenanceChainNode(
+                item=it,
+                source=source,
+                modality=modality,
+                medium=medium,
+                collected_at=datetime.now(UTC),
+            )
+        )
+    db_session.flush()
+
+    run_verify_stage(session_factory=_session_factory(db_session), summary=RoundSummary())
+
+    db_session.expire_all()
+    assert db_session.get(IntelligenceItem, normal.id).status is ItemStatus.VERIFIED
+    assert db_session.get(IntelligenceItem, retracted.id).status is ItemStatus.CANDIDATE
+
+
+def test_submissions_status_returns_inflight(db_session, upload_client) -> None:
+    """轮询端点：返回近期素材 id/status JSON。"""
+    client, _, _ = upload_client
+    client.post(
+        "/submissions",
+        data={"medium_code": "meeting_discussion"},
+        files={"files": ("meeting.mp3", b"fake-audio-bytes", "audio/mpeg")},
+    )
+    db_session.expire_all()
+    material = db_session.scalars(select(Material)).one()
+
+    response = client.get("/submissions/status")
+
+    assert response.status_code == 200
+    assert response.json() == [{"id": material.id, "status": "processing"}]

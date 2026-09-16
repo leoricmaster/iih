@@ -115,3 +115,35 @@ document.querySelectorAll("dialog.modal").forEach((dlg) => {
   );
   sync();
 })();
+
+// 录入素材页：转写/抽取中素材的已等待计时 + 状态轮询自动刷新
+(() => {
+  const rows = [...document.querySelectorAll("[data-material-id]")];
+  if (!rows.length) return;
+  const inFlight = () =>
+    rows.filter((r) => ["processing", "extracting"].includes(r.dataset.status));
+  const fmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const tick = () => {
+    const now = Math.floor(Date.now() / 1000);
+    for (const r of inFlight()) {
+      const since = Number(r.dataset.since) || now;
+      const el = r.querySelector("[data-elapsed]");
+      if (el) el.textContent = `已等待 ${fmt(now - since)}`;
+    }
+  };
+  tick();
+  setInterval(tick, 1000);
+
+  if (!inFlight().length) return;
+  const baseline = Object.fromEntries(rows.map((r) => [r.dataset.materialId, r.dataset.status]));
+  setInterval(async () => {
+    try {
+      const res = await fetch("/submissions/status");
+      if (!res.ok) return;
+      const states = await res.json();
+      if (states.some((s) => baseline[s.id] && baseline[s.id] !== s.status)) location.reload();
+    } catch {
+      /* 瞬时网络失败忽略，下轮重试 */
+    }
+  }, 20000);
+})();

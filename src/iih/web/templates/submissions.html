@@ -30,9 +30,10 @@
   {% if materials %}
   {% for row in materials %}
   {% set m = row.m %}
-  <div style="border-bottom:1px solid #eee;padding:8px 0">
+  <div data-material-id="{{ m.id }}" data-status="{{ m.status.value }}" data-since="{{ m.updated_at.timestamp() | int }}" style="border-bottom:1px solid #eee;padding:8px 0">
     <span class="stmtline">{{ m.filename }}</span>
     <span class="pill {{ 'dashed' if m.status.value == 'transcribed' }}">{{ material_status_labels[m.status] }}</span>
+    {% if m.status.value in ('processing', 'extracting') %}<span class="muted" data-elapsed></span>{% endif %}
     <span class="muted">{{ m.medium.name }} · {{ m.collected_at | dtstr }}{% if m.duration_seconds %} · {{ m.duration_seconds // 60 }}分{% if m.duration_seconds % 60 %}{{ m.duration_seconds % 60 }}秒{% endif %}{% endif %}</span>
     {% if m.status.value in ('process_failed', 'extract_failed') %}
     <form method="post" action="/materials/{{ m.id }}/retry" style="display:inline">
@@ -57,12 +58,29 @@
         <button class="btn small primary">标记并抽取</button>
         <span class="muted">认不出的发言人可填描述性称呼（如「主机厂专家」），信源确认时可改名</span>
       </form>
+      <details class="markdetails">
+        <summary>编辑转写稿</summary>
+        <form method="post" action="/materials/{{ m.id }}/transcript">
+          <textarea name="transcript" rows="8">{{ row.transcript }}</textarea>
+          <button class="btn small primary">保存</button>
+        </form>
+      </details>
     </details>
     {% elif row.transcript %}
     <details class="markdetails">
       <summary>转写稿</summary>
       <pre class="transcript">{{ row.transcript }}</pre>
     </details>
+    {% if m.status.value == 'completed' %}
+    <details class="markdetails">
+      <summary>编辑转写稿</summary>
+      <form method="post" action="/materials/{{ m.id }}/transcript">
+        <textarea name="transcript" rows="8">{{ row.transcript }}</textarea>
+        <label><input type="checkbox" name="respecify" value="on"> 保存后重新抽取</label>
+        <button class="btn small primary">保存</button>
+      </form>
+    </details>
+    {% endif %}
     {% endif %}
   </div>
   {% endfor %}
