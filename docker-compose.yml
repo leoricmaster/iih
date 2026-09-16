@@ -10,6 +10,12 @@ services:
       LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com}
       LLM_API_KEY: ${LLM_API_KEY:-}
+      ALIYUN_ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID:-}
+      ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET:-}
+      TINGWU_APP_KEY: ${TINGWU_APP_KEY:-}
+      OSS_BUCKET: ${OSS_BUCKET:-}
+      OSS_REGION: ${OSS_REGION:-cn-hangzhou}
+      TINGWU_REGION_ID: ${TINGWU_REGION_ID:-cn-beijing}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
       interval: 5s

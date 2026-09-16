@@ -1,7 +1,7 @@
-"""原文快照对象存储（doc-04）：自动拉取条目的原始网页 HTML 存 MinIO。
+"""原文快照与素材原件对象存储（doc-04）：网页 HTML 快照 + 附件原件存 MinIO。
 
-键为内容寻址（原始 HTML 的 SHA-256）：同页多采共享对象、put 幂等；
-采集（判断层）写入、Web 快照回放读出，均经本模块，不散落客户端调用。
+键为内容寻址（内容的 SHA-256）：同内容多采共享对象、put 幂等；
+采集（判断层）写入、Web 快照回放与素材管线读出，均经本模块，不散落客户端调用。
 """
 
 import hashlib
@@ -10,11 +10,17 @@ import io
 from minio import Minio
 
 SNAPSHOT_CONTENT_TYPE = "text/html; charset=utf-8"
+AUDIO_CONTENT_TYPE = "audio/mpeg"
 
 
 def snapshot_key(html: str) -> str:
     """内容寻址对象键。"""
     return f"snapshots/{hashlib.sha256(html.encode('utf-8')).hexdigest()}.html"
+
+
+def material_key(data: bytes, ext: str) -> str:
+    """素材原件内容寻址键（doc-04 §1 materials/ 前缀）。"""
+    return f"materials/{hashlib.sha256(data).hexdigest()}.{ext}"
 
 
 class SnapshotStore:
@@ -53,6 +59,27 @@ class SnapshotStore:
         response = self._client.get_object(self._bucket, key)
         try:
             return response.read().decode("utf-8")
+        finally:
+            response.close()
+            response.release_conn()
+
+    def put_material(self, data: bytes, ext: str) -> str:
+        """存入素材原件（附件路径），返回内容寻址键。"""
+        key = material_key(data, ext)
+        self._client.put_object(
+            self._bucket,
+            key,
+            io.BytesIO(data),
+            length=len(data),
+            content_type=AUDIO_CONTENT_TYPE,
+        )
+        return key
+
+    def get_material(self, key: str) -> bytes:
+        """按键取回素材原件。"""
+        response = self._client.get_object(self._bucket, key)
+        try:
+            return response.read()
         finally:
             response.close()
             response.release_conn()

@@ -121,6 +121,7 @@
     <dt>原文快照</dt><dd>
       {% if item.snapshot_object_key %}<a href="/items/{{ item.id }}/snapshot" target="_blank" rel="noopener">存档页 ↗</a>
       {%- elif item.original_snapshot %}<details><summary>提交文本</summary><div class="snapbox">{{ item.original_snapshot }}</div></details>
+      {%- elif item.derivation %}<details><summary>转写稿（{{ item.material.filename }}）</summary><div class="snapbox">{{ item.derivation.output_text }}</div></details>
       {%- else %}—{% endif %}
     </dd>
     <dt>原文链接</dt><dd>{% if item.original_url %}<a href="{{ item.original_url }}" rel="noopener">{{ item.original_url }}</a>{% else %}—{% endif %}</dd>

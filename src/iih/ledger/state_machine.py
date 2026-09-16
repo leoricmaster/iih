@@ -12,11 +12,13 @@ from sqlalchemy.orm import Session
 
 from iih.ledger.duration import parse_duration_to_seconds
 from iih.ledger.models import (
+    Derivation,
     IntelligenceItem,
     IntelligenceRequirement,
     IntelligenceRequirementStatus,
     ItemMode,
     ItemStatus,
+    Material,
     Medium,
     Modality,
     Outlet,
@@ -171,6 +173,16 @@ class StateMachineExecutor:
             if duplicate is not None:
                 raise ProposalRejectedError([f"陈述与既有条目 #{duplicate} 内容重复，未重复落账"])
 
+        material: Material | None = None
+        derivation: Derivation | None = None
+        if proposal.payload.material_id is not None:
+            material = session.get(Material, proposal.payload.material_id)
+            if material is None:
+                raise ProposalRejectedError(["素材引用不可解析"])
+            derivation = session.get(Derivation, proposal.payload.derivation_id)
+            if derivation is None or derivation.material_id != material.id:
+                raise ProposalRejectedError(["派生级引用不可解析或不属于该素材"])
+
         item = IntelligenceItem(
             statement=proposal.payload.statement,
             status=ItemStatus.LEAD,  # 状态前置 [*] → 线索（doc-02 §4.3）
@@ -185,6 +197,8 @@ class StateMachineExecutor:
             content_fingerprint=proposal.payload.content_fingerprint,
             original_url=proposal.payload.original_url,
             snapshot_object_key=proposal.payload.snapshot_object_key,
+            material=material,
+            derivation=derivation,
         )
         session.add(item)
         session.flush()
@@ -216,9 +230,9 @@ class StateMachineExecutor:
             reasons.append("溯源缺失：载体")
         if not provenance.medium_code.strip():
             reasons.append("溯源缺失：媒介")
-        if (
-            proposal.payload.mode is ItemMode.MANUAL
-            and not (provenance.original_snapshot or "").strip()
+        if proposal.payload.mode is ItemMode.MANUAL and not (
+            (provenance.original_snapshot or "").strip()
+            or (proposal.payload.material_id and proposal.payload.derivation_id)
         ):
             reasons.append("溯源缺失：原文快照")
         if (

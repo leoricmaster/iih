@@ -18,8 +18,9 @@ class ProvenanceData(BaseModel):
     """溯源五要素（doc-05 §5）：载体+媒介+采集时间+原文快照+信源/途径归因。
 
     完备性由状态机执行器校验（无溯源不落账）。
-    原文快照双轨：人工提交 = 提交文本（original_snapshot）；自动拉取 = 原始网页
-    HTML 对象（snapshot_object_key，入 payload）。
+    原文快照三轨（doc-04 §1）：人工提交 = 提交文本（original_snapshot）；自动拉取 =
+    原始网页 HTML 对象（snapshot_object_key，入 payload）；附件路径 = 挂素材 +
+    所自派生级（material_id/derivation_id，入 payload），条目不内嵌快照。
     """
 
     modality_code: str  # 载体
@@ -41,6 +42,9 @@ class IntelligenceItemNewPayload(BaseModel):
     content_fingerprint: str | None = None
     original_url: str | None = None
     snapshot_object_key: str | None = None  # 原文快照对象键（原始网页 HTML）
+    # 附件路径专用（doc-04 §1 第三轨）：挂素材 + 所自派生级
+    material_id: int | None = None
+    derivation_id: int | None = None
 
 
 class Proposal(BaseModel):

@@ -130,7 +130,7 @@ def test_submit_with_missing_fields_is_blocked(client: TestClient, db_session) -
 
     assert response.status_code == 200  # 重渲染表单并提示
     assert "请选择媒介" in response.text
-    assert "请填写纪要内容" in response.text
+    assert "请上传附件，或填写文字纪要" in response.text
     assert db_session.scalars(select(IntelligenceItem)).first() is None  # 不生成提案
 
 

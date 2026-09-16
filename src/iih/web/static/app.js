@@ -50,6 +50,53 @@ document.querySelectorAll("dialog.modal").forEach((dlg) => {
   });
 })();
 
+// 提交素材附件区：点选 / 拖拽多文件，列表可移除（原型 renderSubmit）
+(() => {
+  const dz = document.querySelector("[data-dropzone]");
+  if (!dz) return;
+  const input = dz.querySelector("input[type=file]");
+  const list = document.querySelector("[data-filelist]");
+  const dt = new DataTransfer();
+  const render = () => {
+    input.files = dt.files;
+    list.innerHTML = "";
+    [...dt.files].forEach((f, i) => {
+      const row = document.createElement("div");
+      row.className = "filerow";
+      const icon = document.createElement("span");
+      icon.className = "muted";
+      icon.textContent = "📎";
+      const name = document.createElement("span");
+      name.textContent = f.name;
+      const pill = document.createElement("span");
+      pill.className = "pill";
+      pill.textContent = "音频";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn small";
+      btn.textContent = "移除";
+      btn.addEventListener("click", () => {
+        dt.items.remove(i);
+        render();
+      });
+      row.append(icon, name, pill, btn);
+      list.appendChild(row);
+    });
+  };
+  dz.addEventListener("click", () => input.click());
+  input.addEventListener("change", () => {
+    [...input.files].forEach((f) => dt.items.add(f));
+    input.value = "";
+    render();
+  });
+  dz.addEventListener("dragover", (e) => e.preventDefault());
+  dz.addEventListener("drop", (e) => {
+    e.preventDefault();
+    [...e.dataTransfer.files].forEach((f) => dt.items.add(f));
+    render();
+  });
+})();
+
 // 反馈单表单：选「事实错误」时理由转必填并切换提示（后端校验为准）
 (() => {
   const form = document.querySelector("form[data-feedback]");

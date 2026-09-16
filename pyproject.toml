@@ -17,6 +17,8 @@ dependencies = [
     "httpx>=0.28",
     "beautifulsoup4>=4.12",
     "minio>=7.2",
+    "alibabacloud-tingwu20230930>=2.0.26",
+    "oss2>=2.19.1",
 ]
 
 [dependency-groups]
@@ -51,6 +53,11 @@ no_implicit_optional = true
 check_untyped_defs = true
 warn_redundant_casts = true
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["oss2.*", "alibabacloud_tingwu20230930.*", "alibabacloud_tea_openapi.*"]
+follow_imports = "skip"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

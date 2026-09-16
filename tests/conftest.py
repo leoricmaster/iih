@@ -19,6 +19,7 @@ from iih.agents.collector import (
 )
 from iih.agents.reviewer import ReviewJudgmentResult
 from iih.config import get_settings
+from iih.tools.asr import TingwuAsrError, TranscriptionResult
 
 TEST_DB_NAME = "iih_test"
 
@@ -71,6 +72,7 @@ class FakeSnapshotStore:
 
     def __init__(self) -> None:
         self.objects: dict[str, str] = {}
+        self.materials: dict[str, bytes] = {}
 
     def put_html(self, html: str) -> str:
         digest = hashlib.sha256(html.encode("utf-8")).hexdigest()
@@ -81,10 +83,63 @@ class FakeSnapshotStore:
     def get_html(self, key: str) -> str:
         return self.objects[key]
 
+    def put_material(self, data: bytes, ext: str) -> str:
+        digest = hashlib.sha256(data).hexdigest()
+        key = f"materials/{digest}.{ext}"
+        self.materials[key] = data
+        return key
+
+    def get_material(self, key: str) -> bytes:
+        return self.materials[key]
+
 
 @pytest.fixture
 def fake_snapshot_store() -> FakeSnapshotStore:
     return FakeSnapshotStore()
+
+
+class FakeAsr:
+    """TingwuAsr 替身：submit 派任务号并记录；check 未 finish 返回 None，finish 后出稿。"""
+
+    def __init__(
+        self,
+        *,
+        transcript: str = "[00:00] 发言人1：W 公司与 Z 集团签署合资协议，Q4 设立合资公司",
+        duration_seconds: int = 300,
+        submit_error: str = "",
+        check_error: str = "",
+    ) -> None:
+        self.transcript = transcript
+        self.duration_seconds = duration_seconds
+        self.submit_error = submit_error
+        self.check_error = check_error
+        self.task_seq = 0
+        self.submitted: list[bytes] = []
+        self.attempts: list[bytes] = []  # 含失败尝试（提交即计数）
+        self._done: set[str] = set()
+
+    def submit(self, audio: bytes, filename: str) -> str:
+        self.attempts.append(audio)
+        if self.submit_error:
+            raise TingwuAsrError(self.submit_error)
+        self.task_seq += 1
+        self.submitted.append(audio)
+        return f"fake-task-{self.task_seq}"
+
+    def finish(self, task_id: str) -> None:
+        self._done.add(task_id)
+
+    def check(self, task_id: str) -> TranscriptionResult | None:
+        if self.check_error:
+            raise TingwuAsrError(self.check_error)
+        if task_id not in self._done:
+            return None
+        return TranscriptionResult(text=self.transcript, duration_seconds=self.duration_seconds)
+
+
+@pytest.fixture
+def fake_asr() -> FakeAsr:
+    return FakeAsr()
 
 
 def make_selection_article() -> ArticleSelectionResult:

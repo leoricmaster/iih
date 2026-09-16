@@ -57,6 +57,25 @@ class ItemMode(enum.StrEnum):
     AUTOMATED = "automated"  # 自动拉取
 
 
+class MaterialStatus(enum.StrEnum):
+    """素材处理状态（doc-02 §4.5，附件路径）。"""
+
+    UPLOADED = "uploaded"  # 已上传：原件入对象存储
+    PROCESSING = "processing"  # 加工中：管线任务已提交（ASR/OCR/解析）
+    EXTRACTING = "extracting"  # 抽取中：加工派生落账，采集智能体抽取陈述
+    COMPLETED = "completed"  # 已完成：陈述落账（零陈述亦完成留痕）
+    PROCESS_FAILED = "process_failed"  # 加工失败：留痕，可重试
+    EXTRACT_FAILED = "extract_failed"  # 抽取失败：留痕，可重试
+
+
+class DerivationProducer(enum.StrEnum):
+    """派生产者类型（术语表 §六）。"""
+
+    TOOL = "tool"  # 工具（ASR/OCR/解析）
+    AGENT = "agent"  # 智能体（LLM）
+    HUMAN = "human"  # 人工
+
+
 class IntelligenceRequirementStatus(enum.StrEnum):
     """情报需求状态（术语表 §一；迁移与边界见 doc-02 §4.1）。"""
 
@@ -204,6 +223,58 @@ class Outlet(Base):
     medium: Mapped["Medium | None"] = relationship()
 
 
+class Material(Base):
+    """素材：流水线最源头实体（术语表 §六）——不可变原件入对象存储，附件路径的处理状态机载体。
+
+    既有文字/网页路径不建素材（迁移另议，DRAFT-08）。
+    """
+
+    __tablename__ = "material"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    modality_id: Mapped[int] = mapped_column(ForeignKey("modality.id"))
+    medium_id: Mapped[int] = mapped_column(ForeignKey("medium.id"))
+    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    object_key: Mapped[str] = mapped_column(String(200))  # 原件对象键（materials/ 内容寻址）
+    filename: Mapped[str] = mapped_column(String(500))  # 上传文件名
+    duration_seconds: Mapped[int | None] = mapped_column()  # 音频时长（ASR 计量）
+    status: Mapped[MaterialStatus] = mapped_column(
+        _sa_enum(MaterialStatus), default=MaterialStatus.UPLOADED, index=True
+    )
+    failure_reason: Mapped[str | None] = mapped_column(Text)  # 加工/抽取失败留痕
+    retry_count: Mapped[int] = mapped_column(default=0)
+    external_task_id: Mapped[str | None] = mapped_column(String(200))  # 外部转写任务号
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    modality: Mapped["Modality"] = relationship()
+    medium: Mapped["Medium"] = relationship()
+    derivations: Mapped[list["Derivation"]] = relationship(
+        back_populates="material", cascade="all, delete-orphan"
+    )
+
+
+class Derivation(Base):
+    """派生：自素材或上一级派生加工出的逐级形态（术语表 §六）——记生产者与产物，只追加不编辑。"""
+
+    __tablename__ = "derivation"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    material_id: Mapped[int] = mapped_column(ForeignKey("material.id"), index=True)
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("derivation.id"))  # 派生自上一级
+    producer: Mapped[DerivationProducer] = mapped_column(_sa_enum(DerivationProducer))
+    producer_ref: Mapped[str] = mapped_column(String(200))  # 生产者标识（模型/智能体/人工）
+    output_text: Mapped[str | None] = mapped_column(Text)  # 产物文本（如转写稿）
+    output_object_key: Mapped[str | None] = mapped_column(String(200))  # 产物对象引用
+    duration_seconds: Mapped[int | None] = mapped_column()  # 生产耗时计量（ASR：音频秒数）
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    material: Mapped["Material"] = relationship(back_populates="derivations")
+    parent: Mapped["Derivation | None"] = relationship(remote_side=[id])
+
+
 class LlmCall(Base):
     """LLM 调用计量（技术架构 §1）：智能体/对象/token/时间/模型。"""
 
@@ -250,6 +321,10 @@ class IntelligenceItem(Base):
         String(120)
     )  # 原始网页 HTML 对象键（MinIO）
 
+    # 附件路径（doc-04 §1 原文快照第三轨）：挂素材 + 所自派生级，不内嵌快照
+    material_id: Mapped[int | None] = mapped_column(ForeignKey("material.id"), index=True)
+    derivation_id: Mapped[int | None] = mapped_column(ForeignKey("derivation.id"))
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -257,6 +332,8 @@ class IntelligenceItem(Base):
 
     modality: Mapped["Modality"] = relationship()
     medium: Mapped["Medium"] = relationship()
+    material: Mapped["Material | None"] = relationship()
+    derivation: Mapped["Derivation | None"] = relationship()
     source: Mapped["Source | None"] = relationship(foreign_keys=[source_id])
     outlet: Mapped["Outlet | None"] = relationship()
     provenance_source: Mapped["Source | None"] = relationship(foreign_keys=[provenance_source_id])

@@ -1,8 +1,9 @@
 """采集智能体 Collector（doc-06 §3）· 最简归因版：人工提交路径 + 自动拉取路径。
 
-人工提交不经定向任务化：文字纪要经 LLM 抽取陈述 + 归因信源与途径（溯源五要素），
-每条陈述一个「情报条目新建」提案；落账由状态机执行器执行（本智能体不直接写账）。
-范围：仅文字载体（附件管线 IIH-01.09~11、实体提及 IIH-01.12 另行剥离）。
+人工提交不经定向任务化：文字纪要与附件转写稿（IIH-02.01 录音）共用 LLM 抽取陈述
++ 归因信源与途径（溯源五要素），每条陈述一个「情报条目新建」提案；
+落账由状态机执行器执行（本智能体不直接写账）。附件路径原文快照走第三轨
+（挂素材 + 派生级，doc-04 §1）。
 
 自动拉取（IIH-01.15 两跳）：入口页选链 → 抓文章页 → 文章页抽陈述；
 原文 URL 即实际抓取的文章页地址（确定性），原文快照为原始 HTML 存对象存储。
@@ -19,9 +20,11 @@ from sqlalchemy.orm import Session
 
 from iih.agents.director import CollectionTask
 from iih.ledger.models import (
+    Derivation,
     IntelligenceItem,
     ItemMode,
     LlmCall,
+    Material,
     Medium,
     Outlet,
     ProvenanceChainNode,
@@ -154,30 +157,10 @@ class Collector:
         if medium is None:
             raise ValueError(f"媒介不存在：{medium_code}")
 
-        extraction, completion = self.llm.chat.completions.create_with_completion(
-            response_model=ManualExtractionResult,
-            messages=[
-                {"role": "system", "content": MANUAL_EXTRACTION_SYSTEM_PROMPT},
-                {"role": "user", "content": f"媒介：{medium.name}\n素材文本：\n{statement}"},
-            ],
-            model=self.model,
-            temperature=0,  # 抽取需可复现：同输入应同输出
-        )
-        self._meter(target="manual_submission", usage=completion.usage)
-
-        statements = [s for s in extraction.statements if s.statement.strip()][:20]
+        statements = self._extract_statements(medium=medium, text=statement)
         if not statements:
             return []
-
-        attribution, completion = self.llm.chat.completions.create_with_completion(
-            response_model=AttributionResult,
-            messages=[
-                {"role": "system", "content": ATTRIBUTION_SYSTEM_PROMPT},
-                {"role": "user", "content": f"媒介：{medium.name}\n陈述：{statement}"},
-            ],
-            model=self.model,
-        )
-        self._meter(target="manual_submission", usage=completion.usage)
+        attribution = self._attribute(medium=medium, text=statement)
 
         collected_at = datetime.now(UTC)
         return [
@@ -189,8 +172,8 @@ class Collector:
                     content_fingerprint=fingerprint(s.statement.strip()),
                 ),
                 provenance=ProvenanceData(
-                    modality_code="text",  # 本故事范围：仅文字载体
-                    medium_code=medium_code,
+                    modality_code="text",
+                    medium_code=medium.code,
                     collected_at=collected_at,
                     original_snapshot=statement,  # 文字载体：原文快照 = 提交文本
                     source_name=attribution.source_name,
@@ -201,6 +184,70 @@ class Collector:
             )
             for s in statements
         ]
+
+    def submit_material(
+        self, *, material: Material, derivation: Derivation
+    ) -> list[IntelligenceItemNewProposal]:
+        """附件路径（IIH-02.01 录音）：转写稿派生 → LLM 抽取陈述 + 最简归因 → 线索提案。
+
+        原文快照走第三轨（挂素材 + 派生级，doc-04 §1），条目不内嵌转写稿；
+        采集时间取素材采集时间，载体取素材载体。
+        """
+        transcript = derivation.output_text or ""
+        statements = self._extract_statements(medium=material.medium, text=transcript)
+        if not statements:
+            return []
+        attribution = self._attribute(medium=material.medium, text=transcript)
+
+        return [
+            IntelligenceItemNewProposal(
+                payload=IntelligenceItemNewPayload(
+                    statement=s.statement.strip(),
+                    mode=ItemMode.MANUAL,
+                    event_time=_as_utc(s.event_time),
+                    content_fingerprint=fingerprint(s.statement.strip()),
+                    material_id=material.id,
+                    derivation_id=derivation.id,
+                ),
+                provenance=ProvenanceData(
+                    modality_code=material.modality.code,
+                    medium_code=material.medium.code,
+                    collected_at=material.collected_at,
+                    source_name=attribution.source_name,
+                    source_type=attribution.source_type,
+                    outlet_name=attribution.outlet_name or None,
+                ),
+                rationale=f"{s.rationale}（归因：{attribution.rationale}）",
+            )
+            for s in statements
+        ]
+
+    def _extract_statements(self, *, medium: Medium, text: str) -> list[ManualStatement]:
+        """纪要抽取（文字纪要与附件转写稿共用）：空结果不计量归因、直接返回。"""
+        extraction, completion = self.llm.chat.completions.create_with_completion(
+            response_model=ManualExtractionResult,
+            messages=[
+                {"role": "system", "content": MANUAL_EXTRACTION_SYSTEM_PROMPT},
+                {"role": "user", "content": f"媒介：{medium.name}\n素材文本：\n{text}"},
+            ],
+            model=self.model,
+            temperature=0,  # 抽取需可复现：同输入应同输出
+        )
+        self._meter(target="manual_submission", usage=completion.usage)
+        return [s for s in extraction.statements if s.statement.strip()][:20]
+
+    def _attribute(self, *, medium: Medium, text: str) -> AttributionResult:
+        """最简归因：整份素材文本一次归因（doc-06 §3）。"""
+        attribution, completion = self.llm.chat.completions.create_with_completion(
+            response_model=AttributionResult,
+            messages=[
+                {"role": "system", "content": ATTRIBUTION_SYSTEM_PROMPT},
+                {"role": "user", "content": f"媒介：{medium.name}\n陈述：{text}"},
+            ],
+            model=self.model,
+        )
+        self._meter(target="manual_submission", usage=completion.usage)
+        return attribution
 
     def collect_outlet(
         self,

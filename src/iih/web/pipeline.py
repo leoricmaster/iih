@@ -22,6 +22,7 @@ def run_round_with_lock(lock: threading.Lock, session_factory: sessionmaker[Sess
         from iih.agents.llm import make_llm_client
         from iih.config import get_settings
         from iih.pipeline import run_pipeline_round
+        from iih.tools.asr import make_tingwu_asr
         from iih.tools.snapshot_store import make_snapshot_store
 
         settings = get_settings()
@@ -30,6 +31,7 @@ def run_round_with_lock(lock: threading.Lock, session_factory: sessionmaker[Sess
             session_factory=session_factory,
             llm=make_llm_client(settings),
             store=make_snapshot_store(settings),
+            asr=make_tingwu_asr(settings),
         )
         return summary.flash()
     finally:

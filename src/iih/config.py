@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     snapshot_bucket: str = "iih-snapshots"
     snapshot_secure: bool = False
 
+    # 听悟 ASR（IIH-02.01 录音转写）：阿里云账号 AK + 听悟 AppKey + OSS 中转桶（按归属分组命名）
+    aliyun_access_key_id: str = ""
+    aliyun_access_key_secret: str = ""
+    tingwu_app_key: str = ""
+    oss_bucket: str = ""
+    oss_region: str = "cn-hangzhou"
+    tingwu_region_id: str = "cn-beijing"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 

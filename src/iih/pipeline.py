@@ -1,4 +1,4 @@
-"""流水线一轮执行（doc-06 §2–§5 全链）：采集 → 审查 → 核实评级。
+"""流水线一轮执行（doc-06 §2–§5 全链）：素材加工 → 采集 → 审查 → 核实评级。
 
 供 Web 层（「立即运行一轮」按钮、后台自动循环）与 CLI 复用；
 每条 fetch/collect/review/verify 独立事务，单条失败不阻断其余。
@@ -7,8 +7,9 @@
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any, cast
 
-from sqlalchemy import select
+from sqlalchemy import CursorResult, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from iih.agents.collector import Collector
@@ -17,19 +18,30 @@ from iih.agents.reviewer import Reviewer
 from iih.agents.verifier import Verifier
 from iih.config import Settings
 from iih.ledger.models import (
+    Derivation,
+    DerivationProducer,
     IntelligenceItem,
     ItemStatus,
+    Material,
+    MaterialStatus,
     ReviewDecisionEnum,
     VerificationOutcome,
 )
 from iih.ledger.proposal import IntelligenceItemNewProposal
 from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
+from iih.tools.asr import TingwuAsr, TingwuAsrError
 from iih.tools.fetcher import FetcherError, fetch
 from iih.tools.snapshot_store import SnapshotStore
 
 logger = logging.getLogger("iih.pipeline")
 
 LogFn = Callable[[str], None]
+
+MAX_MATERIAL_RETRIES = 3  # 自动重试上限，达上限转人工（重试按钮）
+
+DONE = "done"  # 本步推进到完成（素材级终态）
+PENDING = "pending"  # 本步未完成（在途 / 未抢占到）
+FAILED = "failed"  # 本步失败留痕（AC#2）
 
 
 @dataclass
@@ -48,18 +60,282 @@ class RoundSummary:
     verified: int = 0
     undetermined: int = 0
     verify_failed: int = 0
+    material_done: int = 0
+    material_failed: int = 0
     errors: list[str] = field(default_factory=list)
 
     def flash(self) -> str:
         """UI 一行摘要。"""
+        material_part = (
+            f"；素材 {self.material_done + self.material_failed}"
+            f"（完成 {self.material_done}、失败 {self.material_failed}）"
+            if self.material_done or self.material_failed
+            else ""
+        )
         return (
             f"运行一轮完成：任务 {self.tasks}（新建 {self.new_items}、追加节点 "
             f"{self.appended_nodes}、跳过 {self.collect_skipped}、失败 {self.collect_failed}）；"
             f"审查 {self.review_passed + self.review_rejected}（通过 {self.review_passed}、"
             f"否决 {self.review_rejected}）；核实 {self.verified + self.undetermined}"
             f"（已核实 {self.verified}、存疑 {self.undetermined}）"
+            + material_part
             + (f"；失败 {len(self.errors)} 项" if self.errors else "")
         )
+
+
+def _claim(
+    session: Session, material_id: int, from_statuses: tuple[MaterialStatus, ...], **values
+) -> bool:
+    """条件抢占（乐观迁移）：from_statuses 内才写入，并发方后到即失效。"""
+    result = cast(
+        "CursorResult[Any]",
+        session.execute(
+            update(Material)
+            .where(Material.id == material_id, Material.status.in_(from_statuses))
+            .values(**values)
+        ),
+    )
+    session.commit()
+    return result.rowcount == 1
+
+
+def _material_fail(
+    session: Session, material: Material, *, to_status: MaterialStatus, reason: str
+) -> None:
+    """失败留痕（AC#2）：状态 + 原因 + 重试计数，可被循环自动重试或人工重试。"""
+    claimed = _claim(
+        session,
+        material.id,
+        (material.status,),
+        status=to_status,
+        failure_reason=reason[:2000],
+        retry_count=material.retry_count + 1,
+    )
+    if not claimed:
+        session.rollback()
+
+
+def process_material(
+    *,
+    settings: Settings,
+    session_factory: sessionmaker[Session],
+    llm,
+    asr: TingwuAsr,
+    store: SnapshotStore | None,
+    material_id: int,
+    log: LogFn | None = None,
+) -> str:
+    """单个素材推进一步（doc-02 §4.5）：提交 / 轮询 / 抽取，返回 done | pending | failed。
+
+    每素材独立事务；上传端点（事件驱动）与循环兜底共用本入口，条件抢占防双跑；
+    失败留痕不抛出（AC#2 不静默、不产半成品——线索仅在转写稿派生存在后落账）。
+    """
+    say = log or (lambda _msg: None)
+    with session_factory() as session:
+        material = session.get(Material, material_id)
+        if material is None:
+            return PENDING
+
+        # 加工：提交转写任务，或轮询已提交任务
+        if material.status in (
+            MaterialStatus.UPLOADED,
+            MaterialStatus.PROCESSING,
+            MaterialStatus.PROCESS_FAILED,
+        ):
+            if material.status is MaterialStatus.PROCESSING and material.external_task_id:
+                try:
+                    result = asr.check(material.external_task_id)
+                except TingwuAsrError as exc:
+                    _material_fail(
+                        session, material, to_status=MaterialStatus.PROCESS_FAILED, reason=str(exc)
+                    )
+                    say(f"  [失败] 素材 #{material.id} 转写：{exc}")
+                    return FAILED
+                if result is None:
+                    return PENDING  # 未完成，下轮再查
+                # 派生落账与状态迁移同事务：抢占失败即他方已办
+                transitioned = (
+                    cast(
+                        "CursorResult[Any]",
+                        session.execute(
+                            update(Material)
+                            .where(
+                                Material.id == material.id,
+                                Material.status == MaterialStatus.PROCESSING,
+                            )
+                            .values(
+                                status=MaterialStatus.EXTRACTING,
+                                duration_seconds=result.duration_seconds,
+                                failure_reason=None,
+                            )
+                        ),
+                    ).rowcount
+                    == 1
+                )
+                if transitioned:
+                    session.add(
+                        Derivation(
+                            material_id=material.id,
+                            producer=DerivationProducer.TOOL,
+                            producer_ref="tingwu-offline",
+                            output_text=result.text,
+                            duration_seconds=result.duration_seconds,
+                        )
+                    )
+                session.commit()
+                if not transitioned:
+                    return PENDING
+                say(f"  [转写完成] 素材 #{material.id}：{result.duration_seconds}s 转写稿已派生")
+                session.refresh(material)
+            else:
+                # uploaded / process_failed（含自动重试）/ processing 丢任务号（崩溃恢复）→ 提交
+                if (
+                    material.status is MaterialStatus.PROCESS_FAILED
+                    and material.retry_count >= MAX_MATERIAL_RETRIES
+                ):
+                    return PENDING  # 达上限，转人工
+                if not _claim(
+                    session,
+                    material.id,
+                    (
+                        MaterialStatus.UPLOADED,
+                        MaterialStatus.PROCESS_FAILED,
+                        MaterialStatus.PROCESSING,
+                    ),
+                    status=MaterialStatus.PROCESSING,
+                    external_task_id=None,
+                ):
+                    return PENDING
+                if store is None:
+                    return PENDING
+                session.expire(material)
+                try:
+                    audio = store.get_material(material.object_key)
+                    task_id = asr.submit(audio, material.filename)
+                except Exception as exc:  # ASR/对象存储不可用：留痕待重试
+                    _material_fail(
+                        session, material, to_status=MaterialStatus.PROCESS_FAILED, reason=str(exc)
+                    )
+                    say(f"  [失败] 素材 #{material.id} 提交转写：{exc}")
+                    return FAILED
+                _claim(
+                    session,
+                    material.id,
+                    (MaterialStatus.PROCESSING,),
+                    external_task_id=task_id,
+                )
+                say(f"  [转写中] 素材 #{material.id} {material.filename}")
+                return PENDING
+
+        # 抽取：转写稿派生 → 陈述落账（零陈述亦完成留痕）
+        if material.status in (MaterialStatus.EXTRACTING, MaterialStatus.EXTRACT_FAILED):
+            if (
+                material.status is MaterialStatus.EXTRACT_FAILED
+                and material.retry_count >= MAX_MATERIAL_RETRIES
+            ):
+                return PENDING  # 达上限，转人工
+            derivation = session.scalars(
+                select(Derivation)
+                .where(Derivation.material_id == material.id, Derivation.output_text.isnot(None))
+                .order_by(Derivation.id.desc())
+            ).first()
+            if derivation is None:
+                _material_fail(
+                    session,
+                    material,
+                    to_status=MaterialStatus.EXTRACT_FAILED,
+                    reason="无可抽取的转写稿派生",
+                )
+                return FAILED
+            collector = Collector(llm=llm, session=session, model=settings.llm_model)
+            try:
+                proposals = collector.submit_material(material=material, derivation=derivation)
+            except Exception as exc:  # LLM 调用失败等
+                _material_fail(
+                    session,
+                    material,
+                    to_status=MaterialStatus.EXTRACT_FAILED,
+                    reason=f"抽取失败：{exc}",
+                )
+                say(f"  [失败] 素材 #{material.id} 抽取：{exc}")
+                return FAILED
+            created = 0
+            for proposal in proposals:
+                try:
+                    StateMachineExecutor().execute(proposal, session=session)
+                    created += 1
+                except ProposalRejectedError:
+                    pass  # 重复陈述等逐条驳回，不算素材失败
+            claimed = _claim(
+                session,
+                material.id,
+                (MaterialStatus.EXTRACTING, MaterialStatus.EXTRACT_FAILED),
+                status=MaterialStatus.COMPLETED,
+                retry_count=0,
+                failure_reason=None,
+            )
+            if not claimed:
+                return PENDING
+            say(f"  [完成] 素材 #{material.id}：落账 {created} 条线索")
+            return DONE
+
+        return PENDING
+
+
+def run_material_stage(
+    *,
+    settings: Settings,
+    session_factory: sessionmaker[Session],
+    llm,
+    asr: TingwuAsr | None,
+    store: SnapshotStore | None = None,
+    summary: RoundSummary | None = None,
+    log: LogFn | None = None,
+) -> None:
+    """素材段（doc-02 §4.5）：兜底推进全部在途素材。
+
+    上传端点已内联即时提交（事件驱动）；本段接手未提交的 uploaded、轮询 processing、
+    抽取 extracting、自动重试未达上限的失败素材。ASR 未配置则跳过（素材留队不失败）。
+    """
+    say = log or (lambda _msg: None)
+    if asr is None:
+        say("听悟 ASR 未配置，素材段跳过。")
+        return
+
+    with session_factory() as session:
+        statuses = (
+            MaterialStatus.UPLOADED,
+            MaterialStatus.PROCESSING,
+            MaterialStatus.EXTRACTING,
+            MaterialStatus.PROCESS_FAILED,
+            MaterialStatus.EXTRACT_FAILED,
+        )
+        ids = list(session.scalars(select(Material.id).where(Material.status.in_(statuses))).all())
+    if not ids:
+        return
+
+    say(f"在途素材 {len(ids)} 份。")
+    for material_id in ids:
+        try:
+            outcome = process_material(
+                settings=settings,
+                session_factory=session_factory,
+                llm=llm,
+                asr=asr,
+                store=store,
+                material_id=material_id,
+                log=log,
+            )
+            if summary is not None:
+                if outcome == DONE:
+                    summary.material_done += 1
+                elif outcome == FAILED:
+                    summary.material_failed += 1
+        except Exception as exc:  # 防单素材异常阻断整段
+            if summary is not None:
+                summary.material_failed += 1
+                summary.errors.append(f"素材 #{material_id} 处理异常：{exc}")
+            say(f"  [错误] 素材 #{material_id}：{exc}")
 
 
 def run_collect_stage(
@@ -268,10 +544,20 @@ def run_pipeline_round(
     session_factory: sessionmaker[Session],
     llm,
     store: SnapshotStore | None = None,
+    asr: TingwuAsr | None = None,
     log: LogFn | None = None,
 ) -> RoundSummary:
-    """完整一轮：采集 → 审查 → 核实。"""
+    """完整一轮：素材加工 → 采集 → 审查 → 核实。"""
     summary = RoundSummary()
+    run_material_stage(
+        settings=settings,
+        session_factory=session_factory,
+        llm=llm,
+        asr=asr,
+        store=store,
+        summary=summary,
+        log=log,
+    )
     run_collect_stage(
         settings=settings,
         session_factory=session_factory,
