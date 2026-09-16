@@ -1,10 +1,10 @@
 ---
 id: IIH-02.01
 title: 录音附件管线
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-11 09:24'
-updated_date: '2026-09-15 15:31'
+updated_date: '2026-09-16 12:08'
 labels:
   - pipeline
   - ui
@@ -17,7 +17,7 @@ references:
   - prototype/index.html 录入素材页
 parent_task_id: IIH-02
 type: feature
-ordinal: 15001
+ordinal: 19002
 ---
 
 ## Description
