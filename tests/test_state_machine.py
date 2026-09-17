@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from iih.ledger.models import (
+    Entry,
     IntelligenceItem,
     IntelligenceRequirement,
     IntelligenceRequirementStatus,
@@ -13,7 +14,6 @@ from iih.ledger.models import (
     ItemStatus,
     Medium,
     Modality,
-    Outlet,
     ProvenanceChainNode,
     RejectionReasonEnum,
     ReviewDecision,
@@ -63,7 +63,6 @@ def make_proposal(**overrides) -> IntelligenceItemNewProposal:
         "original_snapshot": STATEMENT,
         "source_name": "W 公司",
         "source_type": "company",
-        "outlet_name": "渠道大会现场",
     } | overrides.pop("provenance", {})
     payload_fields = {"statement": STATEMENT, "mode": ItemMode.MANUAL} | overrides.pop(
         "payload", {}
@@ -86,17 +85,15 @@ def test_commit_lands_lead_with_full_provenance(db_session) -> None:
     assert item.status is ItemStatus.LEAD
     assert item.mode is ItemMode.MANUAL
     assert item.statement == STATEMENT
-    # 溯源五要素：载体 + 媒介 + 采集时间 + 原文快照 + 信源/途径归因
+    # 溯源五要素：载体 + 媒介 + 采集时间 + 原文快照 + 信源归因
     assert item.modality.code == "text"
     assert item.medium.code == "meeting_discussion"
     assert item.collected_at == datetime(2026, 9, 11, 10, 0, tzinfo=UTC)
     assert item.original_snapshot == STATEMENT
-    # 信源/途径归因：新信源记待确认，不入正式池（decision-05）
+    # 信源归因：新信源记待确认，不入正式池（decision-05）
     assert item.source is not None
     assert item.source.name == "W 公司"
     assert item.source.confirmed is False
-    assert item.outlet is not None
-    assert item.outlet.name == "渠道大会现场"
 
 
 def test_reject_when_provenance_incomplete_leaves_no_rows(db_session) -> None:
@@ -152,13 +149,13 @@ def test_reject_when_any_provenance_element_blank(db_session) -> None:
     assert "溯源缺失：原文快照" in excinfo.value.reasons
 
 
-def test_existing_source_and_outlet_are_reused(db_session) -> None:
+def test_existing_source_is_reused(db_session) -> None:
     first = StateMachineExecutor().execute(make_proposal(), session=db_session)
     second = StateMachineExecutor().execute(make_proposal(), session=db_session)
 
     assert first.item_id != second.item_id
     assert len(db_session.scalars(select(Source)).unique().all()) == 1
-    assert len(db_session.scalars(select(Outlet)).unique().all()) == 1
+    assert db_session.scalars(select(Entry)).all() == []  # 线下归因不建采集入口
 
 
 def test_rejects_unknown_proposal_type(db_session) -> None:
@@ -444,16 +441,11 @@ def test_source_confirm_with_rename_lands_new_name(db_session) -> None:
 
 
 def test_source_confirm_rename_merges_into_confirmed_source(db_session) -> None:
-    """对应 IIH-05.01 AC#4：撞既有已确认信源名 → 并入（条目/节点/途径迁移、同名途径复用）。"""
+    """对应 IIH-05.01 AC#4：撞既有已确认信源名 → 并入（条目/节点迁移，信用档沿用目标）。"""
     target = Source(name="三一集团", type=SourceType.COMPANY, confirmed=True, credit="A")
-    target_outlet = Outlet(source=target, name="官网", entry="https://sany.example")
-    db_session.add_all([target, target_outlet])
+    db_session.add(target)
     db_session.flush()
     pending = _seed_pending_source(db_session, name="三一")
-    pending_outlet = Outlet(source=pending, name="官网")  # 与目标途径同名 → 复用
-    pending_outlet2 = Outlet(source=pending, name="渠道大会现场")  # 异名 → 迁移
-    db_session.add_all([pending_outlet, pending_outlet2])
-    db_session.flush()
     medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).first()
     modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).first()
     assert medium is not None and modality is not None
@@ -466,7 +458,6 @@ def test_source_confirm_rename_merges_into_confirmed_source(db_session) -> None:
         collected_at=datetime(2026, 9, 15, 9, 0, tzinfo=UTC),
         original_snapshot="原文",
         source=pending,
-        outlet=pending_outlet,
     )
     db_session.add(item)
     db_session.flush()
@@ -474,7 +465,6 @@ def test_source_confirm_rename_merges_into_confirmed_source(db_session) -> None:
         ProvenanceChainNode(
             item=item,
             source=pending,
-            outlet=pending_outlet,
             modality=modality,
             medium=medium,
             collected_at=datetime(2026, 9, 15, 9, 0, tzinfo=UTC),
@@ -492,17 +482,13 @@ def test_source_confirm_rename_merges_into_confirmed_source(db_session) -> None:
     kept = db_session.get(Source, target.id)
     assert kept is not None
     assert kept.credit == "A"  # 信用档沿用目标信源
-    outlet_names = {o.name for o in kept.outlets}
-    assert outlet_names == {"官网", "渠道大会现场"}  # 同名复用 + 异名迁移
     refreshed = db_session.get(IntelligenceItem, item.id)
     assert refreshed is not None
     assert refreshed.source_id == target.id
-    assert refreshed.outlet_id == target_outlet.id  # 条目途径指向既有同名途径
     nodes = db_session.scalars(
         select(ProvenanceChainNode).where(ProvenanceChainNode.item_id == item.id)
     ).all()
     assert [n.source_id for n in nodes] == [target.id]
-    assert nodes[0].outlet_id == target_outlet.id
     alias = db_session.scalars(select(SourceAlias).where(SourceAlias.name == "三一")).first()
     assert alias is None  # IIH-06.02：并入不留档旧名（脏名污染别名表）
 
@@ -582,11 +568,11 @@ def test_source_confirm_type_correction_lands(db_session) -> None:
     assert confirmed.type is SourceType.COMPANY
 
 
-# ---- 确认建途径（IIH-05.02 补救口径，IIH-06.01 探索发现沿用） ----
+# ---- 确认建采集入口（IIH-05.02 补救口径，IIH-06.01 探索发现沿用） ----
 
 
-def test_confirm_with_entry_creates_internet_outlet(db_session) -> None:
-    """IIH-05.02 补救：确认携带采集入口 → 建互联网途径（名默认「网站」，可改），入池即可被采集。"""
+def test_confirm_with_entry_creates_entry(db_session) -> None:
+    """IIH-05.02 补救：确认携带采集入口 → 建采集入口，入池即可被采集。"""
     pending = Source(
         name="行业媒体 Z",
         type=SourceType.MEDIA,
@@ -601,7 +587,7 @@ def test_confirm_with_entry_creates_internet_outlet(db_session) -> None:
             payload=SourceConfirmPayload(
                 source_id=pending.id,
                 initial_credit="C",
-                outlet_entry="https://z.example/article",
+                entry="https://z.example/article",
             ),
             rationale="人工确认",
         ),
@@ -612,15 +598,12 @@ def test_confirm_with_entry_creates_internet_outlet(db_session) -> None:
     source = db_session.get(Source, result.source_id)
     assert source is not None
     assert source.confirmed is True
-    assert len(source.outlets) == 1
-    outlet = source.outlets[0]
-    assert outlet.name == "网站"  # 默认途径名
-    assert outlet.entry == "https://z.example/article"
-    assert outlet.medium.code == "internet"
+    assert len(source.entries) == 1
+    assert source.entries[0].entry == "https://z.example/article"
 
 
-def test_confirm_without_entry_lands_without_outlet(db_session) -> None:
-    """IIH-05.02 补救：采集入口留空不建途径（兼容人工归因的待确认信源）。"""
+def test_confirm_without_entry_lands_without_entry(db_session) -> None:
+    """IIH-05.02 补救：采集入口留空不建（兼容人工归因的待确认信源）。"""
     source = _seed_pending_source(db_session, name="行业媒体 B")
 
     StateMachineExecutor().execute(
@@ -635,11 +618,11 @@ def test_confirm_without_entry_lands_without_outlet(db_session) -> None:
     confirmed = db_session.get(Source, source.id)
     assert confirmed is not None
     assert confirmed.confirmed is True
-    assert confirmed.outlets == []
+    assert confirmed.entries == []
 
 
-def test_confirm_merge_with_entry_builds_outlet_on_target(db_session) -> None:
-    """IIH-05.02 补救：并入路径采集入口建到目标信源；目标已有同名途径则跳过。"""
+def test_confirm_merge_with_entry_builds_entry_on_target(db_session) -> None:
+    """IIH-05.02 补救：并入路径采集入口建到目标信源；目标已有同入口则跳过。"""
     target = Source(name="三一集团", type=SourceType.COMPANY, confirmed=True, credit="A")
     db_session.add(target)
     db_session.flush()
@@ -658,8 +641,7 @@ def test_confirm_merge_with_entry_builds_outlet_on_target(db_session) -> None:
                 source_id=pending.id,
                 initial_credit="C",
                 name="三一集团",
-                outlet_name="官网",
-                outlet_entry="https://sany.example/news",
+                entry="https://sany.example/news",
             ),
             rationale="人工确认",
         ),
@@ -669,15 +651,14 @@ def test_confirm_merge_with_entry_builds_outlet_on_target(db_session) -> None:
     db_session.expire_all()
     merged = db_session.get(Source, target.id)
     assert merged is not None
-    assert [o.name for o in merged.outlets] == ["官网"]
-    assert merged.outlets[0].entry == "https://sany.example/news"
+    assert [e.entry for e in merged.entries] == ["https://sany.example/news"]
 
-    # 同名途径再并入一次（新发现同站异名）→ 跳过不重复建
+    # 同入口再并入一次（再次发现同站）→ 跳过不重复建
     pending2 = Source(
         name="三一重工网",
         type=SourceType.MEDIA,
         confirmed=False,
-        discovered_entry="https://sany.example/other",
+        discovered_entry="https://sany.example/news",
     )
     db_session.add(pending2)
     db_session.flush()
@@ -687,8 +668,7 @@ def test_confirm_merge_with_entry_builds_outlet_on_target(db_session) -> None:
                 source_id=pending2.id,
                 initial_credit="C",
                 name="三一集团",
-                outlet_name="官网",
-                outlet_entry="https://sany.example/other",
+                entry="https://sany.example/news",
             ),
             rationale="人工确认",
         ),
@@ -697,22 +677,20 @@ def test_confirm_merge_with_entry_builds_outlet_on_target(db_session) -> None:
     db_session.expire_all()
     final = db_session.get(Source, target.id)
     assert final is not None
-    assert [o.name for o in final.outlets] == ["官网"]  # 不重复
-    assert final.outlets[0].entry == "https://sany.example/news"  # 首建为准
+    assert [e.entry for e in final.entries] == ["https://sany.example/news"]  # 不重复
 
 
 # ---- IIH-01.08 互联网信源自动拉取 ----
 
 
 def make_automated_proposal(**overrides) -> IntelligenceItemNewProposal:
-    """AUTOMATED 模式提案：信源与途径须已登记 confirmed=True；快照为对象键。"""
+    """AUTOMATED 模式提案：快照为对象键。"""
     provenance_fields = {
         "modality_code": "webpage",
         "medium_code": "internet",
         "collected_at": datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
         "source_name": "W 公司",
         "source_type": SourceType.COMPANY,
-        "outlet_name": "官网",
     } | overrides.pop("provenance", {})
     payload_fields = {
         "statement": "W 公司公告：与 Z 集团签署合资协议",
@@ -729,23 +707,19 @@ def make_automated_proposal(**overrides) -> IntelligenceItemNewProposal:
     )
 
 
-def seed_confirmed_w_outlet(db_session) -> Source:
-    """预置已登记信源 W 公司 + 互联网途径官网。"""
-    from iih.ledger.models import Medium
+def seed_confirmed_w_entry(db_session) -> Source:
+    """预置已登记信源 W 公司 + 采集入口。"""
 
-    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
     source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True)
-    outlet = Outlet(
-        source=source, name="官网", entry="https://w-mining.example/news", medium=medium
-    )
-    db_session.add_all([source, outlet])
+    entry = Entry(source=source, entry="https://w-mining.example/news")
+    db_session.add_all([source, entry])
     db_session.flush()
     return source
 
 
 def test_automated_item_new_lands_lead_with_fingerprint_and_initial_node(db_session) -> None:
     """支撑 IIH-01.08 AC#1：自动拉取落账 Lead + 内容指纹 + 初始转引链节点。"""
-    seed_confirmed_w_outlet(db_session)
+    seed_confirmed_w_entry(db_session)
 
     result = StateMachineExecutor().execute(make_automated_proposal(), session=db_session)
 
@@ -757,7 +731,6 @@ def test_automated_item_new_lands_lead_with_fingerprint_and_initial_node(db_sess
     assert item.medium.code == "internet"
     assert item.source is not None and item.source.name == "W 公司"
     assert item.source.confirmed is True
-    assert item.outlet is not None and item.outlet.name == "官网"
     assert item.content_fingerprint == "a" * 64
     assert item.original_url == "https://w-mining.example/news"
     assert item.snapshot_object_key == f"snapshots/{'a' * 64}.html"
@@ -769,12 +742,11 @@ def test_automated_item_new_lands_lead_with_fingerprint_and_initial_node(db_sess
     ).all()
     assert len(nodes) == 1
     assert nodes[0].source.name == "W 公司"
-    assert nodes[0].outlet.name == "官网"
 
 
 def test_item_new_rejects_duplicate_fingerprint(db_session) -> None:
     """内容指纹与既有条目重复：驳回不落账（人工纪要重复提交的落账层校验）。"""
-    seed_confirmed_w_outlet(db_session)
+    seed_confirmed_w_entry(db_session)
     executor = StateMachineExecutor()
     first = executor.execute(make_automated_proposal(), session=db_session)
 
@@ -817,8 +789,8 @@ def test_automated_item_new_reuses_unconfirmed_source(db_session) -> None:
     assert len(db_session.scalars(select(Source)).unique().all()) == 1
 
 
-def test_automated_item_new_unknown_outlet_created(db_session) -> None:
-    """IIH-06.01：途径名未登记 → 随归因建到信源名下（不再要求预先登记）。"""
+def test_automated_item_new_reuses_confirmed_source_without_entry(db_session) -> None:
+    """IIH-06.03：条目挂既有信源即可，不涉采集入口（入口是调度配置，非溯源要素）。"""
     source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True)
     db_session.add(source)
     db_session.flush()
@@ -827,14 +799,13 @@ def test_automated_item_new_unknown_outlet_created(db_session) -> None:
 
     item = db_session.get(IntelligenceItem, result.item_id)
     assert item is not None
-    assert item.outlet is not None
-    assert item.outlet.name == "官网"
-    assert item.outlet.source_id == source.id
+    assert item.source_id == source.id
+    assert db_session.scalars(select(Entry)).all() == []
 
 
 def test_automated_item_new_rejects_missing_snapshot_object(db_session) -> None:
     """AUTOMATED 模式：快照对象键缺失驳回（无溯源不落账）。"""
-    seed_confirmed_w_outlet(db_session)
+    seed_confirmed_w_entry(db_session)
 
     with pytest.raises(ProposalRejectedError) as excinfo:
         StateMachineExecutor().execute(
@@ -1078,8 +1049,8 @@ def test_ir_activate_rejects_unknown_requirement(db_session) -> None:
 
 def test_item_provenance_append_lands_node(db_session) -> None:
     """支撑 IIH-01.08 AC#2：指纹命中追加转引链节点。"""
-    seed_confirmed_w_outlet(db_session)
-    # 先落账一条自动拉取条目（出处信源 = W 公司·官网）
+    seed_confirmed_w_entry(db_session)
+    # 先落账一条自动拉取条目（出处信源 = W 公司）
     first = StateMachineExecutor().execute(make_automated_proposal(), session=db_session)
     item = db_session.get(IntelligenceItem, first.item_id)
 
@@ -1093,7 +1064,6 @@ def test_item_provenance_append_lands_node(db_session) -> None:
             item_id=item.id,
             source_name="行业媒体 A",
             source_type=SourceType.MEDIA,
-            outlet_name=None,
             original_url="https://media-a.example/repost",
             collected_at=datetime(2026, 9, 14, 11, 0, tzinfo=UTC),
         ),
@@ -1111,7 +1081,7 @@ def test_item_provenance_append_lands_node(db_session) -> None:
 
 
 def test_item_provenance_append_rejects_unknown_item(db_session) -> None:
-    seed_confirmed_w_outlet(db_session)
+    seed_confirmed_w_entry(db_session)
 
     with pytest.raises(ProposalRejectedError) as excinfo:
         StateMachineExecutor().execute(
@@ -1131,8 +1101,8 @@ def test_item_provenance_append_rejects_unknown_item(db_session) -> None:
 
 
 def test_item_provenance_append_rejects_duplicate_node(db_session) -> None:
-    """同(item, source, outlet)节点不重复追加。"""
-    seed_confirmed_w_outlet(db_session)
+    """同(item, source)节点不重复追加。"""
+    seed_confirmed_w_entry(db_session)
     first = StateMachineExecutor().execute(make_automated_proposal(), session=db_session)
     item = db_session.get(IntelligenceItem, first.item_id)
 
@@ -1143,7 +1113,6 @@ def test_item_provenance_append_rejects_duplicate_node(db_session) -> None:
                     item_id=item.id,
                     source_name="W 公司",
                     source_type=SourceType.COMPANY,
-                    outlet_name="官网",
                     original_url="https://w-mining.example/news",
                     collected_at=datetime(2026, 9, 14, 11, 0, tzinfo=UTC),
                 ),

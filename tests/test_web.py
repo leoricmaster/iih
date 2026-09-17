@@ -23,6 +23,7 @@ from iih.ledger.credit import SOURCE_CREDIT_FORMULA_VERSION
 from iih.ledger.formula import CONTENT_CREDIBILITY_FORMULA_VERSION
 from iih.ledger.models import (
     CreditAdjustment,
+    Entry,
     Feedback,
     FeedbackType,
     IntelligenceItem,
@@ -33,7 +34,6 @@ from iih.ledger.models import (
     LlmCall,
     Medium,
     Modality,
-    Outlet,
     ProvenanceChainNode,
     RejectionReasonEnum,
     ReviewDecision,
@@ -197,7 +197,6 @@ def _seed_verified_item(
     medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
     modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
     source = Source(name=source_name, type=SourceType.COMPANY, confirmed=True, credit="B")
-    outlet = Outlet(source=source, name="官网", entry="https://w-mining.example/news")
     item = IntelligenceItem(
         statement=statement,
         status=ItemStatus.VERIFIED,
@@ -208,9 +207,8 @@ def _seed_verified_item(
         collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
         original_snapshot="W 公司今日公告，与 Z 集团签署合资协议。",
         source=source,
-        outlet=outlet,
     )
-    db_session.add_all([source, outlet, item])
+    db_session.add_all([source, item])
     db_session.flush()
     db_session.add(
         ProvenanceChainNode(
@@ -363,12 +361,12 @@ def test_item_detail_shows_provenance_and_rating_basis(
     response = inbox_client.get(f"/items/{item.id}")
 
     assert response.status_code == 200
-    # 溯源五要素（元数据折叠区）：载体 / 媒介 / 采集时间 / 原文快照 / 信源与途径归因
+    # 溯源五要素（元数据折叠区）：载体 / 媒介 / 采集时间 / 原文快照 / 出处信源
     assert "元数据" in response.text
     assert "互联网 / 网页" in response.text  # 媒介 / 载体
     assert "2026-09-14 18:00" in response.text  # 采集时间（UTC 10:00 → 展示时区）
     assert "W 公司今日公告，与 Z 集团签署合资协议。" in response.text  # 原文快照
-    assert "官网" in response.text  # 途径归因（元数据 + 转引链）
+    assert "出处信源" in response.text  # 信源归因（元数据 + 转引链）
     assert ">转引链" in response.text
     # 评级依据：核实记录 + N/R/内容可信度/公式版本
     assert "评级依据" in response.text
@@ -631,7 +629,6 @@ def test_item_detail_chain_marks_attribution_object(inbox_client: TestClient, db
     modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
     media = Source(name="行业媒体 A", type=SourceType.MEDIA, confirmed=True, credit="C")
     origin = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, credit="B")
-    outlet = Outlet(source=origin, name="官网", entry="https://w-mining.example/news")
     item = IntelligenceItem(
         statement="W 公司公告：与 Z 集团签署合资协议",
         status=ItemStatus.VERIFIED,
@@ -642,9 +639,8 @@ def test_item_detail_chain_marks_attribution_object(inbox_client: TestClient, db
         collected_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
         original_snapshot="正文",
         source=origin,
-        outlet=outlet,
     )
-    db_session.add_all([media, origin, outlet, item])
+    db_session.add_all([media, origin, item])
     db_session.flush()
     db_session.add_all(
         [
@@ -826,12 +822,12 @@ def test_requirement_detail_404_for_unknown(inbox_client: TestClient) -> None:
 
 
 def test_requirement_detail_shows_collect_overview(inbox_client: TestClient, db_session) -> None:
-    """采集概览：节奏 + 覆盖途径（Director 同口径）；MVP 透明度补丁（IIH-01.13 第六轮）。"""
+    """采集概览：节奏 + 覆盖采集入口（Director 同口径）；MVP 透明度补丁（IIH-01.13 第六轮）。"""
     ir_id = _seed_probe_target(db_session)
     detail = inbox_client.get(f"/requirements/{ir_id}")
     assert "采集概览" in detail.text
     assert "W 公司" in detail.text
-    assert "官网" in detail.text
+    assert "https://w-mining.example/news" in detail.text
     assert "覆盖全部信源" in detail.text
 
 
@@ -1314,24 +1310,24 @@ def test_confirm_with_type_correction_end_to_end(inbox_client: TestClient, db_se
     assert confirmed.type is SourceType.COMPANY
 
 
-def test_profile_add_alias_visible_on_profile(inbox_client: TestClient, db_session) -> None:
-    """对应 IIH-06.02：画像页加别名后画像页可见。"""
+def test_profile_edit_adds_alias(inbox_client: TestClient, db_session) -> None:
+    """对应 IIH-06.03：编辑态加别名后画像页可见。"""
     source = Source(name="三一重工", type=SourceType.COMPANY, confirmed=True, credit="B")
     db_session.add(source)
     db_session.flush()
 
     response = inbox_client.post(
-        f"/sources/{source.id}/aliases",
-        data={"name": "三一"},
+        f"/sources/{source.id}/edit",
+        data={"name": "三一重工", "aliases": "三一", "credit": "B"},
         follow_redirects=True,
     )
 
-    assert "已加别名" in response.text
+    assert "已保存" in response.text
     assert '<span class="pill">三一</span>' in response.text
 
 
-def test_profile_add_alias_rejects_duplicates(inbox_client: TestClient, db_session) -> None:
-    """对应 IIH-06.02：加别名同名冲突（正名 / 任何别名）拦截。"""
+def test_profile_edit_rejects_duplicate_aliases(inbox_client: TestClient, db_session) -> None:
+    """对应 IIH-06.03：编辑态加别名同名冲突（正名 / 任何别名）拦截。"""
     holder = Source(name="三一重工", type=SourceType.COMPANY, confirmed=True, credit="B")
     other = Source(name="中联重科", type=SourceType.COMPANY, confirmed=True, credit="C")
     db_session.add_all([holder, other, SourceAlias(source=other, name="中联")])
@@ -1339,42 +1335,35 @@ def test_profile_add_alias_rejects_duplicates(inbox_client: TestClient, db_sessi
 
     # 撞正名
     dup = inbox_client.post(
-        f"/sources/{holder.id}/aliases",
-        data={"name": "中联重科"},
+        f"/sources/{holder.id}/edit",
+        data={"name": "三一重工", "aliases": "中联重科", "credit": "B"},
         follow_redirects=True,
     )
     assert "已存在同名信源" in dup.text
 
     # 撞别名
     alias = inbox_client.post(
-        f"/sources/{holder.id}/aliases",
-        data={"name": "中联"},
+        f"/sources/{holder.id}/edit",
+        data={"name": "三一重工", "aliases": "中联", "credit": "B"},
         follow_redirects=True,
     )
     assert "已存在同名别名" in alias.text
 
-    # 与正名相同
-    same = inbox_client.post(
-        f"/sources/{holder.id}/aliases",
-        data={"name": "三一重工"},
-        follow_redirects=True,
-    )
-    assert "不可与正名相同" in same.text
 
-
-def test_profile_delete_alias_lands(inbox_client: TestClient, db_session) -> None:
-    """对应 IIH-06.02：画像页删别名后画像页不再渲染该别名。"""
+def test_profile_edit_removes_alias(inbox_client: TestClient, db_session) -> None:
+    """对应 IIH-06.03：编辑态不再列出别名即删除。"""
     source = Source(name="三一重工", type=SourceType.COMPANY, confirmed=True, credit="B")
     alias = SourceAlias(source=source, name="三一")
     db_session.add_all([source, alias])
     db_session.flush()
 
     response = inbox_client.post(
-        f"/sources/{source.id}/aliases/{alias.id}/delete",
+        f"/sources/{source.id}/edit",
+        data={"name": "三一重工", "credit": "B"},
         follow_redirects=True,
     )
 
-    assert "已删别名" in response.text
+    assert "已保存" in response.text
     db_session.expire_all()
     assert db_session.get(SourceAlias, alias.id) is None
 
@@ -1395,17 +1384,16 @@ def test_discovered_source_confirmed_then_ir_bindable_end_to_end(
     db_session.add(source)
     db_session.flush()
 
-    # 待确认行预填：采集入口归一化为站点根（IIH-06.01 验收补救），途径名带默认「网站」
+    # 待确认行预填：采集入口归一化为站点根（IIH-06.01 验收补救）
     listing = inbox_client.get("/sources")
     assert 'value="https://z.example"' in listing.text  # 文章 URL 不整条预填
-    assert 'value="网站"' in listing.text
 
-    # 经确认入口入池：表单携带途径字段（模板预填发现 URL）→ 建互联网途径
+    # 经确认入口入池：表单携带采集入口（模板预填发现 URL 根）→ 建采集入口
     response = inbox_client.post(
         f"/sources/{source.id}/confirm",
         data={
             "initial_credit": "C",
-            "outlet_entry": "https://z.example/article",
+            "entry": "https://z.example/article",
             "next": "/sources",
         },
         follow_redirects=True,
@@ -1415,9 +1403,8 @@ def test_discovered_source_confirmed_then_ir_bindable_end_to_end(
     confirmed = db_session.get(Source, source.id)
     assert confirmed is not None
     assert confirmed.confirmed is True
-    assert len(confirmed.outlets) == 1
-    assert confirmed.outlets[0].name == "网站"
-    assert confirmed.outlets[0].entry == "https://z.example/article"
+    assert len(confirmed.entries) == 1
+    assert confirmed.entries[0].entry == "https://z.example/article"
 
     # 可被 IR 绑定（confirmed 边界放开）
     ir_response = inbox_client.post(
@@ -1574,11 +1561,8 @@ def test_pipeline_button_cold_start_to_rated_inbox(db_session, monkeypatch) -> N
         app.state.session_factory = sessionmaker(
             bind=db_session.bind, join_transaction_mode="create_savepoint"
         )
-        medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
         source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, credit="B")
-        db_session.add_all(
-            [source, Outlet(source=source, name="官网", entry=ENTRY_URL, medium=medium)]
-        )
+        db_session.add_all([source, Entry(source=source, entry=ENTRY_URL)])
         db_session.flush()
         ir_id = _create_ir_via_form(client)
         client.post(f"/requirements/{ir_id}/action", data={"action": "activate"})
@@ -1702,17 +1686,21 @@ def test_source_credit_set_via_profile_page(sources_client: TestClient, db_sessi
     db_session.add(source)
     db_session.flush()
 
-    blocked = sources_client.post(f"/sources/{source.id}/credit", data={"credit": "X"})
+    blocked = sources_client.post(
+        f"/sources/{source.id}/edit", data={"name": "W 公司", "credit": "X"}
+    )
     assert "信用档需为 A–F 或不设" in blocked.text
     assert db_session.get(Source, source.id).credit is None
 
     response = sources_client.post(
-        f"/sources/{source.id}/credit", data={"credit": "B"}, follow_redirects=True
+        f"/sources/{source.id}/edit",
+        data={"name": "W 公司", "credit": "B"},
+        follow_redirects=True,
     )
 
     assert response.status_code == 200
     assert '<span class="pill rating">B</span>' in response.text
-    assert "信用档已保存" in response.text  # 成功提示可见（flash）
+    assert "已保存" in response.text  # 成功提示可见（flash）
     assert db_session.get(Source, source.id).credit == "B"
 
 
@@ -1724,21 +1712,25 @@ def test_source_rename_via_profile_page(sources_client: TestClient, db_session) 
     db_session.flush()
 
     empty = sources_client.post(
-        f"/sources/{source.id}/rename", data={"name": "  "}, follow_redirects=True
+        f"/sources/{source.id}/edit", data={"name": "  "}, follow_redirects=True
     )
     assert "名称不能为空" in empty.text
 
     dup = sources_client.post(
-        f"/sources/{source.id}/rename", data={"name": "W 公司"}, follow_redirects=True
+        f"/sources/{source.id}/edit",
+        data={"name": "W 公司", "credit": ""},
+        follow_redirects=True,
     )
     assert "已存在同名信源" in dup.text
     assert db_session.get(Source, source.id).name == "三一集图"
 
     ok = sources_client.post(
-        f"/sources/{source.id}/rename", data={"name": "三一集团"}, follow_redirects=True
+        f"/sources/{source.id}/edit",
+        data={"name": "三一集团"},
+        follow_redirects=True,
     )
     assert ok.status_code == 200
-    assert "已改名：三一集团" in ok.text  # 成功提示可见（flash）
+    assert "已保存" in ok.text  # 成功提示可见（flash）
     assert db_session.get(Source, source.id).name == "三一集团"
 
 
@@ -1838,18 +1830,15 @@ def _probe_app(db_session, llm) -> TestClient:
 
 
 def _seed_probe_target(db_session) -> int:
-    """预置激活需求 + 已确认信源互联网途径，返回需求 id。"""
-    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    """预置激活需求 + 已确认信源采集入口，返回需求 id。"""
     ir = IntelligenceRequirement(
         name="跟踪 W 公司",
         content_spec="主题：矿卡、订单、战略",
         status=IntelligenceRequirementStatus.ACTIVE,
     )
     source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, credit="B")
-    outlet = Outlet(
-        source=source, name="官网", entry="https://w-mining.example/news", medium=medium
-    )
-    db_session.add_all([ir, source, outlet])
+    entry = Entry(source=source, entry="https://w-mining.example/news")
+    db_session.add_all([ir, source, entry])
     db_session.flush()
     return ir.id
 
@@ -1921,7 +1910,7 @@ def test_requirement_probe_reports_fetch_failure(db_session, monkeypatch) -> Non
     assert db_session.scalars(select(IntelligenceItem)).first() is None
 
 
-def test_requirement_probe_without_outlets_shows_hint(db_session) -> None:
+def test_requirement_probe_without_entries_shows_hint(db_session) -> None:
     ir = IntelligenceRequirement(
         name="跟踪 W 公司", content_spec="主题：矿卡", status=IntelligenceRequirementStatus.ACTIVE
     )
@@ -1933,7 +1922,7 @@ def test_requirement_probe_without_outlets_shows_hint(db_session) -> None:
         response = client.post(f"/requirements/{ir.id}/probe")
 
     assert response.status_code == 200
-    assert "无已登记互联网途径" in response.text
+    assert "无已登记采集入口" in response.text
 
 
 def test_requirement_probe_blocked_for_non_active(db_session) -> None:

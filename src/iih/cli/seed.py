@@ -18,10 +18,9 @@ from sqlalchemy.orm import Session
 from iih.config import get_settings
 from iih.db import make_engine, make_session_factory
 from iih.ledger.models import (
+    Entry,
     IntelligenceRequirement,
     IntelligenceRequirementStatus,
-    Medium,
-    Outlet,
     Source,
     SourceType,
 )
@@ -45,10 +44,6 @@ def _parse_date(s: str | None) -> date | None:
 
 
 def _seed_sources(session: Session, sources: list[dict[str, str]]) -> None:
-    medium = session.scalars(select(Medium).where(Medium.code == "internet")).first()
-    if medium is None:
-        print("[seed] 媒介 internet 缺失，信源种子跳过")
-        return
     for src in sources:
         existing = session.scalars(select(Source).where(Source.name == src["source_name"])).first()
         if existing is not None:
@@ -60,16 +55,9 @@ def _seed_sources(session: Session, sources: list[dict[str, str]]) -> None:
             confirmed=True,
             credit=src.get("initial_credit") or None,
         )
-        session.add(
-            Outlet(
-                source=source,
-                name=src["outlet_name"],
-                entry=src["outlet_entry"],
-                medium=medium,
-            )
-        )
+        session.add(Entry(source=source, entry=src["entry"]))
         session.flush()
-        print(f"[seed] 铺底信源：{src['source_name']}（{src['outlet_name']}）")
+        print(f"[seed] 铺底信源：{src['source_name']}（{src['entry']}）")
     session.commit()
 
 

@@ -1,8 +1,8 @@
 """信源库页（doc-07 §2.1、§3，原型「信源库/信源画像」页）。
 
-列表（主体 / 途径两栏）+ 待确认信源确认闭环 + 信源画像（信用档与调整历史、途径、
-参与条目）。人工登记入口已下线（IIH-06.01 通路反转）——新信源一律经条目归因
-识别进待确认队列（decision-05）。
+列表（主体 / 采集入口两栏）+ 待确认信源确认闭环 + 信源画像（信用档与调整历史、
+采集入口、参与条目）。人工登记入口已下线（IIH-06.01 通路反转）——新信源一律经
+条目归因识别进待确认队列（decision-05）。
 """
 
 from difflib import SequenceMatcher
@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from iih.ledger.credit import HALF_LIFE_DAYS
 from iih.ledger.models import (
     CreditAdjustment,
+    Entry,
     IntelligenceItem,
     ProvenanceChainNode,
     Source,
@@ -75,7 +76,7 @@ def _safe_next(next_url: str) -> str:
 
 
 def _confirmed_sources(session: Session) -> list[Source]:
-    """已确认信源列表，途径经关系加载（doc-03 §六：主体/途径两栏）。"""
+    """已确认信源列表，采集入口经关系加载（doc-03 §六：主体/采集入口两栏）。"""
     return list(
         session.scalars(select(Source).where(Source.confirmed.is_(True)).order_by(Source.id))
     )
@@ -141,9 +142,10 @@ def source_detail(
     request: Request,
     err: str = "",
     flash: str = "",
+    edit: str = "",
     session: Session = Depends(get_session),
 ):
-    """信源画像：信用（档 + 调整历史）+ 途径 + 参与条目（转引链出现即计）。"""
+    """信源画像：信用（档 + 调整历史）+ 采集入口 + 参与条目（转引链出现即计）。"""
     source = session.get(Source, source_id)
     if source is None:
         raise HTTPException(status_code=404, detail="信源不存在")
@@ -187,123 +189,134 @@ def source_detail(
             "half_life_days": HALF_LIFE_DAYS,
             "err": err,
             "flash": flash,
+            "edit_mode": edit == "1",
         },
     )
 
 
-@router.post("/sources/{source_id}/rename")
-def source_rename(
+@router.post("/sources/{source_id}/edit")
+def source_edit(
     source_id: int,
     request: Request,
     name: str = Form(""),
-    session: Session = Depends(get_session),
-):
-    """主体改名（消费方配置编辑，同信用档人工编辑）；同名冲突拦截。"""
-    source = session.get(Source, source_id)
-    if source is None:
-        raise HTTPException(status_code=404, detail="信源不存在")
-
-    new_name = name.strip()
-    if not source.confirmed:
-        err = "待确认信源不入库、不建画像、不记账"
-    elif not new_name:
-        err = "名称不能为空"
-    else:
-        dup = session.scalars(
-            select(Source).where(Source.name == new_name, Source.id != source_id)
-        ).first()
-        alias = session.scalars(select(SourceAlias).where(SourceAlias.name == new_name)).first()
-        if dup is not None:
-            err = f"已存在同名信源：{new_name}"
-        elif alias is not None:
-            err = f"已存在同名别名（归属 {alias.source.name}）：{new_name}"
-        else:
-            if new_name != source.name:
-                session.add(SourceAlias(source=source, name=source.name))
-            source.name = new_name
-            session.commit()
-            return redirect_with_flash(f"/sources/{source_id}", f"已改名：{new_name}")
-    return RedirectResponse(f"/sources/{source_id}?err={quote_plus(err)}", status_code=303)
-
-
-@router.post("/sources/{source_id}/credit")
-def source_credit_set(
-    source_id: int,
-    request: Request,
+    aliases: list[str] = Form(default=[]),
     credit: str = Form(""),
+    entry_id: list[int] = Form(default=[]),
+    entry_value: list[str] = Form(default=[]),
+    entry_delete_ids: list[int] = Form(default=[]),
     session: Session = Depends(get_session),
 ):
-    """人工补设/调整信用档（doc-04 §2.3：人工设档直接生效；A–F 或清空）。
-
-    消费方配置编辑，非智能体写入；调整历史（信用通路反馈）不受影响。
-    """
+    """画像页统一编辑态：单端点批量保存主体名/别名/信用档/采集入口。"""
     source = session.get(Source, source_id)
     if source is None:
         raise HTTPException(status_code=404, detail="信源不存在")
+    if not source.confirmed:
+        return redirect_with_flash(
+            f"/sources/{source_id}", "待确认信源不入库、不建画像、不记账", param="err"
+        )
+
+    err = _apply_source_edit(
+        session,
+        source,
+        name=name,
+        aliases=aliases,
+        credit=credit,
+        entry_id=entry_id,
+        entry_value=entry_value,
+        entry_delete_ids=entry_delete_ids,
+    )
+    if err is not None:
+        return RedirectResponse(
+            f"/sources/{source_id}?edit=1&err={quote_plus(err)}", status_code=303
+        )
+    return redirect_with_flash(f"/sources/{source_id}", "已保存")
+
+
+def _apply_source_edit(
+    session: Session,
+    source: Source,
+    *,
+    name: str,
+    aliases: list[str],
+    credit: str,
+    entry_id: list[int],
+    entry_value: list[str],
+    entry_delete_ids: list[int],
+) -> str | None:
+    """单事务应用编辑态变更。返回 err 字符串；None 表示成功。"""
+    new_name = name.strip()
+    if not new_name:
+        return "名称不能为空"
+    existing_aliases: dict[str, SourceAlias | None] = {a.name: a for a in source.aliases}
+    if new_name != source.name:
+        dup = session.scalars(
+            select(Source).where(Source.name == new_name, Source.id != source.id)
+        ).first()
+        if dup is not None:
+            return f"已存在同名信源：{new_name}"
+        alias_hit = session.scalars(select(SourceAlias).where(SourceAlias.name == new_name)).first()
+        if alias_hit is not None and alias_hit.source_id != source.id:
+            return f"已存在同名别名（归属 {alias_hit.source.name}）：{new_name}"
+        session.add(SourceAlias(source=source, name=source.name))
+        existing_aliases[source.name] = None
+        source.name = new_name
+
+    new_aliases = [a.strip() for a in aliases if a.strip()]
+    new_alias_set = {a for a in new_aliases if a != source.name}
+    for name_str, alias_obj in existing_aliases.items():
+        if alias_obj is None:
+            continue
+        if name_str not in new_alias_set:
+            session.delete(alias_obj)
+    for name_str in new_alias_set:
+        if name_str in existing_aliases:
+            continue
+        dup = session.scalars(select(Source).where(Source.name == name_str)).first()
+        if dup is not None and dup.id != source.id:
+            return f"已存在同名信源：{name_str}"
+        alias_hit = session.scalars(select(SourceAlias).where(SourceAlias.name == name_str)).first()
+        if alias_hit is not None and alias_hit.source_id != source.id:
+            return f"已存在同名别名（归属 {alias_hit.source.name}）：{name_str}"
+        session.add(SourceAlias(source=source, name=name_str))
 
     grade = credit.strip()
-    if not source.confirmed:
-        err = "待确认信源不入库、不建画像、不记账"
-    elif grade and grade not in "ABCDEF":
-        err = f"信用档需为 A–F 或不设：{grade}"
-    else:
-        source.credit = grade or None
-        session.commit()
-        return redirect_with_flash(f"/sources/{source_id}", "信用档已保存")
-    return RedirectResponse(f"/sources/{source_id}?err={quote_plus(err)}", status_code=303)
+    if grade and grade not in "ABCDEF":
+        return f"信用档需为 A–F 或不设：{grade}"
+    source.credit = grade or None
 
+    for eid in entry_delete_ids:
+        if eid:
+            existing = session.get(Entry, eid)
+            if existing is not None and existing.source_id == source.id:
+                session.delete(existing)
 
-@router.post("/sources/{source_id}/aliases")
-def source_alias_add(
-    source_id: int,
-    request: Request,
-    name: str = Form(""),
-    session: Session = Depends(get_session),
-):
-    """画像页加别名（IIH-06.02）：用户主动声明；全局唯一（正名 + 别名）。"""
-    source = session.get(Source, source_id)
-    if source is None:
-        raise HTTPException(status_code=404, detail="信源不存在")
-
-    new_name = name.strip()
-    if not source.confirmed:
-        err = "待确认信源不入库、不建画像、不记账"
-    elif not new_name:
-        err = "别名不能为空"
-    elif new_name == source.name:
-        err = "别名不可与正名相同"
-    else:
-        dup = session.scalars(select(Source).where(Source.name == new_name)).first()
-        alias = session.scalars(select(SourceAlias).where(SourceAlias.name == new_name)).first()
-        if dup is not None:
-            err = f"已存在同名信源：{new_name}"
-        elif alias is not None:
-            err = f"已存在同名别名（归属 {alias.source.name}）：{new_name}"
+    seen_entries: set[str] = set()
+    for i, eid in enumerate(entry_id):
+        value = entry_value[i].strip() if i < len(entry_value) else ""
+        if not value:
+            continue
+        if value in seen_entries:
+            return f"采集入口重复：{value}"
+        seen_entries.add(value)
+        if eid:
+            existing = session.get(Entry, eid)
+            if existing is None or existing.source_id != source.id:
+                return f"采集入口引用不存在：{value}"
+            dup_entry = session.scalars(
+                select(Entry).where(
+                    Entry.source_id == source.id,
+                    Entry.entry == value,
+                    Entry.id != eid,
+                )
+            ).first()
+            if dup_entry is not None:
+                return f"采集入口重复：{value}"
+            existing.entry = value
         else:
-            session.add(SourceAlias(source=source, name=new_name))
-            session.commit()
-            return redirect_with_flash(f"/sources/{source_id}", f"已加别名：{new_name}")
-    return RedirectResponse(f"/sources/{source_id}?err={quote_plus(err)}", status_code=303)
+            session.add(Entry(source=source, entry=value))
 
-
-@router.post("/sources/{source_id}/aliases/{alias_id}/delete")
-def source_alias_delete(
-    source_id: int,
-    alias_id: int,
-    request: Request,
-    session: Session = Depends(get_session),
-):
-    """画像页删别名（IIH-06.02）：用户主动删除；硬删，归因解析不再按此名归入。"""
-    source = session.get(Source, source_id)
-    if source is None:
-        raise HTTPException(status_code=404, detail="信源不存在")
-    alias = session.get(SourceAlias, alias_id)
-    if alias is None or alias.source_id != source_id:
-        raise HTTPException(status_code=404, detail="别名不存在")
-    name = alias.name
-    session.delete(alias)
     session.commit()
-    return redirect_with_flash(f"/sources/{source_id}", f"已删别名：{name}")
+    return None
 
 
 @router.post("/sources/{source_id}/confirm")
@@ -313,15 +326,14 @@ def source_confirm(
     initial_credit: str = Form(""),
     name: str = Form(""),
     source_type: str = Form(""),
-    outlet_name: str = Form(""),
-    outlet_entry: str = Form(""),
+    entry: str = Form(""),
     next_url: str = Form("", alias="next"),
     session: Session = Depends(get_session),
 ):
-    """待确认信源确认入池（IIH-05.01）：可修正名/类型 + 初始档 + 途径 → 提案落账。
+    """待确认信源确认入池（IIH-05.01）：可修正名/类型 + 初始档 + 采集入口 → 提案落账。
 
-    途径（IIH-05.02 补救）：采集入口非空即建互联网途径（名默认「网站」），
-    预填发现来源 URL；留空不建（兼容人工归因的待确认信源）。
+    采集入口（IIH-05.02 补救、IIH-06.03 途径退役）：非空即建（预填发现来源 URL），
+    留空不建（兼容人工归因的待确认信源）。
     """
     target = _safe_next(next_url)
     try:
@@ -336,8 +348,7 @@ def source_confirm(
                     initial_credit=initial_credit.strip(),
                     name=name.strip() or None,
                     source_type=type_enum,
-                    outlet_name=outlet_name.strip() or None,
-                    outlet_entry=outlet_entry.strip() or None,
+                    entry=entry.strip() or None,
                 ),
                 rationale=CONFIRM_RATIONALE,
             ),

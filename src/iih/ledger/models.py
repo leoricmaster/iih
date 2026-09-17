@@ -1,4 +1,4 @@
-"""溯源存储 schema：媒介、载体、信源、途径、情报条目（doc-04 §1；English 命名见术语表 §三/§六）。"""
+"""溯源存储 schema：媒介、载体、信源、采集入口、情报条目（doc-04 §1；命名见术语表）。"""
 
 import enum
 from datetime import date, datetime
@@ -171,10 +171,10 @@ class Source(Base):
     # 拒绝出队标记（IIH-05.01）：非 None 即不在待确认队列；确认时清空；再次归因命中时清空重捞
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     credit: Mapped[str | None] = mapped_column(String(1))  # 信源信用 A–F（信用记账归 IIH-01.06）
-    # 发现来源 URL（IIH-05.02 补救）：池外探索发现该信源的页面，确认时作为默认采集入口建途径
+    # 发现来源 URL（IIH-05.02 补救）：池外探索发现该信源的页面，确认时作为默认采集入口
     discovered_entry: Mapped[str | None] = mapped_column(Text)
 
-    outlets: Mapped[list["Outlet"]] = relationship(back_populates="source")
+    entries: Mapped[list["Entry"]] = relationship(back_populates="source")
     credit_adjustments: Mapped[list["CreditAdjustment"]] = relationship(back_populates="source")
     aliases: Mapped[list["SourceAlias"]] = relationship(back_populates="source")
     rejections: Mapped[list["SourceRejection"]] = relationship(
@@ -210,20 +210,21 @@ class SourceRejection(Base):
     source: Mapped["Source"] = relationship(back_populates="rejections")
 
 
-class Outlet(Base):
-    """途径：主体的发布出口，归属唯一信源（术语表 §六）。"""
+class Entry(Base):
+    """采集入口（decision-05 修订 2）：信源在互联网上的可采集地址（URL/RSS/账号）。
 
-    __tablename__ = "outlet"
-    __table_args__ = (UniqueConstraint("source_id", "name"),)
+    途径 Outlet 术语退役（IIH-06.03）：仅承载「去哪捞」的调度配置，不参与溯源
+    ——溯源要素为信源 × 媒介 × 载体 × 时间；线下归因不建采集入口。
+    """
+
+    __tablename__ = "entry"
+    __table_args__ = (UniqueConstraint("source_id", "entry", name="uq_entry_source_entry"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     source_id: Mapped[int] = mapped_column(ForeignKey("source.id"))
-    name: Mapped[str] = mapped_column(String(200))
-    entry: Mapped[str | None] = mapped_column(Text)  # 采集入口：网址/RSS/账号/线下场景
-    medium_id: Mapped[int | None] = mapped_column(ForeignKey("medium.id"))
+    entry: Mapped[str] = mapped_column(Text)
 
-    source: Mapped["Source"] = relationship(back_populates="outlets")
-    medium: Mapped["Medium | None"] = relationship()
+    source: Mapped["Source"] = relationship(back_populates="entries")
 
 
 class Material(Base):
@@ -306,13 +307,12 @@ class IntelligenceItem(Base):
     retracted: Mapped[bool] = mapped_column(Boolean, default=False)  # 作废标记，正交于状态
     mode: Mapped[ItemMode] = mapped_column(_sa_enum(ItemMode), default=ItemMode.MANUAL, index=True)
 
-    # 溯源五要素：载体 + 媒介 + 采集时间 + 原文快照 + 信源/途径归因
+    # 溯源五要素：载体 + 媒介 + 采集时间 + 原文快照 + 信源归因
     modality_id: Mapped[int] = mapped_column(ForeignKey("modality.id"))
     medium_id: Mapped[int] = mapped_column(ForeignKey("medium.id"))
     collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     original_snapshot: Mapped[str | None] = mapped_column(Text)  # 原文快照：人工提交文本
     source_id: Mapped[int | None] = mapped_column(ForeignKey("source.id"), index=True)
-    outlet_id: Mapped[int | None] = mapped_column(ForeignKey("outlet.id"))
 
     provenance_source_id: Mapped[int | None] = mapped_column(ForeignKey("source.id"))  # 出处信源
     event_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # 事件时间
@@ -338,7 +338,6 @@ class IntelligenceItem(Base):
     material: Mapped["Material | None"] = relationship()
     derivation: Mapped["Derivation | None"] = relationship()
     source: Mapped["Source | None"] = relationship(foreign_keys=[source_id])
-    outlet: Mapped["Outlet | None"] = relationship()
     provenance_source: Mapped["Source | None"] = relationship(foreign_keys=[provenance_source_id])
     provenance_nodes: Mapped[list["ProvenanceChainNode"]] = relationship(
         back_populates="item", cascade="all, delete-orphan"
@@ -395,21 +394,17 @@ class IntelligenceRequirement(Base):
 class ProvenanceChainNode(Base):
     """转引链节点（doc-03 §六）：一条情报的完整溯源路径节点。
 
-    每个节点记一个信源引用；主条目 source_id/outlet_id 作为「出处信源」（最早引入陈述的信源），
+    每个节点记一个信源引用；主条目 source_id 作为「出处信源」（最早引入陈述的信源），
     节点表存全部引用含出处信源本身。命中既有条目时仅追加节点，不新建条目（doc-06 §3 前置过滤）。
+    同一条目对同一信源至多一节点（独立信源计数 N 按信源去重）。
     """
 
     __tablename__ = "provenance_chain_node"
-    __table_args__ = (
-        UniqueConstraint(
-            "item_id", "source_id", "outlet_id", name="uq_node_per_item_source_outlet"
-        ),
-    )
+    __table_args__ = (UniqueConstraint("item_id", "source_id", name="uq_node_per_item_source"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     item_id: Mapped[int] = mapped_column(ForeignKey("intelligence_item.id"), index=True)
     source_id: Mapped[int] = mapped_column(ForeignKey("source.id"))
-    outlet_id: Mapped[int | None] = mapped_column(ForeignKey("outlet.id"))
     modality_id: Mapped[int] = mapped_column(ForeignKey("modality.id"))
     medium_id: Mapped[int] = mapped_column(ForeignKey("medium.id"))
     collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -418,7 +413,6 @@ class ProvenanceChainNode(Base):
 
     item: Mapped["IntelligenceItem"] = relationship(back_populates="provenance_nodes")
     source: Mapped["Source"] = relationship(foreign_keys=[source_id])
-    outlet: Mapped["Outlet | None"] = relationship(foreign_keys=[outlet_id])
     modality: Mapped["Modality"] = relationship()
     medium: Mapped["Medium"] = relationship()
 

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from iih.ledger.duration import parse_duration_to_seconds
 from iih.ledger.models import (
     Derivation,
+    Entry,
     IntelligenceItem,
     IntelligenceRequirement,
     IntelligenceRequirementStatus,
@@ -21,7 +22,6 @@ from iih.ledger.models import (
     Material,
     Medium,
     Modality,
-    Outlet,
     ProvenanceChainNode,
     ReviewDecision,
     ReviewDecisionEnum,
@@ -145,11 +145,6 @@ class StateMachineExecutor:
         source = self._resolve_source(
             session, provenance, discovered_entry=proposal.payload.original_url
         )
-        outlet = (
-            self._resolve_outlet(session, provenance, source, medium)
-            if provenance.outlet_name
-            else None
-        )
 
         if proposal.payload.content_fingerprint:
             duplicate = session.scalars(
@@ -179,7 +174,6 @@ class StateMachineExecutor:
             collected_at=provenance.collected_at,
             original_snapshot=provenance.original_snapshot,
             source=source,
-            outlet=outlet,
             event_time=proposal.payload.event_time,
             content_fingerprint=proposal.payload.content_fingerprint,
             original_url=proposal.payload.original_url,
@@ -193,7 +187,6 @@ class StateMachineExecutor:
         node = ProvenanceChainNode(
             item=item,
             source=source,
-            outlet=outlet,
             modality=modality,
             medium=medium,
             collected_at=provenance.collected_at,
@@ -237,7 +230,7 @@ class StateMachineExecutor:
         """信源按名/别名解析（别名归到归属信源）；新信源记待确认（decision-05）。
 
         新信源携带发现来源 URL（自动条目的原文链接）时落账 discovered_entry，
-        确认时预填采集入口建途径。已拒绝信源再次被归因命中即重捞：清 rejected_at
+        确认时预填建采集入口。已拒绝信源再次被归因命中即重捞：清 rejected_at
         重新入队（拒绝历史由事件表带上）。
         """
         source = self._source_by_name_or_alias(session, provenance.source_name)
@@ -261,20 +254,6 @@ class StateMachineExecutor:
         alias = session.scalars(select(SourceAlias).where(SourceAlias.name == name)).first()
         return alias.source if alias is not None else None
 
-    def _resolve_outlet(
-        self, session: Session, provenance: ProvenanceData, source: Source, medium: Medium
-    ) -> Outlet:
-        """途径按（信源, 名称）解析，归属唯一信源。"""
-        outlet = session.scalars(
-            select(Outlet).where(
-                Outlet.source_id == source.id, Outlet.name == provenance.outlet_name
-            )
-        ).first()
-        if outlet is None:
-            outlet = Outlet(source=source, name=provenance.outlet_name, medium=medium)
-            session.add(outlet)
-        return outlet
-
     # ---- IIH-05.01 待确认信源确认闭环 ----
 
     def _execute_source_confirm(
@@ -285,12 +264,12 @@ class StateMachineExecutor:
         校验：信源存在 + confirmed=False 前置 + 初始档必填合法（doc-04 §2.3 解死锁）+ 依据非空
         + 修正名非空白 + 目标名不撞别名。
         三分支：未改名 → 直接入池；改名未撞名 → 以新名入池；撞既有已确认
-        信源名 → 并入该信源（条目/转引链节点/途径迁移，同名途径复用），待确认行删除，
+        信源名 → 并入该信源（条目/转引链节点迁移），待确认行删除，
         信用档沿用目标信源。类型仅在非并入路径修正。
         改名/并入不再自动留档旧名为别名（IIH-06.02：旧名往往是采集智能体产出的脏名）；
         别名改由用户在信源画像页主动声明。
-        途径（IIH-05.02 补救）：outlet_entry 非空则建互联网途径（名默认「网站」，并入路径建到
-        目标信源、同名跳过），留空不建——入池即可被采集，与人工登记同构。
+        采集入口（IIH-05.02 补救、IIH-06.03 途径退役）：entry 非空则建采集入口（并入路径
+        建到目标信源），留空不建——入池即可被采集，与人工登记同构。
         """
         payload = proposal.payload
         reasons: list[str] = []
@@ -326,8 +305,7 @@ class StateMachineExecutor:
                 session,
                 pending=source,
                 target=existing,
-                outlet_name=payload.outlet_name,
-                outlet_entry=payload.outlet_entry,
+                entry=payload.entry,
             )
         alias_hit = session.scalars(
             select(SourceAlias).where(SourceAlias.name == target_name)
@@ -343,14 +321,9 @@ class StateMachineExecutor:
         source.rejected_at = None
         if payload.source_type is not None:
             source.type = payload.source_type
-        entry = (payload.outlet_entry or "").strip()
+        entry = (payload.entry or "").strip()
         if entry:
-            self._ensure_internet_outlet(
-                session,
-                source=source,
-                name=(payload.outlet_name or "").strip() or "网站",
-                entry=entry,
-            )
+            self._ensure_entry(session, source=source, entry=entry)
         session.flush()
         source_id = source.id
         session.commit()
@@ -362,60 +335,37 @@ class StateMachineExecutor:
         *,
         pending: Source,
         target: Source,
-        outlet_name: str | None = None,
-        outlet_entry: str | None = None,
+        entry: str | None = None,
     ) -> ExecutionResult:
-        """待确认信源并入既有已确认信源：条目/转引链节点/途径迁移，待确认行删除。
+        """待确认信源并入既有已确认信源：条目/转引链节点迁移，待确认行删除。
 
-        同名途径不迁移——条目/节点改指目标信源既有途径（归属唯一信源约束），待确认途径行删除；
-        信用档沿用目标信源。确认携带采集入口时建到目标信源（IIH-05.02 补救），同名途径跳过。
+        待确认信源无采集入口（入口仅建在已确认信源上）；确认携带采集入口时建到目标
+        信源（IIH-05.02 补救），已存在同入口则跳过。信用档沿用目标信源。
         """
-        outlet_remap: dict[int, Outlet] = {}
-        duplicated: list[Outlet] = []
-        for outlet in list(pending.outlets):
-            kept = next((o for o in target.outlets if o.name == outlet.name), None)
-            if kept is None:
-                outlet.source = target
-            else:
-                outlet_remap[outlet.id] = kept
-                duplicated.append(outlet)
-        entry = (outlet_entry or "").strip()
-        if entry:
-            self._ensure_internet_outlet(
-                session, source=target, name=(outlet_name or "").strip() or "网站", entry=entry
-            )
+        entry_value = (entry or "").strip()
+        if entry_value:
+            self._ensure_entry(session, source=target, entry=entry_value)
         nodes = session.scalars(
             select(ProvenanceChainNode).where(ProvenanceChainNode.source_id == pending.id)
         ).all()
         for node in nodes:
             node.source = target
-            if node.outlet_id in outlet_remap:
-                node.outlet = outlet_remap[node.outlet_id]
         items = session.scalars(
             select(IntelligenceItem).where(IntelligenceItem.source_id == pending.id)
         ).all()
         for item in items:
             item.source = target
-            if item.outlet_id in outlet_remap:
-                item.outlet = outlet_remap[item.outlet_id]
-        for outlet in duplicated:
-            session.delete(outlet)
         session.delete(pending)
         session.flush()
         target_id = target.id
         session.commit()
         return ExecutionResult(source_id=target_id)
 
-    def _ensure_internet_outlet(
-        self, session: Session, *, source: Source, name: str, entry: str
-    ) -> None:
-        """确认时建互联网途径（IIH-05.02 补救）：同主体同名途径已存在则跳过。"""
-        if any(o.name == name for o in source.outlets):
+    def _ensure_entry(self, session: Session, *, source: Source, entry: str) -> None:
+        """确认时建采集入口（IIH-05.02 补救、IIH-06.03 途径退役）：同主体同入口已存在则跳过。"""
+        if any(e.entry == entry for e in source.entries):
             return
-        medium = session.scalars(select(Medium).where(Medium.code == "internet")).first()
-        if medium is None:
-            raise ProposalRejectedError(["媒介引用不可解析：internet"])
-        session.add(Outlet(source=source, name=name, entry=entry, medium=medium))
+        session.add(Entry(source=source, entry=entry))
 
     def _execute_source_reject(
         self, proposal: SourceRejectProposal, session: Session
@@ -567,7 +517,7 @@ class StateMachineExecutor:
     ) -> ExecutionResult:
         """转引链节点追加（doc-06 §3 前置过滤命中路径）。
 
-        校验：item 存在 + source 可解析 + 同(item, source, outlet)节点不重复；
+        校验：item 存在 + source 可解析 + 同(item, source)节点不重复；
         自动拉取场景下 source 应已 confirmed，本提案由 Collector 在指纹命中时产出。
         """
         payload = proposal.payload
@@ -579,21 +529,10 @@ class StateMachineExecutor:
         if source is None:
             raise ProposalRejectedError([f"信源不可解析：{payload.source_name}"])
 
-        outlet: Outlet | None = None
-        if payload.outlet_name:
-            outlet = session.scalars(
-                select(Outlet).where(
-                    Outlet.source_id == source.id, Outlet.name == payload.outlet_name
-                )
-            ).first()
-            if outlet is None:
-                raise ProposalRejectedError([f"途径不可解析：{payload.outlet_name}"])
-
         existing = session.scalars(
             select(ProvenanceChainNode).where(
                 ProvenanceChainNode.item_id == item.id,
                 ProvenanceChainNode.source_id == source.id,
-                ProvenanceChainNode.outlet_id == (outlet.id if outlet else None),
             )
         ).first()
         if existing is not None:
@@ -602,7 +541,6 @@ class StateMachineExecutor:
         node = ProvenanceChainNode(
             item=item,
             source=source,
-            outlet=outlet,
             modality=item.modality,
             medium=item.medium,
             collected_at=payload.collected_at,

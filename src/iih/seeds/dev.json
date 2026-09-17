@@ -3,8 +3,7 @@
     {
       "source_name": "三一集团",
       "source_type": "company",
-      "outlet_name": "官网",
-      "outlet_entry": "https://www.sanygroup.com/",
+      "entry": "https://www.sanygroup.com/",
       "initial_credit": "C"
     }
   ],

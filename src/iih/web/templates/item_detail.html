@@ -120,7 +120,6 @@
     <dt>媒介 / 载体</dt><dd>{{ item.medium.name }} / {{ item.modality.name }}</dd>
     <dt>采集模式</dt><dd>{{ '自动拉取' if item.mode.value == 'automated' else '人工提交' }}</dd>
     <dt>出处信源</dt><dd>{% if item.source %}<a href="/sources/{{ item.source.id }}">{{ item.source.name }}</a>{% else %}—{% endif %}</dd>
-    <dt>途径</dt><dd>{{ item.outlet.name if item.outlet else '—' }}</dd>
     <dt>原文快照</dt><dd>
       {% if item.snapshot_object_key %}<a href="/items/{{ item.id }}/snapshot" target="_blank" rel="noopener">存档页 ↗</a>
       {%- elif item.original_snapshot %}<details><summary>提交文本</summary><div class="snapbox">{{ item.original_snapshot }}</div></details>
@@ -140,7 +139,7 @@
   <ul class="chain">
     {% for node in chain_nodes %}
     <li class="{{ 'first' if loop.first }}">
-      <a href="/sources/{{ node.source_id }}">{{ node.source.name }}</a><span class="muted"> · {{ node.outlet.name if node.outlet else '途径未记' }}</span>
+      <a href="/sources/{{ node.source_id }}">{{ node.source.name }}</a><span class="muted"> · {{ node.medium.name }}</span>
       {% if node.source_id == attribution_source_id %}<span class="pill">信用归因对象</span>{% endif %}
       <span class="muted">{{ node.collected_at | dtstr }}{% if node.original_url %} · <a href="{{ node.original_url }}" rel="noopener">原文</a>{% endif %}</span>
     </li>

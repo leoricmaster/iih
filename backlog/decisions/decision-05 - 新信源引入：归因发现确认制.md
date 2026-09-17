@@ -29,3 +29,24 @@ status: 已采纳
 ## 后果
 
 信源池质量有人工把关；AUTOMATED 条目不再要求信源已确认/途径已登记（与人工归因解析统一）；冷启动路径 = 声明需求即采集。
+
+## 修订（2026-09-17，IIH-06.03）
+
+Outlet 字段简化：`medium_id` 外键 → `is_internet` 布尔。理由：
+
+- 非互联网途径 `entry` 永远为空（自动归因产出的线下途径从不填 entry、仅 `_ensure_internet_outlet` 路径填 entry）；
+- Outlet.medium 在全仓只有 `medium.code == "internet"` 一种分支判断被使用（Director 选 outlet 派单、requirements 覆盖度、state_machine 确认建互联网途径），其他 5 种线下 medium code 无任何分支逻辑；
+- Medium 表保留供 IntelligenceItem.medium_id / Material.medium_id 使用——条目级「获取场景」溯源仍由 Medium 承担。
+
+故 Outlet 层仅区分互联网/非互联网即足；doc-02 §80 ER 图边 `媒介→途径` 删除，doc-03 §164 Outlet 定义修订（互联网途径记采集入口、非互联网途径仅记名称）。
+
+## 修订 2（2026-09-17，IIH-06.03）
+
+途径 Outlet 术语退役，模型收缩为**采集入口 Entry**（`id / source_id / entry`，(信源, 入口) 唯一）。理由：
+
+- 非互联网途径（会议讨论、行业展会等）没有可采集地址，留存只产生「渠道大会 · 现场」这类无信息量行；线下归因本就靠 medium 表达（条目级 IntelligenceItem.medium），不需要途径行；
+- 名称（官网/公众号/网站）只是地址的弱标签，格式不一、无独立判断价值——地址本身即唯一有意义的字段；
+- 采集入口是纯调度配置（「去哪儿捞」），不参与溯源：溯源要素收敛为信源 × 媒介 × 载体 × 时间 + 原文快照。故 IntelligenceItem.outlet_id、ProvenanceChainNode.outlet_id 一并删除（转引链节点按 (条目, 信源) 去重），ER 边 `途径→情报条目` 删除、`信源→采集入口` 改「可采集」；
+- 确认入池时以发现 URL 补记首条采集入口（原修订的 is_internet 字段随之删除——有地址即可采集，无须再分型）。
+
+doc-02 / doc-03 / doc-04 / doc-05 / doc-06 / doc-07 同步换用采集入口口径。

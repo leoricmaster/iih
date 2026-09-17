@@ -120,7 +120,7 @@ flowchart TB
 
 工具层检索侧选型（2026-09 沉淀，IIH-05.02 / IIH-06.01 探索任务）：
 
-- 互联网检索走 Tavily Search API（外购，不为单一搜索引擎绑定）；采集智能体 explore 按 IR.content_spec 提取关键词 → 检索 top-5（排除全部已登记途径域）→ LLM 选链；
+- 互联网检索走 Tavily Search API（外购，不为单一搜索引擎绑定）；采集智能体 explore 按 IR.content_spec 提取关键词 → 检索 top-5（排除全部已登记入口域）→ LLM 选链；
 - API key 走环境变量（TAVILY_API_KEY），不入库不入 git；LLM 调用计量入 LlmCall（target=exploration，与既有成本计量同口径）；
 - 不可用时降级：探索任务静默跳过、不阻断主任务（同 LLM 不可用降级模式）；
 - 自部署元搜索（SearXNG）不引入：违反组件最少化（多一个容器要运维），起步阶段 Tavily 外购省心，负载超免费额度再评估。

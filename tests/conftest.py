@@ -173,7 +173,7 @@ def _make_dispatch_llm(responses: dict[type, object], prompt_tokens: int, comple
 
 
 def make_fake_llm_collect(selection: ArticleSelectionResult, extraction: StatementExtractionResult):
-    """instructor 替身：按 response_model 分发选链 / 抽取（collect_outlet 单测）。"""
+    """instructor 替身：按 response_model 分发选链 / 抽取（collect_entry 单测）。"""
     return _make_dispatch_llm(
         {ArticleSelectionResult: selection, StatementExtractionResult: extraction},
         prompt_tokens=200,
@@ -260,7 +260,6 @@ def w_attribution() -> AttributionResult:
     return AttributionResult(
         source_name="W 公司",
         source_type="company",
-        outlet_name="渠道大会现场",
         rationale="陈述主体为 W 公司，发布场景为渠道大会",
     )
 

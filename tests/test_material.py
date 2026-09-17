@@ -378,7 +378,6 @@ def _third_track_payload(
             collected_at=datetime.now(UTC),
             source_name="W 公司",
             source_type="company",
-            outlet_name=None,
         ),
         rationale="转写稿抽取",
     )
@@ -607,7 +606,6 @@ class _SpeakerEchoCompletions:
             result = AttributionResult(
                 source_name=speaker,
                 source_type="person",
-                outlet_name=None,
                 rationale=f"段内发言人标签 {speaker}",
             )
         return result, SimpleNamespace(usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5))

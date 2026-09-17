@@ -132,10 +132,8 @@ input.srcname{width:160px;flex:none;font-weight:600;font-size:13.5px;padding:3px
 input.srcname:hover{border-color:#d5d5d5;background:#fff}
 input.srcname:focus{border-color:#2b5bd7;outline:none;background:#fff}
 .srctype{width:auto;flex:none;padding:3px 6px;font-size:12.5px}
-.srcrow-outlet{display:flex;align-items:center;gap:6px;min-width:0;flex:0 1 340px}
-.srcrow-outlet input{padding:3px 6px;font-size:12.5px}
-.srcrow-outlet .outletname{width:72px;flex:none}
-.srcrow-outlet .outletentry{flex:1;min-width:0}
+.srcrow-entry{display:flex;align-items:center;gap:6px;min-width:0;flex:0 1 340px}
+.srcrow-entry input{padding:3px 6px;font-size:12.5px;flex:1;min-width:0}
 .srcrow-acts{display:flex;align-items:center;gap:6px;margin-left:auto;white-space:nowrap}
 .srcrow-acts select{width:auto;padding:3px 6px;font-size:12.5px}
 /* IIH-06.01 ② 相似名查重：纯提示不自动归并 */
@@ -143,3 +141,13 @@ input.srcname:focus{border-color:#2b5bd7;outline:none;background:#fff}
 .srcrow-sim + .srcrow-sim{margin-left:6px}
 .srcfill{cursor:pointer;color:#2b5bd7;text-decoration:underline dotted}
 .srcfill:hover{color:#1a3faf}
+/* IIH-06.03 画像页编辑态 */
+.src-sub{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.src-sub-main{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.segmented{display:inline-flex;border:1px solid #c9c9c9;border-radius:8px;overflow:hidden}
+.segmented .seg{display:inline-block;padding:5px 12px;font-size:13px;cursor:pointer;color:#555;background:#fff;border-right:1px solid #e0e0e0}
+.segmented .seg:last-child{border-right:none}
+.segmented .seg input{position:absolute;opacity:0;pointer-events:none}
+.segmented .seg.active{background:#2b5bd7;color:#fff;font-weight:600}
+.sticky-bottom{position:sticky;bottom:14px;background:#fff;border:1px solid #ddd;border-radius:8px;padding:10px 14px;box-shadow:0 -2px 8px rgba(0,0,0,.06);z-index:10}
+.alias-row .pill{display:none}

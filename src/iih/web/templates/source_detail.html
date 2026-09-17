@@ -3,8 +3,13 @@
 {% block title %}{{ source.name }}{% endblock %}
 {% block content %}
 <h1 class="page"><a href="/sources">信源库</a> / 信源画像</h1>
-<div class="sub">{{ source.name }} · {{ source_type_labels[source.type] }}
-  {% if source.confirmed %}<span class="pill">已确认</span>{% else %}<span class="pill dashed">待确认</span>{% endif %}</div>
+<div class="sub src-sub">
+  <span class="src-sub-main">{{ source.name }} · {{ source_type_labels[source.type] }}
+    {% if source.confirmed %}<span class="pill">已确认</span>{% else %}<span class="pill dashed">待确认</span>{% endif %}</span>
+  {% if source.confirmed and not edit_mode %}
+  <a class="btn small" href="/sources/{{ source.id }}?edit=1">编辑</a>
+  {% endif %}
+</div>
 
 {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
 {% if err %}<div class="err">{{ err }}</div>{% endif %}
@@ -15,35 +20,81 @@
   {{ m.confirm_reject(source, '/sources/' ~ source.id, source_types, pending_similars) }}
 </div>
 {% else %}
+{% if edit_mode %}
+<form method="post" action="/sources/{{ source.id }}/edit" id="src-edit">
 <div class="box"><h2>主体</h2>
-  <form method="post" action="/sources/{{ source.id }}/rename">
-    <div class="fbrow">
-      <input type="text" name="name" value="{{ source.name }}" maxlength="80">
-      <button class="btn small">改名</button>
+  <div class="field"><label>名称</label>
+    <input type="text" name="name" value="{{ source.name }}" maxlength="80" style="max-width:320px">
+  </div>
+  <div class="field" style="margin-top:8px"><label>别名</label>
+    <div id="alias-list" style="display:flex;flex-wrap:wrap;gap:6px">
+      {% for a in source.aliases %}
+      <div class="alias-row" style="display:inline-flex;align-items:center;gap:3px">
+        <input type="text" name="aliases" value="{{ a.name }}" maxlength="200" style="width:200px">
+        <button type="button" class="btn small" onclick="this.closest('.alias-row').remove()" title="删别名">×</button>
+      </div>
+      {% endfor %}
     </div>
-  </form>
+    <button type="button" class="btn small" onclick="addAlias()" style="margin-top:6px">加别名</button>
+  </div>
+</div>
+
+<div class="box"><h2>信源信用</h2>
+  <div class="fbrow">
+    <div class="segmented" role="radiogroup" aria-label="信用档">
+      <label class="seg{{ ' active' if not source.credit }}"><input type="radio" name="credit" value=""{{ ' checked' if not source.credit }}><span>不设</span></label>
+      {% for g in "ABCDEF" %}<label class="seg{{ ' active' if source.credit == g }}"><input type="radio" name="credit" value="{{ g }}"{{ ' checked' if source.credit == g }}><span>{{ g }}</span></label>{% endfor %}
+    </div>
+  </div>
+  {% if adjustments %}
+  <table style="margin-top:10px">
+    <tr><th>时间</th><th>奖惩</th><th>累计分</th><th>分档</th><th>公式版本</th></tr>
+    {% for adj in adjustments %}
+    <tr>
+      <td class="muted">{{ adj.created_at | dtstr }}</td>
+      <td>{{ '+1（有效）' if adj.delta > 0 else '−2（事实错误）' }}</td>
+      <td>{{ '%.2f' % adj.score_after }}</td>
+      <td><span class="pill rating">{{ adj.grade_after }}</span></td>
+      <td class="muted">{{ adj.formula_version }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="muted" style="margin-top:6px">尚无反馈记录</div>
+  {% endif %}
+</div>
+
+<div class="box"><h2>采集入口</h2>
+  <div id="entry-list">
+    {% for e in source.entries %}
+    <div class="entry-row" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #eee;padding:6px 0">
+      <input type="hidden" name="entry_id" value="{{ e.id }}">
+      <input type="text" name="entry_value" value="{{ e.entry }}" maxlength="500" placeholder="URL / RSS / 账号 ID" style="flex:1;min-width:280px">
+      <button type="button" class="btn small" onclick="markEntryDelete(this)" title="删采集入口">×</button>
+    </div>
+    {% endfor %}
+  </div>
+  <button type="button" class="btn small" onclick="addEntry()" style="margin-top:6px">加采集入口</button>
+</div>
+
+<div class="fbrow sticky-bottom">
+  <button type="submit" class="btn primary">保存</button>
+  <a class="btn" href="/sources/{{ source.id }}">取消</a>
+</div>
+</form>
+{% else %}
+<div class="box"><h2>主体</h2>
   <div class="fbrow">
     <span class="muted">别名</span>
     {% if source.aliases %}
-    {% for a in source.aliases %}
-    <form method="post" action="/sources/{{ source.id }}/aliases/{{ a.id }}/delete" style="display:inline-flex;align-items:center;gap:3px">
-      <span class="pill">{{ a.name }}</span>
-      <button class="btn small" title="删别名">×</button>
-    </form>
-    {% endfor %}
-    {% else %}
-    <span class="muted">—</span>
-    {% endif %}
+    {% for a in source.aliases %}<span class="pill">{{ a.name }}</span>{% endfor %}
+    {% else %}<span class="muted">—</span>{% endif %}
   </div>
-  <form method="post" action="/sources/{{ source.id }}/aliases">
-    <div class="fbrow">
-      <input type="text" name="name" value="" maxlength="200" placeholder="加别名" style="width:200px">
-      <button class="btn small">加别名</button>
-    </div>
-  </form>
 </div>
 
-<div class="box"><h2>信源信用 <span class="pill rating">{{ source.credit or '—' }}</span></h2>
+<div class="box"><h2>信源信用
+  {% if source.credit %}<span class="pill rating">{{ source.credit }}</span>{% else %}<span class="pill dashed">未设</span>{% endif %}
+</h2>
   {% if adjustments %}
   <table>
     <tr><th>时间</th><th>奖惩</th><th>累计分</th><th>分档</th><th>公式版本</th></tr>
@@ -60,35 +111,22 @@
   {% else %}
   <div class="muted">尚无反馈记录</div>
   {% endif %}
-  <form method="post" action="/sources/{{ source.id }}/credit" style="margin-top:8px">
-    <div class="field"><label>调整信用档 <span class="muted" title="信用档 A–F：A 最可靠 → F 最不可靠。累计分映射：A ≥8、B [4,8)、C [0,4)、D [−4,0)、E [−8,−4)、F <−8；有效反馈 +1、事实错误 −2、180 天半衰期；清空 = 不设档，条目核实将存疑。">ⓘ</span></label>
-      <div class="fbrow">
-        <select name="credit">
-          <option value="" {{ 'selected' if not source.credit }}>不设</option>
-          {% for g in "ABCDEF" %}<option value="{{ g }}" {{ 'selected' if source.credit == g }}>{{ g }}</option>{% endfor %}
-        </select>
-        <button class="btn small">保存</button>
-      </div>
-    </div>
-  </form>
 </div>
 
-<div class="box"><h2>途径（{{ source.outlets | length }}）</h2>
-  {% if source.outlets %}
-  <table>
-    <tr><th>途径</th><th>媒介</th><th>采集入口</th></tr>
-    {% for o in source.outlets %}
-    <tr><td><b>{{ o.name }}</b></td>
-      <td class="muted">{{ o.medium.name if o.medium else '—' }}</td>
-      <td class="muted">{{ o.entry or '—' }}</td></tr>
-    {% endfor %}
-  </table>
+<div class="box"><h2>采集入口（{{ source.entries | length }}）</h2>
+  {% if source.entries %}
+  {% for e in source.entries %}
+  <div style="border-bottom:1px solid #eee;padding:6px 0">
+    <span class="mono">{{ e.entry }}</span>
+  </div>
+  {% endfor %}
   {% else %}
-  <div class="muted">暂无途径</div>
+  <div class="muted">暂无采集入口</div>
   {% endif %}
 </div>
 
-<div class="box"><h2>参与条目</h2>
+<details class="box">
+  <summary>参与条目（{{ participating | length }}）</summary>
   {% if participating %}
   {% for item in participating %}
   <div style="border-bottom:1px solid #eee;padding:7px 0">
@@ -101,10 +139,7 @@
   {% else %}
   <div class="empty">暂无</div>
   {% endif %}
-</div>
-
-<div class="box"><h2>主体画像</h2>
-  <div class="muted">画像功能即将上线</div>
-</div>
+</details>
+{% endif %}
 {% endif %}
 {% endblock %}

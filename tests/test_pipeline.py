@@ -12,12 +12,11 @@ from iih.agents.collector import StatementExtractionResult
 from iih.agents.reviewer import ReviewJudgmentResult
 from iih.config import get_settings
 from iih.ledger.models import (
+    Entry,
     IntelligenceItem,
     IntelligenceRequirement,
     IntelligenceRequirementStatus,
     ItemStatus,
-    Medium,
-    Outlet,
     Source,
     SourceType,
 )
@@ -47,18 +46,15 @@ HTML_ARTICLE = """
 
 
 def _seed_collectable_fixture(db_session) -> int:
-    """激活需求 + 已设档信源互联网途径，返回需求 id（供审查判定匹配）。"""
-    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+    """激活需求 + 已设档信源采集入口，返回需求 id（供审查判定匹配）。"""
     source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, credit="B")
-    outlet = Outlet(
-        source=source, name="官网", entry="https://w-mining.example/news", medium=medium
-    )
+    entry = Entry(source=source, entry="https://w-mining.example/news")
     ir = IntelligenceRequirement(
         name="跟踪 W 公司",
         content_spec="主题：矿卡、订单、战略",
         status=IntelligenceRequirementStatus.ACTIVE,
     )
-    db_session.add_all([source, outlet, ir])
+    db_session.add_all([source, entry, ir])
     db_session.flush()
     return ir.id
 

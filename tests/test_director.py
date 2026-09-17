@@ -1,4 +1,4 @@
-"""Director 单测（doc-06 §2 + IIH-03.01 + IIH-06.01）：激活 IR × 已确认互联网途径笛卡尔积，
+"""Director 单测（doc-06 §2 + IIH-03.01 + IIH-06.01）：激活 IR × 已确认信源采集入口笛卡尔积，
 按各 IR 独立参数分发：到期关闭 + due 过滤 + 信源绑定过滤；探索常驻（每 due IR 无条件一个）。"""
 
 from datetime import UTC, datetime, timedelta
@@ -7,10 +7,9 @@ from sqlalchemy import select
 
 from iih.agents.director import CollectionTask, Director
 from iih.ledger.models import (
+    Entry,
     IntelligenceRequirement,
     IntelligenceRequirementStatus,
-    Medium,
-    Outlet,
     Source,
     SourceType,
 )
@@ -43,33 +42,26 @@ def _seed_ir(
     return ir
 
 
-def _seed_outlet(
+def _seed_entry(
     db_session,
     *,
     source_name: str,
-    outlet_name: str,
     entry: str,
     confirmed: bool = True,
-    medium_code: str = "internet",
-) -> Outlet:
-    medium = db_session.scalars(select(Medium).where(Medium.code == medium_code)).one()
+) -> Entry:
     source = Source(name=source_name, type=SourceType.COMPANY, confirmed=confirmed)
-    outlet = Outlet(source=source, name=outlet_name, entry=entry, medium=medium)
-    db_session.add_all([source, outlet])
+    entry_obj = Entry(source=source, entry=entry)
+    db_session.add_all([source, entry_obj])
     db_session.flush()
-    return outlet
+    return entry_obj
 
 
 def test_propose_tasks_returns_cartesian_product(db_session) -> None:
-    """激活 IR × 已确认互联网途径：2 IR × 2 途径 = 4 采集任务 + 2 探索任务。"""
+    """激活 IR × 已确认信源采集入口：2 IR × 2 入口 = 4 采集任务 + 2 探索任务。"""
     _seed_ir(db_session, name="跟踪 W 公司")
     _seed_ir(db_session, name="跟踪新华社")
-    _seed_outlet(
-        db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example/news"
-    )
-    _seed_outlet(
-        db_session, source_name="新华社", outlet_name="官网", entry="https://xinhua.example"
-    )
+    _seed_entry(db_session, source_name="W 公司", entry="https://w.example/news")
+    _seed_entry(db_session, source_name="新华社", entry="https://xinhua.example")
 
     tasks, explorations = Director(db_session).propose_tasks()
 
@@ -85,7 +77,7 @@ def test_propose_tasks_excludes_paused_and_draft_irs(db_session) -> None:
     _seed_ir(db_session, name="激活", status=IntelligenceRequirementStatus.ACTIVE)
     _seed_ir(db_session, name="草稿", status=IntelligenceRequirementStatus.DRAFT)
     _seed_ir(db_session, name="暂停", status=IntelligenceRequirementStatus.PAUSED)
-    _seed_outlet(db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example")
+    _seed_entry(db_session, source_name="W 公司", entry="https://w.example")
 
     tasks, explorations = Director(db_session).propose_tasks()
 
@@ -108,10 +100,9 @@ def test_propose_tasks_cold_start_dispatches_exploration_only(db_session) -> Non
 
 def test_propose_tasks_excludes_unconfirmed_sources(db_session) -> None:
     _seed_ir(db_session, name="激活")
-    _seed_outlet(
+    _seed_entry(
         db_session,
         source_name="待确认",
-        outlet_name="官网",
         entry="https://x.example",
         confirmed=False,
     )
@@ -122,39 +113,8 @@ def test_propose_tasks_excludes_unconfirmed_sources(db_session) -> None:
     assert len(explorations) == 1
 
 
-def test_propose_tasks_excludes_non_internet_outlets(db_session) -> None:
-    _seed_ir(db_session, name="激活")
-    _seed_outlet(
-        db_session,
-        source_name="W 公司",
-        outlet_name="现场",
-        entry="行业大会",
-        confirmed=True,
-        medium_code="meeting_discussion",
-    )
-
-    tasks, explorations = Director(db_session).propose_tasks()
-
-    assert tasks == []
-    assert len(explorations) == 1
-
-
-def test_propose_tasks_skips_outlets_without_entry(db_session) -> None:
-    _seed_ir(db_session, name="激活")
-    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
-    source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True)
-    outlet = Outlet(source=source, name="官网", entry=None, medium=medium)
-    db_session.add_all([source, outlet])
-    db_session.flush()
-
-    tasks, explorations = Director(db_session).propose_tasks()
-
-    assert tasks == []
-    assert len(explorations) == 1
-
-
 def test_propose_tasks_empty_when_no_active_irs(db_session) -> None:
-    _seed_outlet(db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example")
+    _seed_entry(db_session, source_name="W 公司", entry="https://w.example")
 
     assert Director(db_session).propose_tasks() == ([], [])
 
@@ -165,7 +125,7 @@ def test_propose_tasks_empty_when_no_active_irs(db_session) -> None:
 def test_frequency_due_when_never_collected(db_session) -> None:
     """从未采集的 IR 始终 due（不管频率）。"""
     _seed_ir(db_session, name="高频", collection_frequency="1h")
-    _seed_outlet(db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example")
+    _seed_entry(db_session, source_name="W 公司", entry="https://w.example")
 
     tasks, explorations = Director(db_session).propose_tasks()
 
@@ -183,7 +143,7 @@ def test_frequency_not_due_when_recently_collected(db_session) -> None:
         collection_frequency="1h",
         last_collected_at=just_now,
     )
-    _seed_outlet(db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example")
+    _seed_entry(db_session, source_name="W 公司", entry="https://w.example")
 
     assert Director(db_session).propose_tasks() == ([], [])
 
@@ -197,7 +157,7 @@ def test_frequency_due_when_window_elapsed(db_session) -> None:
         collection_frequency="1h",
         last_collected_at=two_hours_ago,
     )
-    _seed_outlet(db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example")
+    _seed_entry(db_session, source_name="W 公司", entry="https://w.example")
 
     tasks, explorations = Director(db_session).propose_tasks()
 
@@ -216,7 +176,7 @@ def test_frequency_inherit_global_when_empty(db_session, monkeypatch) -> None:
 
     just_now = datetime.now(UTC) - timedelta(seconds=60)
     _seed_ir(db_session, name="继承全局", last_collected_at=just_now)
-    _seed_outlet(db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example")
+    _seed_entry(db_session, source_name="W 公司", entry="https://w.example")
 
     # 60s < 300s 未 due
     assert Director(db_session).propose_tasks() == ([], [])
@@ -232,21 +192,20 @@ def test_frequency_inherit_global_when_empty(db_session, monkeypatch) -> None:
     assert len(explorations) == 1
 
 
-def test_source_binding_filters_outlets(db_session) -> None:
-    """IR 绑定 [S1] → 仅派单到 S1 途径；未绑定 IR 派单到全部。探索不受绑定过滤。"""
-    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+def test_source_binding_filters_entries(db_session) -> None:
+    """IR 绑定 [S1] → 仅派单到 S1 入口；未绑定 IR 派单到全部。探索不受绑定过滤。"""
     s1 = Source(name="S1", type=SourceType.COMPANY, confirmed=True)
     s2 = Source(name="S2", type=SourceType.COMPANY, confirmed=True)
-    o1 = Outlet(source=s1, name="官网", entry="https://s1.example", medium=medium)
-    o2 = Outlet(source=s2, name="官网", entry="https://s2.example", medium=medium)
-    db_session.add_all([s1, s2, o1, o2])
+    e1 = Entry(source=s1, entry="https://s1.example")
+    e2 = Entry(source=s2, entry="https://s2.example")
+    db_session.add_all([s1, s2, e1, e2])
     db_session.flush()
     _seed_ir(db_session, name="绑定 S1", sources=[s1])
     _seed_ir(db_session, name="不绑定")
 
     tasks, explorations = Director(db_session).propose_tasks()
 
-    # 绑定 S1 的 IR：1 任务（S1 途径）；不绑定的 IR：2 任务（全部途径）= 3 总
+    # 绑定 S1 的 IR：1 任务（S1 入口）；不绑定的 IR：2 任务（全部入口）= 3 总
     assert len(tasks) == 3
     bound_tasks = [t for t in tasks if t.requirement_name == "绑定 S1"]
     unbound_tasks = [t for t in tasks if t.requirement_name == "不绑定"]
@@ -265,7 +224,7 @@ def test_auto_close_expired_ir(db_session) -> None:
         valid_until=today - timedelta(days=1),
     )
     _seed_ir(db_session, name="未到期")
-    _seed_outlet(db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example")
+    _seed_entry(db_session, source_name="W 公司", entry="https://w.example")
 
     tasks, explorations = Director(db_session).propose_tasks()
 
@@ -284,7 +243,7 @@ def test_valid_until_today_triggers_close(db_session) -> None:
     """valid_until = today（≤ today）也触发关闭。"""
     today = datetime.now(UTC).date()
     _seed_ir(db_session, name="今日到期", valid_until=today)
-    _seed_outlet(db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example")
+    _seed_entry(db_session, source_name="W 公司", entry="https://w.example")
 
     Director(db_session).propose_tasks()
 
@@ -296,7 +255,7 @@ def test_valid_until_future_not_closed(db_session) -> None:
     """valid_until 在未来 → 不关闭，正常派单。"""
     future = datetime.now(UTC).date() + timedelta(days=30)
     _seed_ir(db_session, name="未来到期", valid_until=future)
-    _seed_outlet(db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example")
+    _seed_entry(db_session, source_name="W 公司", entry="https://w.example")
 
     tasks, explorations = Director(db_session).propose_tasks()
 
@@ -315,7 +274,7 @@ def test_auto_close_handles_paused_ir_without_closing(db_session) -> None:
         status=IntelligenceRequirementStatus.PAUSED,
         valid_until=today - timedelta(days=1),
     )
-    _seed_outlet(db_session, source_name="W 公司", outlet_name="官网", entry="https://w.example")
+    _seed_entry(db_session, source_name="W 公司", entry="https://w.example")
 
     Director(db_session).propose_tasks()
 

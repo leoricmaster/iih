@@ -1,7 +1,7 @@
 """采集智能体 Collector（doc-06 §3）· 最简归因版：人工提交路径 + 自动拉取路径 + 探索任务。
 
 人工提交不经定向任务化：文字纪要与附件转写稿（IIH-02.01 录音）共用 LLM 抽取陈述
-+ 归因信源与途径（溯源五要素），每条陈述一个「情报条目新建」提案；
++ 归因信源（溯源五要素），每条陈述一个「情报条目新建」提案；
 落账由状态机执行器执行（本智能体不直接写账）。附件路径原文快照走第三轨
 （挂素材 + 派生级，doc-04 §1）。
 
@@ -9,7 +9,7 @@
 原文 URL 即实际抓取的文章页地址（确定性），原文快照为原始 HTML 存对象存储。
 
 探索任务（IIH-06.01 通路反转）：每轮每到期需求一个——content_spec 提取关键词 →
-Tavily 检索（排除已登记途径域）→ 选链 → 抓取 → 指纹去重 → 一次 LLM 抽陈述+归因
+Tavily 检索（排除已登记入口域）→ 选链 → 抓取 → 指纹去重 → 一次 LLM 抽陈述+归因
 → 落情报条目提案；归因出的未登记信源经状态机归因解析进待确认队列（decision-05）。
 """
 
@@ -27,12 +27,12 @@ from iih.agents.director import CollectionTask, ExplorationTask
 from iih.config import get_settings
 from iih.ledger.models import (
     Derivation,
+    Entry,
     IntelligenceItem,
     ItemMode,
     LlmCall,
     Material,
     Medium,
-    Outlet,
     ProvenanceChainNode,
     Source,
     SourceType,
@@ -51,14 +51,13 @@ from iih.tools.search import SearchError
 from iih.tools.snapshot_store import SnapshotStore
 
 ATTRIBUTION_SYSTEM_PROMPT = """你是情报采集智能体的归因模块。
-给定一条情报陈述与其获取媒介，推断信源与发布途径。
+给定一条情报陈述与其获取媒介，推断信源。
 
 要求：
 - source_name：信息**原始产出方**的纯名称（机构 / 媒体 / 政府 / 公司 / 人物），从陈述中
   推断；不含作者姓名（记者 / 编辑 / 通讯员 / 署名）、不含括号备注、不含「转载于」等
   描述、不含页脚版权 / 投稿邮箱；
 - source_type：主体类型；
-- outlet_name：该场景下的具体发布出口（如「渠道大会现场」），无法推断则留空；
 - rationale：一句话归因依据，将记入提案的「依据」。"""
 
 
@@ -72,14 +71,11 @@ class AttributionResult(BaseModel):
     source_type: SourceType = Field(
         description="主体类型：company/government/organization/media/person/other"
     )
-    outlet_name: str | None = Field(
-        default=None, description="发布出口，如「渠道大会现场」；无法推断留空"
-    )
     rationale: str = Field(description="一句话归因依据")
 
 
 ARTICLE_SELECTION_SYSTEM_PROMPT = """你是情报采集智能体的选链模块。
-给定途径入口页（多为列表页 / 首页）的正文文本与候选链接清单（链接 + 锚文本），
+给定采集入口页（多为列表页 / 首页）的正文文本与候选链接清单（链接 + 锚文本），
 判断入口页本身是否已是文章正文页；若不是，选出一条最值得作为本次采集对象的文章页链接。
 
 要求：
@@ -96,7 +92,7 @@ class ArticleSelectionResult(BaseModel):
 
 
 EXTRACTION_SYSTEM_PROMPT = """你是情报采集智能体的陈述抽取模块。
-给定文章页的正文文本与其来源（信源·途径），识别其中**最具情报价值的一条**陈述。
+给定文章页的正文文本与其来源信源，识别其中**最具情报价值的一条**陈述。
 
 要求：
 - statement：客观陈述句，描述事实而非评价；若页面无情报价值内容，返回空字符串；
@@ -134,7 +130,7 @@ class ExplorationKeywordResult(BaseModel):
 
 EXPLORATION_RESULT_SELECTION_SYSTEM_PROMPT = """你是情报采集智能体的探索选链模块。
 
-给定互联网检索结果清单（URL + 标题 + 内容片段，已排除已登记信源的全部途径域），
+给定互联网检索结果清单（URL + 标题 + 内容片段，已排除已登记信源的全部入口域），
 选一条「最可能属于尚未登记信源且含情报价值」的结果——倾向明确发布主体的
 文章 / 报道页，避免目录 / 栏目 / 导航页。
 
@@ -284,7 +280,6 @@ class Collector:
                     original_snapshot=statement,  # 文字载体：原文快照 = 提交文本
                     source_name=attribution.source_name,
                     source_type=attribution.source_type,
-                    outlet_name=attribution.outlet_name or None,
                 ),
                 rationale=f"{s.rationale}（归因：{attribution.rationale}）",
             )
@@ -324,7 +319,6 @@ class Collector:
                         collected_at=material.collected_at,
                         source_name=attribution.source_name,
                         source_type=attribution.source_type,
-                        outlet_name=attribution.outlet_name or None,
                     ),
                     rationale=f"{s.rationale}（归因：{attribution.rationale}）",
                 )
@@ -359,7 +353,7 @@ class Collector:
         self._meter(target="manual_submission", usage=completion.usage)
         return attribution
 
-    def collect_outlet(
+    def collect_entry(
         self,
         *,
         task: CollectionTask,
@@ -368,11 +362,11 @@ class Collector:
         store: SnapshotStore | None = None,
     ) -> IntelligenceItemNewProposal | ItemProvenanceAppendProposal | None:
         """自动拉取路径（doc-06 §3 两跳 + 前置过滤）：产出主 proposal 由调用方落账。"""
-        return self._collect_outlet_main(
+        return self._collect_entry_main(
             task=task, html=html, fetch_article=fetch_article, store=store
         )
 
-    def _collect_outlet_main(
+    def _collect_entry_main(
         self,
         *,
         task: CollectionTask,
@@ -405,7 +399,7 @@ class Collector:
                 {
                     "role": "user",
                     "content": (
-                        f"信源：{task.source_name}\n途径：{task.outlet_name}"
+                        f"信源：{task.source_name}\n入口：{task.url}"
                         f"\n入口页正文：\n{entry_text}\n\n候选链接清单：\n{block}"
                     ),
                 },
@@ -413,7 +407,7 @@ class Collector:
             model=self.model,
             temperature=0,  # 选链需可复现：试采与正式运行同输入应同输出
         )
-        self._meter(target="outlet_link_select", usage=completion.usage)
+        self._meter(target="entry_link_select", usage=completion.usage)
 
         article_url = selection.url.strip()
         if not article_url or article_url == task.url:
@@ -447,7 +441,7 @@ class Collector:
     ) -> IntelligenceItemNewProposal | None:
         """探索任务执行（doc-06 §3、decision-05、IIH-06.01 通路反转）。
 
-        content_spec → LLM 提取关键词 → Tavily 检索 top-5（排除已登记途径域）→
+        content_spec → LLM 提取关键词 → Tavily 检索 top-5（排除已登记入口域）→
         LLM 选链 → fetch → 归一化 → 指纹去重 → 一次 LLM 抽陈述+归因 →
         情报条目新建提案（由调用方落账）。归因出的未登记信源经状态机归因解析
         建待确认行（discovered_entry = 原文链接，确认时预填采集入口）。
@@ -481,8 +475,8 @@ class Collector:
 
         registered_domains = {
             domain
-            for entry in self.session.scalars(select(Outlet.entry))
-            if entry and entry.startswith(("http://", "https://"))
+            for entry in self.session.scalars(select(Entry.entry))
+            if entry.startswith(("http://", "https://"))
             for domain in (urlparse(entry).netloc,)
             if domain
         }
@@ -573,7 +567,7 @@ class Collector:
         if existing is not None:
             return self._append_or_none(existing_id=existing.id, task=task, original_url=url)
 
-        user_content = f"信源：{task.source_name}\n途径：{task.outlet_name}\n正文：\n{text}"
+        user_content = f"信源：{task.source_name}\n正文：\n{text}"
         extraction, completion = self.llm.chat.completions.create_with_completion(
             response_model=StatementExtractionResult,
             messages=[
@@ -583,7 +577,7 @@ class Collector:
             model=self.model,
             temperature=0,  # 抽取需可复现：同输入应同输出
         )
-        self._meter(target="outlet_collection", usage=completion.usage)
+        self._meter(target="entry_collection", usage=completion.usage)
 
         if not extraction.statement.strip():
             return None  # LLM 判定无情报价值内容
@@ -603,7 +597,6 @@ class Collector:
                 collected_at=datetime.now(UTC),
                 source_name=task.source_name,
                 source_type=task.source_type,
-                outlet_name=task.outlet_name,
             ),
             rationale=extraction.rationale,
         )
@@ -613,19 +606,11 @@ class Collector:
     ) -> ItemProvenanceAppendProposal | None:
         """命中既有条目时追加转引链节点；节点已存在（本轮无新内容）返回 None。"""
         source = self.session.scalars(select(Source).where(Source.name == task.source_name)).first()
-        outlet = (
-            self.session.scalars(
-                select(Outlet).where(Outlet.source_id == source.id, Outlet.name == task.outlet_name)
-            ).first()
-            if source is not None and task.outlet_name
-            else None
-        )
-        if source is not None and (not task.outlet_name or outlet is not None):
+        if source is not None:
             linked = self.session.scalars(
                 select(ProvenanceChainNode).where(
                     ProvenanceChainNode.item_id == existing_id,
                     ProvenanceChainNode.source_id == source.id,
-                    ProvenanceChainNode.outlet_id == (outlet.id if outlet else None),
                 )
             ).first()
             if linked is not None:
@@ -635,7 +620,6 @@ class Collector:
                 item_id=existing_id,
                 source_name=task.source_name,
                 source_type=task.source_type,
-                outlet_name=task.outlet_name,
                 original_url=original_url,
                 collected_at=datetime.now(UTC),
             ),

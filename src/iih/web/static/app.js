@@ -175,3 +175,72 @@ document.querySelectorAll(".srcrow .srcfill").forEach((a) => {
     }
   });
 });
+
+// IIH-06.03 画像页编辑态：别名/采集入口动态增删，segmented 联动。
+function addAlias() {
+  const list = document.getElementById("alias-list");
+  if (!list) return;
+  const row = document.createElement("div");
+  row.className = "alias-row";
+  row.style.cssText = "display:inline-flex;align-items:center;gap:3px";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.name = "aliases";
+  input.maxLength = 200;
+  input.style.width = "200px";
+  input.placeholder = "新别名";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn small";
+  btn.textContent = "×";
+  btn.title = "删别名";
+  btn.addEventListener("click", () => row.remove());
+  row.append(input, btn);
+  list.appendChild(row);
+  input.focus();
+}
+function addEntry() {
+  const list = document.getElementById("entry-list");
+  if (!list) return;
+  const row = document.createElement("div");
+  row.className = "entry-row";
+  row.style.cssText =
+    "display:flex;gap:6px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #eee;padding:6px 0";
+  const hid = document.createElement("input");
+  hid.type = "hidden";
+  hid.name = "entry_id";
+  hid.value = "0";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.name = "entry_value";
+  input.maxLength = 500;
+  input.placeholder = "URL / RSS / 账号 ID";
+  input.style.cssText = "flex:1;min-width:280px";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn small";
+  btn.textContent = "×";
+  btn.title = "删采集入口";
+  btn.addEventListener("click", () => markEntryDelete(btn));
+  row.append(hid, input, btn);
+  list.appendChild(row);
+  input.focus();
+}
+function markEntryDelete(btn) {
+  const row = btn.closest(".entry-row");
+  if (!row) return;
+  const hid = row.querySelector('input[name="entry_id"]');
+  const id = hid?.value || "0";
+  if (id === "0") {
+    row.remove();
+    return;
+  }
+  const form = document.getElementById("src-edit");
+  if (!form) return;
+  const del = document.createElement("input");
+  del.type = "hidden";
+  del.name = "entry_delete_ids";
+  del.value = id;
+  form.appendChild(del);
+  row.remove();
+}

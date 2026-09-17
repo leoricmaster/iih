@@ -16,6 +16,7 @@ from iih.ledger.credit import (
 from iih.ledger.feedback_router import FeedbackRouter
 from iih.ledger.models import (
     CreditAdjustment,
+    Entry,
     Feedback,
     FeedbackType,
     IntelligenceItem,
@@ -23,7 +24,6 @@ from iih.ledger.models import (
     ItemStatus,
     Medium,
     Modality,
-    Outlet,
     ProvenanceChainNode,
     Source,
     SourceType,
@@ -86,10 +86,10 @@ def chain_item(db_session) -> IntelligenceItem:
     medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
     modality = db_session.scalars(select(Modality).where(Modality.code == "webpage")).one()
 
-    w_outlet = Outlet(name="官网", medium=medium)
-    w = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, outlets=[w_outlet])
-    re_outlet = Outlet(name="资讯页", medium=medium)
-    requoter = Source(name="转载资讯站", type=SourceType.MEDIA, confirmed=True, outlets=[re_outlet])
+    w_entry = Entry(entry="https://w.example")
+    w = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, entries=[w_entry])
+    re_entry = Entry(entry="https://re.example")
+    requoter = Source(name="转载资讯站", type=SourceType.MEDIA, confirmed=True, entries=[re_entry])
 
     item = IntelligenceItem(
         statement="W 公司公告：与 Z 集团签署合资协议",
@@ -101,7 +101,6 @@ def chain_item(db_session) -> IntelligenceItem:
         collected_at=datetime(2026, 9, 1, tzinfo=UTC),
         original_snapshot="W 公司今日公告，与 Z 集团签署合资协议。",
         source=w,
-        outlet=w_outlet,
     )
     db_session.add_all(
         [
@@ -109,7 +108,6 @@ def chain_item(db_session) -> IntelligenceItem:
             ProvenanceChainNode(
                 item=item,
                 source=w,
-                outlet=w_outlet,
                 modality=modality,
                 medium=medium,
                 collected_at=datetime(2026, 9, 1, tzinfo=UTC),
@@ -117,7 +115,6 @@ def chain_item(db_session) -> IntelligenceItem:
             ProvenanceChainNode(
                 item=item,
                 source=requoter,
-                outlet=re_outlet,
                 modality=modality,
                 medium=medium,
                 collected_at=datetime(2026, 9, 5, tzinfo=UTC),

@@ -362,9 +362,9 @@ def run_collect_stage(
     store: SnapshotStore | None = None,
     log: LogFn | None = None,
 ) -> None:
-    """采集段：Director 派单（途径任务 + 探索任务）→ 抓取 → Collector 提案 → 执行器落账。
+    """采集段：Director 派单（采集任务 + 探索任务）→ 抓取 → Collector 提案 → 执行器落账。
 
-    每个 IR 完成本轮全部途径采集与探索后，更新 last_collected_at（IIH-03.01 调度差异化用）。
+    每个 IR 完成本轮全部入口采集与探索后，更新 last_collected_at（IIH-03.01 调度差异化用）。
     """
 
     def say(msg: str) -> None:
@@ -385,15 +385,15 @@ def run_collect_stage(
             html = fetch(task.url)
         except FetcherError as exc:
             summary.collect_failed += 1
-            summary.errors.append(f"抓取失败 {task.source_name}·{task.outlet_name}：{exc}")
-            say(f"  [跳过] {task.source_name}·{task.outlet_name}：{exc}")
+            summary.errors.append(f"抓取失败 {task.source_name}·{task.url}：{exc}")
+            say(f"  [跳过] {task.source_name}·{task.url}：{exc}")
             continue
         summary.fetched += 1
 
         with session_factory() as session:
             collector = Collector(llm=llm, session=session, model=settings.llm_model)
             try:
-                proposal = collector.collect_outlet(
+                proposal = collector.collect_entry(
                     task=task,
                     html=html,
                     fetch_article=fetch,
@@ -401,13 +401,13 @@ def run_collect_stage(
                 )
             except Exception as exc:  # LLM 调用失败 / 文章页抓取失败等
                 summary.collect_failed += 1
-                summary.errors.append(f"采集失败 {task.source_name}·{task.outlet_name}：{exc}")
-                say(f"  [错误] {task.source_name}·{task.outlet_name}：{exc}")
+                summary.errors.append(f"采集失败 {task.source_name}·{task.url}：{exc}")
+                say(f"  [错误] {task.source_name}·{task.url}：{exc}")
                 continue
 
             if proposal is None:
                 summary.collect_skipped += 1
-                label = f"{task.source_name}·{task.outlet_name}"
+                label = f"{task.source_name}·{task.url}"
                 say(f"  [跳过] {label}：无新内容（已采集或无情报价值）")
                 continue
 
@@ -415,16 +415,16 @@ def run_collect_stage(
                 StateMachineExecutor().execute(proposal, session=session)
             except ProposalRejectedError as exc:
                 summary.collect_failed += 1
-                summary.errors.append(f"提案驳回 {task.source_name}·{task.outlet_name}：{exc}")
-                say(f"  [驳回] {task.source_name}·{task.outlet_name}：{exc}")
+                summary.errors.append(f"提案驳回 {task.source_name}·{task.url}：{exc}")
+                say(f"  [驳回] {task.source_name}·{task.url}：{exc}")
                 continue
 
             if isinstance(proposal, IntelligenceItemNewProposal):
                 summary.new_items += 1
-                say(f"  [新建] {task.source_name}·{task.outlet_name}：线索已落账")
+                say(f"  [新建] {task.source_name}·{task.url}：线索已落账")
             else:
                 summary.appended_nodes += 1
-                say(f"  [追加] {task.source_name}·{task.outlet_name}：转引链节点已追加")
+                say(f"  [追加] {task.source_name}·{task.url}：转引链节点已追加")
 
             collected_requirement_ids.add(task.requirement_id)
 

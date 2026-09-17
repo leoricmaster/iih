@@ -16,6 +16,7 @@ from conftest import (
 )
 from iih.cli import main
 from iih.ledger.models import (
+    Entry,
     IntelligenceItem,
     IntelligenceRequirement,
     IntelligenceRequirementStatus,
@@ -24,7 +25,6 @@ from iih.ledger.models import (
     LlmCall,
     Medium,
     Modality,
-    Outlet,
     ProvenanceChainNode,
     Source,
     SourceType,
@@ -47,12 +47,9 @@ def _deny_fetch(url: str) -> str:
 
 
 def _seed(db_session) -> None:
-    medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
     source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True)
-    outlet = Outlet(
-        source=source, name="官网", entry="https://w-mining.example/news", medium=medium
-    )
-    db_session.add_all([source, outlet])
+    entry = Entry(source=source, entry="https://w-mining.example/news")
+    db_session.add_all([source, entry])
     db_session.flush()
 
 
@@ -115,7 +112,6 @@ def test_ir_create_then_activate_then_collect_produces_lead(db_session, w_extrac
     tasks, _explorations = Director(db_session).propose_tasks()
     assert len(tasks) == 1
     assert tasks[0].source_name == "W 公司"
-    assert tasks[0].outlet_name == "官网"
     assert tasks[0].url == "https://w-mining.example/news"
 
     # mock fetcher 直接返回 HTML（不真发 HTTP）
@@ -128,7 +124,7 @@ def test_ir_create_then_activate_then_collect_produces_lead(db_session, w_extrac
         )
 
         collector = Collector(llm=fake_llm, session=db_session, model="deepseek-chat")
-        proposal = collector.collect_outlet(
+        proposal = collector.collect_entry(
             task=tasks[0], html=HTML_W, fetch_article=_deny_fetch, store=FakeSnapshotStore()
         )
 
@@ -144,7 +140,6 @@ def test_ir_create_then_activate_then_collect_produces_lead(db_session, w_extrac
     assert item.medium.code == "internet"
     assert item.source.name == "W 公司"
     assert item.source.confirmed is True
-    assert item.outlet.name == "官网"
     assert item.original_url == "https://w-mining.example/news"
     assert item.content_fingerprint is not None and len(item.content_fingerprint) == 64
 
@@ -157,7 +152,7 @@ def test_ir_create_then_activate_then_collect_produces_lead(db_session, w_extrac
 
     # LLM 计量：选链 + 抽取
     calls = db_session.scalars(select(LlmCall)).all()
-    assert [c.target for c in calls] == ["outlet_link_select", "outlet_collection"]
+    assert [c.target for c in calls] == ["entry_link_select", "entry_collection"]
     assert item.snapshot_object_key is not None  # 快照对象已存档
 
 
@@ -174,7 +169,7 @@ def test_collect_with_duplicate_content_appends_provenance_node(db_session, w_ex
     collector = Collector(llm=fake_llm, session=db_session, model="deepseek-chat")
 
     # 首次拉取：新建条目
-    first = collector.collect_outlet(
+    first = collector.collect_entry(
         task=tasks[0], html=HTML_W, fetch_article=_deny_fetch, store=FakeSnapshotStore()
     )
     assert first is not None
@@ -189,15 +184,13 @@ def test_collect_with_duplicate_content_appends_provenance_node(db_session, w_ex
     repost_task = CollectionTask(
         requirement_id=tasks[0].requirement_id,
         requirement_name=tasks[0].requirement_name,
-        outlet_id=tasks[0].outlet_id,
         source_id=media_source.id,
         source_name="行业媒体 A",
         source_type=SourceType.MEDIA,
-        outlet_name=None,
         url="https://media-a.example/repost",
     )
 
-    proposal = collector.collect_outlet(
+    proposal = collector.collect_entry(
         task=repost_task, html=HTML_W, fetch_article=_deny_fetch, store=FakeSnapshotStore()
     )
 
@@ -312,7 +305,6 @@ def test_cli_collect_e2e_produces_lead(db_session, monkeypatch, w_extraction) ->
     ).one()
     assert item.status is ItemStatus.LEAD
     assert item.source.name == "W 公司"
-    assert item.outlet.name == "官网"
     assert item.original_url == "https://w-mining.example/news"
     assert item.snapshot_object_key is not None
 
@@ -531,7 +523,7 @@ def test_cli_verify_e2e_no_candidates_skips(db_session, monkeypatch) -> None:
 
 
 def test_cli_seed_lands_baseline_and_idempotent(db_session, monkeypatch) -> None:
-    """seed 子命令：版本化种子铺基线（信源+途径+初始档、需求激活），重复执行幂等。"""
+    """seed 子命令：版本化种子铺基线（信源+采集入口+初始档、需求激活），重复执行幂等。"""
     from contextlib import contextmanager
     from types import SimpleNamespace
 
@@ -549,7 +541,7 @@ def test_cli_seed_lands_baseline_and_idempotent(db_session, monkeypatch) -> None
     source = db_session.scalars(select(Source).where(Source.name == "三一集团")).one()
     assert source.confirmed is True
     assert source.credit == "C"
-    assert source.outlets[0].entry == "https://www.sanygroup.com/"
+    assert source.entries[0].entry == "https://www.sanygroup.com/"
     high_freq = db_session.scalars(
         select(IntelligenceRequirement).where(
             IntelligenceRequirement.name == "高频跟踪三一公司动态"

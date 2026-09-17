@@ -2,7 +2,7 @@
 
 迁移经提案落账（doc-02 §4.1：确认激活 / 挂起 / 恢复 / 关闭）；
 内容规格微调与采集配置编辑为消费方配置编辑（非智能体写入，直接更新字段）。
-配置自检（试采集预览）：逐途径抓取→抽取→按本需求审查预判，不落账。
+配置自检（试采集预览）：逐入口抓取→抽取→按本需求审查预判，不落账。
 覆盖度量（已分发/已消费）待分发记录里程碑加厚，本页以命中计数近似。
 """
 
@@ -22,10 +22,10 @@ from iih.agents.reviewer import Reviewer
 from iih.config import get_settings
 from iih.ledger.duration import parse_duration_to_seconds
 from iih.ledger.models import (
+    Entry,
     IntelligenceItem,
     IntelligenceRequirement,
     IntelligenceRequirementStatus,
-    Outlet,
     ReviewDecision,
     Source,
 )
@@ -91,17 +91,15 @@ def _hit_item_ids(session: Session, requirement_id: int) -> list[int]:
     )
 
 
-def _collect_outlets(session: Session) -> list[Outlet]:
-    """采集覆盖：已确认信源 × 互联网途径 × 入口非空（Director 同口径，doc-06 §2）。"""
-    outlets = list(
+def _collect_entries(session: Session) -> list[Entry]:
+    """采集覆盖：已确认信源的全部采集入口（Director 同口径，doc-06 §2）。"""
+    return list(
         session.scalars(
-            select(Outlet)
-            .join(Source, Outlet.source_id == Source.id)
+            select(Entry)
+            .join(Source, Entry.source_id == Source.id)
             .where(Source.confirmed.is_(True))
-            .where(Outlet.medium.has())
         )
     )
-    return [o for o in outlets if o.medium is not None and o.medium.code == "internet" and o.entry]
 
 
 def _confirmed_sources(session: Session) -> list[Source]:
@@ -283,7 +281,7 @@ def _render_detail(
             "status_labels": IR_STATUS_LABELS,
             "item_status_labels": STATUS_LABELS,
             "hit_items": _hit_items(session, requirement_id),
-            "collect_outlets": _collect_outlets(session),
+            "collect_entries": _collect_entries(session),
             "confirmed_sources": _confirmed_sources(session),
             "format_window": _format_valid_window,
             "format_sources": _format_sources,
@@ -402,10 +400,9 @@ def requirement_config_update(
 
 @dataclass
 class ProbeResult:
-    """单途径试采集预览结果（仅回显，不产生提案、不落账、不存快照对象）。"""
+    """单入口试采集预览结果（仅回显，不产生提案、不落账、不存快照对象）。"""
 
     source_name: str
-    outlet_name: str
     url: str
     fetch_error: str | None = None
     article_url: str | None = None  # 选链结果（两跳：文章页地址；单跳：入口地址）
@@ -418,16 +415,15 @@ class ProbeResult:
     judge_error: str | None = None
 
 
-def _internet_outlets(session: Session) -> list[Outlet]:
-    """试采集任务面：与 Director 同口径（已确认信源 × 互联网途径 × 入口非空）。"""
-    outlets = list(
+def _internet_entries(session: Session) -> list[Entry]:
+    """试采集任务面：与 Director 同口径（已确认信源的全部采集入口）。"""
+    return list(
         session.scalars(
-            select(Outlet)
-            .join(Source, Outlet.source_id == Source.id)
+            select(Entry)
+            .join(Source, Entry.source_id == Source.id)
             .where(Source.confirmed.is_(True))
         )
     )
-    return [o for o in outlets if o.medium is not None and o.medium.code == "internet" and o.entry]
 
 
 @router.post("/requirements/{requirement_id}/probe")
@@ -437,7 +433,7 @@ def requirement_probe(
     session: Session = Depends(get_session),
     llm=Depends(get_llm_client),
 ):
-    """配置自检：按本需求逐途径试采集，预览抽取与审查预判——不落账。
+    """配置自检：按本需求逐入口试采集，预览抽取与审查预判——不落账。
 
     供「激活后配置是否合理、能否抓到情报」的即时反馈（不等下轮采集）；
     已采集内容命中既有条目时提示将走转引链追加而非新建。LLM 调用照常计量。
@@ -453,8 +449,8 @@ def requirement_probe(
             errors=["仅激活态可试采集"],
         )
 
-    outlets = _internet_outlets(session)
-    if not outlets:
+    entries = _internet_entries(session)
+    if not entries:
         return _render_detail(
             request,
             session,
@@ -464,22 +460,20 @@ def requirement_probe(
 
     settings = get_settings()
     results: list[ProbeResult] = []
-    for outlet in outlets:
-        url = outlet.entry or ""  # _internet_outlets 已过滤空入口
-        result = ProbeResult(source_name=outlet.source.name, outlet_name=outlet.name, url=url)
+    for entry in entries:
+        url = entry.entry
+        result = ProbeResult(source_name=entry.source.name, url=url)
         task = CollectionTask(
             requirement_id=ir.id,
             requirement_name=ir.name,
-            outlet_id=outlet.id,
-            source_id=outlet.source_id,
-            source_name=outlet.source.name,
-            source_type=outlet.source.type,
-            outlet_name=outlet.name,
+            source_id=entry.source_id,
+            source_name=entry.source.name,
+            source_type=entry.source.type,
             url=url,
         )
         try:
             html = fetch(url)
-            proposal = Collector(llm=llm, session=session, model=settings.llm_model).collect_outlet(
+            proposal = Collector(llm=llm, session=session, model=settings.llm_model).collect_entry(
                 task=task, html=html, fetch_article=fetch
             )
         except FetcherError as exc:

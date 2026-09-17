@@ -15,7 +15,7 @@ from iih.ledger.models import (
 
 
 class ProvenanceData(BaseModel):
-    """溯源五要素（doc-05 §5）：载体+媒介+采集时间+原文快照+信源/途径归因。
+    """溯源五要素（doc-05 §5）：载体+媒介+采集时间+原文快照+信源归因。
 
     完备性由状态机执行器校验（无溯源不落账）。
     原文快照三轨（doc-04 §1）：人工提交 = 提交文本（original_snapshot）；自动拉取 =
@@ -29,7 +29,6 @@ class ProvenanceData(BaseModel):
     original_snapshot: str | None = None  # 原文快照：人工提交文本
     source_name: str  # 信源归因：发布主体
     source_type: SourceType
-    outlet_name: str | None = None  # 途径归因：发布出口（线下场景）
 
 
 class IntelligenceItemNewPayload(BaseModel):
@@ -66,14 +65,13 @@ class IntelligenceItemNewProposal(Proposal):
 
 
 class SourceConfirmPayload(BaseModel):
-    """「待确认信源确认」产出：目标信源 ID + 初始信用档 + 修正名/类型/途径（可空，IIH-05.01）。"""
+    """「待确认信源确认」产出：信源 ID + 初始信用档 + 修正名/类型/采集入口（可空，IIH-05.01）。"""
 
     source_id: int
     initial_credit: str
     name: str | None = None  # 修正信源名；撞既有已确认信源名即合并迁移，旧名留档为别名
     source_type: SourceType | None = None  # 修正类型；空 = 沿用提取结果，并入路径忽略
-    outlet_name: str | None = None  # 途径名；空 = 「网站」
-    outlet_entry: str | None = None  # 采集入口（发现来源 URL 预填）；空 = 不建途径
+    entry: str | None = None  # 采集入口（发现来源 URL 预填）；空 = 不建
 
 
 class SourceConfirmProposal(Proposal):
@@ -81,9 +79,8 @@ class SourceConfirmProposal(Proposal):
 
     消费方确认非情报产出，无 provenance、无 formula_version（同 source_register）。
     确认必设初始信用档（doc-04 §2.3 解死锁）；拒绝留痕（rejected_at）随确认清空；
-    携带修正名时改名入池（旧名留档为别名，归因解析按别名归到本信源），
-    撞既有已确认信源名则并入该信源（条目/转引链/途径迁移）。
-    途径字段非空则确认时建互联网途径（默认预填发现来源 URL；并入路径建到目标信源，同名跳过），
+    携带修正名时改名入池，撞既有已确认信源名则并入该信源（条目/转引链迁移）。
+    采集入口非空则确认时建（默认预填发现来源 URL；并入路径建到目标信源，同入口跳过），
     留空不建（兼容无发现 URL 的待确认信源）。
     """
 
@@ -198,7 +195,6 @@ class ItemProvenanceAppendPayload(BaseModel):
     item_id: int
     source_name: str
     source_type: SourceType
-    outlet_name: str | None = None
     original_url: str | None = None
     collected_at: datetime
 
@@ -206,7 +202,7 @@ class ItemProvenanceAppendPayload(BaseModel):
 class ItemProvenanceAppendProposal(Proposal):
     """提案类型「转引链节点追加」：指纹命中既有条目时追加信源引用，不新建条目（doc-06 §3）。
 
-    溯源信息内嵌 payload（item_id + 信源/途径 + 采集时间 + URL），无独立 provenance 字段。
+    溯源信息内嵌 payload（item_id + 信源 + 采集时间 + URL），无独立 provenance 字段。
     """
 
     PROPOSAL_TYPE = "item_provenance_append"
