@@ -1,10 +1,10 @@
 ---
 id: IIH-05.02
 title: 池外自由探索与新信源发现
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-15 12:31'
-updated_date: '2026-09-16 13:51'
+updated_date: '2026-09-17 02:17'
 labels:
   - product
 dependencies:
