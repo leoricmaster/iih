@@ -1347,9 +1347,10 @@ def test_discovered_source_confirmed_then_ir_bindable_end_to_end(
     db_session.add(source)
     db_session.flush()
 
-    # 待确认行展示发现来源 URL（预填采集入口）
+    # 待确认行预填：采集入口归一化为站点根（IIH-06.01 验收补救），途径名带默认「网站」
     listing = inbox_client.get("/sources")
-    assert "https://z.example/article" in listing.text
+    assert 'value="https://z.example"' in listing.text  # 文章 URL 不整条预填
+    assert 'value="网站"' in listing.text
 
     # 经确认入口入池：表单携带途径字段（模板预填发现 URL）→ 建互联网途径
     response = inbox_client.post(

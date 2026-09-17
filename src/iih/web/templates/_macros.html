@@ -11,9 +11,9 @@
       </select>
       {% if s.rejected_at %}<span class="pill dashed">已拒绝 · {{ s.rejected_at | dtstr }}</span>{% elif s.rejections %}<span class="pill dashed" title="最近拒绝：{{ s.rejections[0].created_at | dtstr }}">曾拒 ×{{ s.rejections | length }}</span>{% else %}<span class="pill dashed">待确认</span>{% endif %}
     </span>
-    <span class="srcrow-outlet" title="确认时建互联网途径（自动拉取）；采集入口留空则不建{% if s.discovered_entry %}——已预填发现来源 URL{% endif %}">
-      <input class="outletname" type="text" name="outlet_name" value="" maxlength="40" placeholder="途径名" title="途径名，默认「网站」">
-      <input class="outletentry" type="text" name="outlet_entry" value="{{ s.discovered_entry or '' }}" maxlength="500" placeholder="采集入口 URL" title="采集入口：URL / RSS / 账号 ID">
+    <span class="srcrow-outlet" title="确认时建互联网途径（自动拉取）；采集入口留空则不建{% if s.discovered_entry %}——已按发现来源站点根预填，可改为栏目列表页 / RSS{% endif %}">
+      <input class="outletname" type="text" name="outlet_name" value="{{ '网站' if s.discovered_entry else '' }}" maxlength="40" placeholder="途径名" title="途径名">
+      <input class="outletentry" type="text" name="outlet_entry" value="{{ (s.discovered_entry | entry_root) if s.discovered_entry else '' }}" maxlength="500" placeholder="采集入口 URL" title="采集入口：URL / RSS / 账号 ID——取会更新文章列表的页面（栏目页 / 主页 / RSS），非具体文章">
     </span>
     <span class="srcrow-acts">
       <span class="muted" title="初始信用档 A–F：A 最可靠 → F 最不可靠。累计分映射：A ≥8、B [4,8)、C [0,4)、D [−4,0)、E [−8,−4)、F <−8；有效反馈 +1、事实错误 −2、180 天半衰期。C 为中性默认。">ⓘ</span>

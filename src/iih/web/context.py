@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from fastapi.templating import Jinja2Templates
@@ -96,6 +97,7 @@ def register_template_filters(templates: Jinja2Templates) -> Jinja2Templates:
     """注册全站模板过滤器（各路由模块共用同一 Jinja2 环境）。
 
     dtstr：库内 UTC 时间戳按展示时区格式化；空值显示「—」。
+    entry_root：http(s) URL 归一化为站点根（scheme://netloc）；非 URL 原样返回。
     """
 
     def _dtstr(value: datetime | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
@@ -104,5 +106,14 @@ def register_template_filters(templates: Jinja2Templates) -> Jinja2Templates:
         aware = value if value.tzinfo else value.replace(tzinfo=UTC)
         return aware.astimezone(ZoneInfo(get_settings().display_timezone)).strftime(fmt)
 
+    def _entry_root(value: str | None) -> str:
+        if not value:
+            return ""
+        parsed = urlparse(value)
+        if parsed.scheme in ("http", "https") and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}"
+        return value
+
     templates.env.filters["dtstr"] = _dtstr
+    templates.env.filters["entry_root"] = _entry_root
     return templates
