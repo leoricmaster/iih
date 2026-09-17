@@ -504,8 +504,7 @@ def test_source_confirm_rename_merges_into_confirmed_source(db_session) -> None:
     assert [n.source_id for n in nodes] == [target.id]
     assert nodes[0].outlet_id == target_outlet.id
     alias = db_session.scalars(select(SourceAlias).where(SourceAlias.name == "三一")).first()
-    assert alias is not None
-    assert alias.source_id == target.id  # 并入路径旧名留档为目标信源别名
+    assert alias is None  # IIH-06.02：并入不留档旧名（脏名污染别名表）
 
 
 def test_source_confirm_rename_to_pending_name_rejected(db_session) -> None:
@@ -521,8 +520,8 @@ def test_source_confirm_rename_to_pending_name_rejected(db_session) -> None:
     assert any("先处理该信源" in reason for reason in excinfo.value.reasons)
 
 
-def test_source_confirm_rename_records_alias(db_session) -> None:
-    """对应 IIH-05.01 AC#5：确认改名后旧名留档为别名。"""
+def test_source_confirm_rename_does_not_record_alias(db_session) -> None:
+    """对应 IIH-06.02：确认改名不再自动留档旧名为别名（脏名污染别名表）。"""
     source = _seed_pending_source(db_session, name="三一")
 
     StateMachineExecutor().execute(
@@ -531,8 +530,7 @@ def test_source_confirm_rename_records_alias(db_session) -> None:
 
     db_session.expire_all()
     alias = db_session.scalars(select(SourceAlias).where(SourceAlias.name == "三一")).first()
-    assert alias is not None
-    assert alias.source_id == source.id
+    assert alias is None
 
 
 def test_source_confirm_target_name_colliding_with_alias_rejected(db_session) -> None:
@@ -551,11 +549,13 @@ def test_source_confirm_target_name_colliding_with_alias_rejected(db_session) ->
 
 
 def test_manual_attribution_via_alias_resolves_to_confirmed(db_session) -> None:
-    """对应 IIH-05.01 AC#5：归因命中别名直接归入已确认信源，不再产生待确认行。"""
-    source = _seed_pending_source(db_session, name="三一")
-    StateMachineExecutor().execute(
-        _confirm_proposal(source.id, name="三一重工"), session=db_session
-    )
+    """对应 IIH-05.01 AC#5：归因命中别名直接归入已确认信源，不再产生待确认行。
+
+    IIH-06.02：别名改由用户在画像页主动声明，确认/改名/并入不再自动留档。
+    """
+    holder = Source(name="三一重工", type=SourceType.COMPANY, confirmed=True, credit="C")
+    db_session.add_all([holder, SourceAlias(source=holder, name="三一")])
+    db_session.flush()
 
     result = StateMachineExecutor().execute(
         make_proposal(provenance={"source_name": "三一"}), session=db_session
@@ -563,7 +563,7 @@ def test_manual_attribution_via_alias_resolves_to_confirmed(db_session) -> None:
 
     item = db_session.get(IntelligenceItem, result.item_id)
     assert item is not None
-    assert item.source_id == source.id
+    assert item.source_id == holder.id
     assert item.source.confirmed is True
     assert db_session.scalars(select(Source).where(Source.confirmed.is_(False))).first() is None
 

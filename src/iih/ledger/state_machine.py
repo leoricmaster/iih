@@ -284,9 +284,11 @@ class StateMachineExecutor:
 
         校验：信源存在 + confirmed=False 前置 + 初始档必填合法（doc-04 §2.3 解死锁）+ 依据非空
         + 修正名非空白 + 目标名不撞别名。
-        三分支：未改名 → 直接入池；改名未撞名 → 以新名入池，旧名留档为别名；撞既有已确认
+        三分支：未改名 → 直接入池；改名未撞名 → 以新名入池；撞既有已确认
         信源名 → 并入该信源（条目/转引链节点/途径迁移，同名途径复用），待确认行删除，
-        旧名留档为目标信源别名，信用档沿用目标信源。类型仅在非并入路径修正。
+        信用档沿用目标信源。类型仅在非并入路径修正。
+        改名/并入不再自动留档旧名为别名（IIH-06.02：旧名往往是采集智能体产出的脏名）；
+        别名改由用户在信源画像页主动声明。
         途径（IIH-05.02 补救）：outlet_entry 非空则建互联网途径（名默认「网站」，并入路径建到
         目标信源、同名跳过），留空不建——入池即可被采集，与人工登记同构。
         """
@@ -335,8 +337,6 @@ class StateMachineExecutor:
                 [f"信源名已存在（别名，归属 {alias_hit.source.name}）：{target_name}"]
             )
 
-        if provided_name and provided_name != source.name:
-            self._record_alias(session, source=source, name=source.name)
         source.name = target_name
         source.confirmed = True
         source.credit = payload.initial_credit
@@ -368,10 +368,8 @@ class StateMachineExecutor:
         """待确认信源并入既有已确认信源：条目/转引链节点/途径迁移，待确认行删除。
 
         同名途径不迁移——条目/节点改指目标信源既有途径（归属唯一信源约束），待确认途径行删除；
-        旧名留档为目标信源别名（后续归因按别名直接归入）；信用档沿用目标信源。
-        确认携带采集入口时建到目标信源（IIH-05.02 补救），同名途径跳过。
+        信用档沿用目标信源。确认携带采集入口时建到目标信源（IIH-05.02 补救），同名途径跳过。
         """
-        self._record_alias(session, source=target, name=pending.name)
         outlet_remap: dict[int, Outlet] = {}
         duplicated: list[Outlet] = []
         for outlet in list(pending.outlets):
@@ -418,17 +416,6 @@ class StateMachineExecutor:
         if medium is None:
             raise ProposalRejectedError(["媒介引用不可解析：internet"])
         session.add(Outlet(source=source, name=name, entry=entry, medium=medium))
-
-    def _record_alias(self, session: Session, *, source: Source, name: str) -> None:
-        """旧名留档为别名（全局唯一）：同信源幂等跳过，撞他信源别名即驳回。"""
-        existing = session.scalars(select(SourceAlias).where(SourceAlias.name == name)).first()
-        if existing is not None:
-            if existing.source_id == source.id:
-                return
-            raise ProposalRejectedError(
-                [f"别名已归属其他信源：{name}——归属 {existing.source.name}"]
-            )
-        session.add(SourceAlias(source=source, name=name))
 
     def _execute_source_reject(
         self, proposal: SourceRejectProposal, session: Session

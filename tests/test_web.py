@@ -1314,21 +1314,69 @@ def test_confirm_with_type_correction_end_to_end(inbox_client: TestClient, db_se
     assert confirmed.type is SourceType.COMPANY
 
 
-def test_confirm_rename_alias_visible_on_profile(inbox_client: TestClient, db_session) -> None:
-    """对应 IIH-05.01 AC#5：确认改名后旧名留档别名，画像页可见。"""
-    item = _seed_pending_with_item(db_session, source_name="三一")
-    source = item.source
-    assert source is not None
+def test_profile_add_alias_visible_on_profile(inbox_client: TestClient, db_session) -> None:
+    """对应 IIH-06.02：画像页加别名后画像页可见。"""
+    source = Source(name="三一重工", type=SourceType.COMPANY, confirmed=True, credit="B")
+    db_session.add(source)
+    db_session.flush()
 
-    inbox_client.post(
-        f"/sources/{source.id}/confirm",
-        data={"name": "三一重工", "initial_credit": "B", "next": "/sources"},
+    response = inbox_client.post(
+        f"/sources/{source.id}/aliases",
+        data={"name": "三一"},
         follow_redirects=True,
     )
 
-    detail = inbox_client.get(f"/sources/{source.id}")
-    assert "别名" in detail.text
-    assert '<span class="pill">三一</span>' in detail.text
+    assert "已加别名" in response.text
+    assert '<span class="pill">三一</span>' in response.text
+
+
+def test_profile_add_alias_rejects_duplicates(inbox_client: TestClient, db_session) -> None:
+    """对应 IIH-06.02：加别名同名冲突（正名 / 任何别名）拦截。"""
+    holder = Source(name="三一重工", type=SourceType.COMPANY, confirmed=True, credit="B")
+    other = Source(name="中联重科", type=SourceType.COMPANY, confirmed=True, credit="C")
+    db_session.add_all([holder, other, SourceAlias(source=other, name="中联")])
+    db_session.flush()
+
+    # 撞正名
+    dup = inbox_client.post(
+        f"/sources/{holder.id}/aliases",
+        data={"name": "中联重科"},
+        follow_redirects=True,
+    )
+    assert "已存在同名信源" in dup.text
+
+    # 撞别名
+    alias = inbox_client.post(
+        f"/sources/{holder.id}/aliases",
+        data={"name": "中联"},
+        follow_redirects=True,
+    )
+    assert "已存在同名别名" in alias.text
+
+    # 与正名相同
+    same = inbox_client.post(
+        f"/sources/{holder.id}/aliases",
+        data={"name": "三一重工"},
+        follow_redirects=True,
+    )
+    assert "不可与正名相同" in same.text
+
+
+def test_profile_delete_alias_lands(inbox_client: TestClient, db_session) -> None:
+    """对应 IIH-06.02：画像页删别名后画像页不再渲染该别名。"""
+    source = Source(name="三一重工", type=SourceType.COMPANY, confirmed=True, credit="B")
+    alias = SourceAlias(source=source, name="三一")
+    db_session.add_all([source, alias])
+    db_session.flush()
+
+    response = inbox_client.post(
+        f"/sources/{source.id}/aliases/{alias.id}/delete",
+        follow_redirects=True,
+    )
+
+    assert "已删别名" in response.text
+    db_session.expire_all()
+    assert db_session.get(SourceAlias, alias.id) is None
 
 
 # ---- 探索发现信源的确认与绑定（IIH-05.02 补救口径，IIH-06.01 通路反转沿用） ----

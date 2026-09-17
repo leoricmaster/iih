@@ -22,12 +22,25 @@
       <button class="btn small">改名</button>
     </div>
   </form>
-  {% if source.aliases %}
   <div class="fbrow">
     <span class="muted">别名</span>
-    {% for a in source.aliases %}<span class="pill">{{ a.name }}</span>{% endfor %}
+    {% if source.aliases %}
+    {% for a in source.aliases %}
+    <form method="post" action="/sources/{{ source.id }}/aliases/{{ a.id }}/delete" style="display:inline-flex;align-items:center;gap:3px">
+      <span class="pill">{{ a.name }}</span>
+      <button class="btn small" title="删别名">×</button>
+    </form>
+    {% endfor %}
+    {% else %}
+    <span class="muted">—</span>
+    {% endif %}
   </div>
-  {% endif %}
+  <form method="post" action="/sources/{{ source.id }}/aliases">
+    <div class="fbrow">
+      <input type="text" name="name" value="" maxlength="200" placeholder="加别名" style="width:200px">
+      <button class="btn small">加别名</button>
+    </div>
+  </form>
 </div>
 
 <div class="box"><h2>信源信用 <span class="pill rating">{{ source.credit or '—' }}</span></h2>

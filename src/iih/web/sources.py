@@ -253,6 +253,59 @@ def source_credit_set(
     return RedirectResponse(f"/sources/{source_id}?err={quote_plus(err)}", status_code=303)
 
 
+@router.post("/sources/{source_id}/aliases")
+def source_alias_add(
+    source_id: int,
+    request: Request,
+    name: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    """画像页加别名（IIH-06.02）：用户主动声明；全局唯一（正名 + 别名）。"""
+    source = session.get(Source, source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="信源不存在")
+
+    new_name = name.strip()
+    if not source.confirmed:
+        err = "待确认信源不入库、不建画像、不记账"
+    elif not new_name:
+        err = "别名不能为空"
+    elif new_name == source.name:
+        err = "别名不可与正名相同"
+    else:
+        dup = session.scalars(select(Source).where(Source.name == new_name)).first()
+        alias = session.scalars(select(SourceAlias).where(SourceAlias.name == new_name)).first()
+        if dup is not None:
+            err = f"已存在同名信源：{new_name}"
+        elif alias is not None:
+            err = f"已存在同名别名（归属 {alias.source.name}）：{new_name}"
+        else:
+            session.add(SourceAlias(source=source, name=new_name))
+            session.commit()
+            return redirect_with_flash(f"/sources/{source_id}", f"已加别名：{new_name}")
+    return RedirectResponse(f"/sources/{source_id}?err={quote_plus(err)}", status_code=303)
+
+
+@router.post("/sources/{source_id}/aliases/{alias_id}/delete")
+def source_alias_delete(
+    source_id: int,
+    alias_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """画像页删别名（IIH-06.02）：用户主动删除；硬删，归因解析不再按此名归入。"""
+    source = session.get(Source, source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="信源不存在")
+    alias = session.get(SourceAlias, alias_id)
+    if alias is None or alias.source_id != source_id:
+        raise HTTPException(status_code=404, detail="别名不存在")
+    name = alias.name
+    session.delete(alias)
+    session.commit()
+    return redirect_with_flash(f"/sources/{source_id}", f"已删别名：{name}")
+
+
 @router.post("/sources/{source_id}/confirm")
 def source_confirm(
     source_id: int,
