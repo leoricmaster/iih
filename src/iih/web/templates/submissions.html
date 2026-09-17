@@ -6,6 +6,30 @@
 {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
 {% if errors %}<div class="flash err">{{ errors | join('；') }}</div>{% endif %}
 
+{% macro transcript_block(m, transcript, open=false, reextract=false) %}
+<details class="markdetails"{% if open %} open{% endif %}>
+  <summary>转写稿</summary>
+  <div class="trview">
+    <pre class="transcript">{{ transcript }}</pre>
+    <div class="fbrow"><button type="button" class="btn small" data-tr-edit>编辑</button></div>
+  </div>
+  <div class="tredit" hidden>
+    <form method="post" action="/materials/{{ m.id }}/transcript">
+      <textarea name="transcript" rows="10">{{ transcript }}</textarea>
+      <div class="fbrow">
+        <button type="button" class="btn small" data-tr-cancel>取消</button>
+        {% if reextract %}
+        <button class="btn small">保存</button>
+        <button class="btn small primary" name="respecify" value="on">保存并重新抽取</button>
+        {% else %}
+        <button class="btn small primary">保存</button>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</details>
+{% endmacro %}
+
 <div class="box"><h2>提交素材</h2>
   <form method="post" action="/submissions" enctype="multipart/form-data">
     <div class="field"><label>媒介</label>
@@ -42,45 +66,25 @@
     {% if m.failure_reason %}<div class="muted">{{ m.failure_reason }}</div>{% endif %}
     {% endif %}
     {% if m.status.value == 'transcribed' %}
+    {{ transcript_block(m, row.transcript, open=true) }}
     <details class="markdetails" open>
-      <summary title="全部发言人标记实名后转写稿才算完成，逐人归因成源">转写稿 · 发言人标记</summary>
-      <pre class="transcript">{{ row.transcript }}</pre>
-      <form method="post" action="/materials/{{ m.id }}/mark">
+      <summary title="全部发言人标记实名后转写稿才算完成，逐人归因成源">发言人标记</summary>
+      <form method="post" action="/materials/{{ m.id }}/mark" class="marksform">
         {% for sp in row.speakers %}
-        <div class="markitem">
-          <div class="markrow">
-            <span class="marklabel">{{ sp.label }}</span>
-            <input class="markname" type="text" name="{{ sp.label }}" placeholder="实名" maxlength="80">
-          </div>
-          {% if sp.hint %}<div class="markhint" title="{{ sp.hint }}">{{ sp.hint }}</div>{% endif %}
-        </div>
+        <div class="markrow"><span class="marklabel">{{ sp.label }}</span>
+          <input type="text" name="{{ sp.label }}" placeholder="实名" maxlength="80"></div>
+        {% if sp.hint %}<div class="markhint" title="{{ sp.hint }}">{{ sp.hint }}</div>{% endif %}
         {% endfor %}
-        <button class="btn small primary">标记并抽取</button>
-        <span class="muted">认不出的发言人可填描述性称呼（如「主机厂专家」），信源确认时可改名</span>
+        <div class="fbrow">
+          <button class="btn small primary">完成标记</button>
+          <span class="muted">认不出的发言人可填描述性称呼（如「主机厂专家」），信源确认时可改名</span>
+        </div>
       </form>
-      <details class="markdetails">
-        <summary>编辑转写稿</summary>
-        <form method="post" action="/materials/{{ m.id }}/transcript">
-          <textarea name="transcript" rows="8">{{ row.transcript }}</textarea>
-          <button class="btn small primary">保存</button>
-        </form>
-      </details>
     </details>
+    {% elif m.status.value == 'completed' and row.transcript %}
+    {{ transcript_block(m, row.transcript, reextract=true) }}
     {% elif row.transcript %}
-    <details class="markdetails">
-      <summary>转写稿</summary>
-      <pre class="transcript">{{ row.transcript }}</pre>
-    </details>
-    {% if m.status.value == 'completed' %}
-    <details class="markdetails">
-      <summary>编辑转写稿</summary>
-      <form method="post" action="/materials/{{ m.id }}/transcript">
-        <textarea name="transcript" rows="8">{{ row.transcript }}</textarea>
-        <label><input type="checkbox" name="respecify" value="on"> 保存后重新抽取</label>
-        <button class="btn small primary">保存</button>
-      </form>
-    </details>
-    {% endif %}
+    <details class="markdetails"><summary>转写稿</summary><pre class="transcript">{{ row.transcript }}</pre></details>
     {% endif %}
   </div>
   {% endfor %}

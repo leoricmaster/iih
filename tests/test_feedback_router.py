@@ -113,7 +113,7 @@ def test_unknown_item_rejected(db_session) -> None:
         (FeedbackType.FACTUAL_ERROR, frozenset({DISPOSITION, CREDIT, ITERATION})),
         (FeedbackType.IRRELEVANT, frozenset({CONFIGURATION})),
         (FeedbackType.OUTDATED, frozenset({CONFIGURATION})),
-        (FeedbackType.DUPLICATE_NOISE, frozenset({ITERATION})),
+        (FeedbackType.NOISE, frozenset({ITERATION})),
         (FeedbackType.RATING_DISPUTE, frozenset({DISPOSITION})),
         (FeedbackType.REVIEW_DISPUTE, frozenset({DISPOSITION, ITERATION})),
     ],

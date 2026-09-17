@@ -187,7 +187,7 @@ updated_date: '2026-09-09 05:52'
 | 术语 | English | 定义 | 示例 |
 |---|---|---|---|
 | 反馈 | Feedback | 消费方对情报 / 结论的类型化评价 | 对 I1 一键「有效」；对结论 C1 提「事实错误」 |
-| 有效 / 事实错误 / 重复/噪音 / 不相关 / 过期 / 评级异议 / 审查异议 | Valid / Factual Error / Duplicate-Noise / Irrelevant / Outdated / Rating Dispute / Review Dispute | 反馈的七类型 | 推送卡片一键「过期」；详情页补写理由的「评级异议」；噪音条目携理由的「审查异议」 |
+| 有效 / 事实错误 / 噪音 / 不相关 / 过期 / 评级异议 / 审查异议 | Valid / Factual Error / Noise / Irrelevant / Outdated / Rating Dispute / Review Dispute | 反馈的七类型 | 推送卡片一键「过期」；详情页补写理由的「评级异议」；噪音条目携理由的「审查异议」 |
 | 信用归因 | Credit Attribution | 将有效 / 事实错误反馈定位到责任信源：转引链上最早引入该陈述的信源，如实转述者不受奖惩 | 「有效」归因到 W 官网（最早陈述方），如实转载的资讯站不动 |
 
 > **反馈规则**

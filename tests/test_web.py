@@ -310,7 +310,7 @@ def test_items_list_quick_feedback_buttons_only_on_pending_rows(
 
     assert listing.text.count('class="rowfb"') == 1  # 仅待反馈行带快捷表单
     assert 'value="valid"' in listing.text
-    assert 'value="duplicate_noise"' in listing.text
+    assert 'value="noise"' in listing.text
 
 
 def test_quick_feedback_from_list_lands_and_dequeues(inbox_client: TestClient, db_session) -> None:
@@ -464,7 +464,7 @@ def test_item_detail_shows_feedback_form_and_records(inbox_client: TestClient, d
     for option in (
         "valid",
         "factual_error",
-        "duplicate_noise",
+        "noise",
         "irrelevant",
         "outdated",
         "rating_dispute",

@@ -347,7 +347,7 @@ async def mark_speakers(
 async def edit_transcript(
     material_id: int, request: Request, session: Session = Depends(get_session)
 ):
-    """转写稿编辑：追加人工派生为最新权威；已完成素材可勾选重抽（撤回旧线索由重抽替换）。"""
+    """转写稿编辑：追加人工派生为最新权威；已完成素材可「保存并重新抽取」（撤回旧线索由重抽替换）。"""
     material = session.get(Material, material_id)
     if material is None or material.status not in (
         MaterialStatus.TRANSCRIBED,

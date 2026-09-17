@@ -162,6 +162,36 @@ document.querySelectorAll("dialog.modal").forEach((dlg) => {
   }, 20000);
 })();
 
+// 转写稿查看/编辑双态（原型）：「编辑」就地展开 textarea，取消还原未保存改动，保存走表单 POST
+(() => {
+  document.querySelectorAll("[data-tr-edit]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const box = btn.closest("details");
+      const view = box?.querySelector(".trview");
+      const edit = box?.querySelector(".tredit");
+      if (!view || !edit) return;
+      view.hidden = true;
+      edit.hidden = false;
+      const ta = edit.querySelector("textarea");
+      ta.focus();
+      ta.scrollTop = 0;
+    })
+  );
+  document.querySelectorAll("[data-tr-cancel]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const edit = btn.closest(".tredit");
+      const box = btn.closest("details");
+      const pre = box?.querySelector(".trview pre");
+      if (!edit || !pre) return;
+      const ta = edit.querySelector("textarea");
+      if (ta) ta.value = pre.textContent;
+      edit.hidden = true;
+      const view = box?.querySelector(".trview");
+      if (view) view.hidden = false;
+    })
+  );
+})();
+
 // 待确认信源相似名查重（IIH-06.01 ②）：点近似提示 → 把该既有信源名填入同行 srcname
 // 输入框，用户再点确认走既有并入路径（不自动归并）。
 document.querySelectorAll(".srcrow .srcfill").forEach((a) => {

@@ -119,7 +119,7 @@ class FeedbackType(enum.StrEnum):
 
     VALID = "valid"  # 有效
     FACTUAL_ERROR = "factual_error"  # 事实错误
-    DUPLICATE_NOISE = "duplicate_noise"  # 重复 / 噪音
+    NOISE = "noise"  # 噪音
     IRRELEVANT = "irrelevant"  # 不相关
     OUTDATED = "outdated"  # 过期
     RATING_DISPUTE = "rating_dispute"  # 评级异议

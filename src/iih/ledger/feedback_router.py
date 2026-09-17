@@ -21,7 +21,7 @@ from iih.ledger.models import Feedback, FeedbackType, IntelligenceItem, ItemStat
 TYPE_LABELS = {
     FeedbackType.VALID: "有效",
     FeedbackType.FACTUAL_ERROR: "事实错误",
-    FeedbackType.DUPLICATE_NOISE: "重复 / 噪音",
+    FeedbackType.NOISE: "噪音",
     FeedbackType.IRRELEVANT: "不相关",
     FeedbackType.OUTDATED: "过期",
     FeedbackType.RATING_DISPUTE: "评级异议",
@@ -49,8 +49,8 @@ FEEDBACK_ROUTING: dict[FeedbackType, frozenset[FeedbackChannel]] = {
     FeedbackType.IRRELEVANT: frozenset({FeedbackChannel.CONFIGURATION}),
     # 过期：配置（采集频率、时效参数）
     FeedbackType.OUTDATED: frozenset({FeedbackChannel.CONFIGURATION}),
-    # 重复 / 噪音：迭代（审查去重 / 初筛）
-    FeedbackType.DUPLICATE_NOISE: frozenset({FeedbackChannel.ITERATION}),
+    # 噪音：迭代（审查去重 / 初筛）
+    FeedbackType.NOISE: frozenset({FeedbackChannel.ITERATION}),
     # 评级异议：处置（评级重评）
     FeedbackType.RATING_DISPUTE: frozenset({FeedbackChannel.DISPOSITION}),
     # 审查异议：处置（噪音回候选重审）+ 迭代（审查口径调优）

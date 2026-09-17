@@ -49,7 +49,7 @@
       <td class="muted">{{ item.event_time | dtstr('%Y-%m-%d') if item.event_time else '—' }}</td>
       <td>{% if item.id in quick_ids %}<form class="rowfb" method="post" action="/items/{{ item.id }}/feedback">
         <button class="chip" name="feedback_type" value="valid" title="快捷反馈（默认理由）">有效</button>
-        <button class="chip" name="feedback_type" value="duplicate_noise" title="快捷反馈（默认理由）">重复 / 噪音</button>
+        <button class="chip" name="feedback_type" value="noise" title="快捷反馈（默认理由）">噪音</button>
       </form>{% endif %}</td>
     </tr>
     {% else %}
