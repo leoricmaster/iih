@@ -1,11 +1,11 @@
 ---
 id: IIH-06.02
 title: 别名管理：删别名能力 + 改名留档规则修订
-status: To Do
+status: Done
 assignee:
   - '@zhangyunfeng'
 created_date: '2026-09-17 07:19'
-updated_date: '2026-09-17 07:20'
+updated_date: '2026-09-17 07:48'
 labels:
   - product
 dependencies: []
