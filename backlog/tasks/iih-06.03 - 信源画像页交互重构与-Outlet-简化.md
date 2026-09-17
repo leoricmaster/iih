@@ -1,10 +1,10 @@
 ---
 id: IIH-06.03
 title: 信源画像页交互重构与 Outlet 简化
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-17 09:01'
-updated_date: '2026-09-17 15:10'
+updated_date: '2026-09-17 15:11'
 labels:
   - product
 dependencies: []
