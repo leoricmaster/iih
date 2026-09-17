@@ -54,7 +54,9 @@ ATTRIBUTION_SYSTEM_PROMPT = """你是情报采集智能体的归因模块。
 给定一条情报陈述与其获取媒介，推断信源与发布途径。
 
 要求：
-- source_name：发布主体（谁在说），从陈述中的公司 / 机构 / 人物推断；
+- source_name：信息**原始产出方**的纯名称（机构 / 媒体 / 政府 / 公司 / 人物），从陈述中
+  推断；不含作者姓名（记者 / 编辑 / 通讯员 / 署名）、不含括号备注、不含「转载于」等
+  描述、不含页脚版权 / 投稿邮箱；
 - source_type：主体类型；
 - outlet_name：该场景下的具体发布出口（如「渠道大会现场」），无法推断则留空；
 - rationale：一句话归因依据，将记入提案的「依据」。"""
@@ -63,7 +65,10 @@ ATTRIBUTION_SYSTEM_PROMPT = """你是情报采集智能体的归因模块。
 class AttributionResult(BaseModel):
     """LLM 结构化归因输出（instructor 按此 schema 校验）。"""
 
-    source_name: str = Field(description="发布主体名，如「W 公司」")
+    source_name: str = Field(
+        description="信息原始产出方的纯名称（机构/媒体/政府/公司/人物），如「W 公司」；"
+        "不含作者姓名、括号备注、「转载于」等描述"
+    )
     source_type: SourceType = Field(
         description="主体类型：company/government/organization/media/person/other"
     )
@@ -154,7 +159,10 @@ EXPLORATION_EXTRACTION_SYSTEM_PROMPT = """你是情报采集智能体的探索�
 - statement：客观陈述句，描述事实而非评价；页面无情报价值内容返回空字符串；
 - event_time：陈述所述事实的发生日期（ISO 格式，如 2026-08-30），正文无明确日期
   依据则留空，不得编造；
-- source_name：发布主体名（谁在说）；文本无明确主体信息返回空字符串；
+- source_name：信息**原始产出方**的纯名称（机构 / 媒体 / 政府 / 公司 / 人物名）；
+  正文显式标注「转载于 X」「转自 X」「来源：X」时，取被转载的 X（原始产出方，
+  非本页转载方）；不含作者姓名（记者 / 编辑 / 通讯员 / 署名）、不含括号备注、
+  不含「转载于」等描述、不含页脚版权 / 投稿邮箱 / 编辑部；正文无明确主体信息返回空字符串；
 - source_type：主体类型；
 - rationale：一句话说明为何选此陈述及归因依据。
 """
@@ -167,7 +175,11 @@ class ExplorationExtractionResult(BaseModel):
     event_time: datetime | None = Field(
         default=None, description="陈述所述事实的发生日期；正文无明确日期依据则留空"
     )
-    source_name: str = Field(description="发布主体名；无明确主体则空字符串")
+    source_name: str = Field(
+        description="信息原始产出方的纯名称（机构/媒体/政府/公司/人物名）；"
+        "正文标注「转载于 X / 转自 X / 来源：X」时取被转载的 X；"
+        "不含作者姓名、括号备注、「转载于」等描述；无明确主体则空字符串"
+    )
     source_type: SourceType = Field(
         description="主体类型：company/government/organization/media/person/other"
     )

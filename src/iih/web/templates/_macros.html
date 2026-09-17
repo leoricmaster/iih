@@ -1,4 +1,4 @@
-{% macro confirm_reject(s, next, source_types) %}
+{% macro confirm_reject(s, next, source_types, similars_by_id=None) %}
 <div class="srcrow">
   <form method="post" action="/sources/{{ s.id }}/confirm">
     <input type="hidden" name="next" value="{{ next }}">
@@ -10,6 +10,13 @@
         {% endfor %}
       </select>
       {% if s.rejected_at %}<span class="pill dashed">已拒绝 · {{ s.rejected_at | dtstr }}</span>{% elif s.rejections %}<span class="pill dashed" title="最近拒绝：{{ s.rejections[0].created_at | dtstr }}">曾拒 ×{{ s.rejections | length }}</span>{% else %}<span class="pill dashed">待确认</span>{% endif %}
+      {% set similars = similars_by_id.get(s.id, []) if similars_by_id else [] %}
+      {% if similars %}
+      <span class="srcrow-sim">
+        <span class="muted">近似既有：</span>
+        {% for sim in similars %}<a class="srcfill" data-name="{{ sim.name }}">{{ sim.name }}</a>{% if not loop.last %} · {% endif %}{% endfor %}
+      </span>
+      {% endif %}
     </span>
     <span class="srcrow-outlet" title="确认时建互联网途径（自动拉取）；采集入口留空则不建{% if s.discovered_entry %}——已按发现来源站点根预填，可改为栏目列表页 / RSS{% endif %}">
       <input class="outletname" type="text" name="outlet_name" value="{{ '网站' if s.discovered_entry else '' }}" maxlength="40" placeholder="途径名" title="途径名">

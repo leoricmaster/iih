@@ -30,7 +30,7 @@
 {% if pending_sources %}
 <div class="box"><h2>待确认</h2>
   {% for s in pending_sources %}
-  {{ m.confirm_reject(s, '/sources', source_types) }}
+  {{ m.confirm_reject(s, '/sources', source_types, pending_similars) }}
   {% endfor %}
 </div>
 {% endif %}

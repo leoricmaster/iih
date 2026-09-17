@@ -1432,6 +1432,45 @@ def test_sources_list_shows_alias_pills(sources_client: TestClient, db_session) 
     assert '<span class="pill">三一</span>' in listing.text
 
 
+def test_pending_source_renders_similar_confirmed_hint(
+    sources_client: TestClient, db_session
+) -> None:
+    """IIH-06.01 ②：待确认行渲染近似既有信源提示（纯提示不自动归并）。
+
+    「中国工业报」(待确认) 与「中国工业报社」(已确认) 归一化相似度 ≈0.94 ≥ 0.7 →
+    渲染近似提示行；点击填名走既有并入路径，由用户裁决。
+    """
+    confirmed = Source(name="中国工业报社", type=SourceType.MEDIA, confirmed=True, credit="B")
+    db_session.add(confirmed)
+    db_session.flush()
+
+    item = _seed_pending_with_item(db_session, source_name="中国工业报")
+    pending_id = item.source_id
+
+    listing = sources_client.get("/sources")
+
+    assert "近似既有" in listing.text
+    assert '<a class="srcfill" data-name="中国工业报社">中国工业报社</a>' in listing.text
+
+    detail = sources_client.get(f"/sources/{pending_id}")
+    assert "近似既有" in detail.text
+    assert 'data-name="中国工业报社"' in detail.text
+
+
+def test_pending_source_no_similar_hint_when_unrelated(
+    sources_client: TestClient, db_session
+) -> None:
+    """不相似场景不渲染近似提示（避免噪声）。"""
+    confirmed = Source(name="新华社", type=SourceType.MEDIA, confirmed=True, credit="A")
+    db_session.add(confirmed)
+    db_session.flush()
+
+    _seed_pending_with_item(db_session, source_name="工程机械品牌网")
+
+    listing = sources_client.get("/sources")
+    assert "近似既有" not in listing.text
+
+
 def test_rejected_source_leaves_pending_list_and_resurfaces(
     inbox_client: TestClient, db_session
 ) -> None:

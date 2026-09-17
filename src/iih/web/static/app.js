@@ -161,3 +161,17 @@ document.querySelectorAll("dialog.modal").forEach((dlg) => {
     }
   }, 20000);
 })();
+
+// 待确认信源相似名查重（IIH-06.01 ②）：点近似提示 → 把该既有信源名填入同行 srcname
+// 输入框，用户再点确认走既有并入路径（不自动归并）。
+document.querySelectorAll(".srcrow .srcfill").forEach((a) => {
+  a.addEventListener("click", (e) => {
+    e.preventDefault();
+    const row = a.closest(".srcrow");
+    const input = row?.querySelector("input.srcname");
+    if (input) {
+      input.value = a.dataset.name;
+      input.focus();
+    }
+  });
+});

@@ -138,3 +138,8 @@ input.srcname:focus{border-color:#2b5bd7;outline:none;background:#fff}
 .srcrow-outlet .outletentry{flex:1;min-width:0}
 .srcrow-acts{display:flex;align-items:center;gap:6px;margin-left:auto;white-space:nowrap}
 .srcrow-acts select{width:auto;padding:3px 6px;font-size:12.5px}
+/* IIH-06.01 ② 相似名查重：纯提示不自动归并 */
+.srcrow-sim{font-size:12px}
+.srcrow-sim + .srcrow-sim{margin-left:6px}
+.srcfill{cursor:pointer;color:#2b5bd7;text-decoration:underline dotted}
+.srcfill:hover{color:#1a3faf}

@@ -12,7 +12,7 @@
 {% if not source.confirmed %}
 <div class="box"><h2>待确认</h2>
   <div class="muted">不入库、不建画像、不记账（decision-05）。</div>
-  {{ m.confirm_reject(source, '/sources/' ~ source.id, source_types) }}
+  {{ m.confirm_reject(source, '/sources/' ~ source.id, source_types, pending_similars) }}
 </div>
 {% else %}
 <div class="box"><h2>主体</h2>

@@ -5,6 +5,7 @@
 识别进待确认队列（decision-05）。
 """
 
+from difflib import SequenceMatcher
 from pathlib import Path
 from urllib.parse import quote_plus
 
@@ -47,6 +48,25 @@ router = APIRouter()
 CONFIRM_RATIONALE = "人工确认（decision-05 准入把关）"
 REJECT_RATIONALE = "人工拒绝（decision-05 准入把关）"
 
+# IIH-06.01 ②相似名查重：纯提示不自动归并（用户裁决）。归一化=去空白+lower；
+# difflib SequenceMatcher.ratio() 自带归一化相似度。阈值 0.7——「中国工业报」vs
+# 「中国工业报社」≈0.94 命中，「中国装备」vs「中国装备制造」≈0.67 不命中。
+SIMILARITY_THRESHOLD = 0.7
+
+
+def _normalize_name(name: str) -> str:
+    return "".join(name.lower().split())
+
+
+def _similarity(a: str, b: str) -> float:
+    return SequenceMatcher(None, _normalize_name(a), _normalize_name(b)).ratio()
+
+
+def _find_similar_confirmed(name: str, candidates: list[Source]) -> list[Source]:
+    if not name:
+        return []
+    return [s for s in candidates if _similarity(name, s.name) >= SIMILARITY_THRESHOLD]
+
 
 def _safe_next(next_url: str) -> str:
     """回跳白名单：仅站内路径（/ 开头且非 //），防开放重定向。"""
@@ -88,13 +108,17 @@ def _feedback_counts(session: Session) -> dict[int, dict[str, int]]:
 
 
 def _render(request: Request, session: Session, flash: str = "", err: str = ""):
+    confirmed = _confirmed_sources(session)
+    pending = _pending_sources(session)
+    pending_similars = {s.id: _find_similar_confirmed(s.name, confirmed) for s in pending}
     return templates.TemplateResponse(
         request,
         "sources.html",
         {
             **base_context(session, "sources"),
-            "sources": _confirmed_sources(session),
-            "pending_sources": _pending_sources(session),
+            "sources": confirmed,
+            "pending_sources": pending,
+            "pending_similars": pending_similars,
             "feedback_counts": _feedback_counts(session),
             "source_types": list(SOURCE_TYPE_LABELS.items()),
             "source_type_labels": SOURCE_TYPE_LABELS,
@@ -144,6 +168,10 @@ def source_detail(
             .order_by(IntelligenceItem.created_at.desc(), IntelligenceItem.id.desc())
         )
     )
+    confirmed = _confirmed_sources(session)
+    pending_similars: dict[int, list[Source]] = {}
+    if not source.confirmed:
+        pending_similars[source.id] = _find_similar_confirmed(source.name, confirmed)
     return templates.TemplateResponse(
         request,
         "source_detail.html",
@@ -152,6 +180,7 @@ def source_detail(
             "source": source,
             "adjustments": adjustments,
             "participating": participating,
+            "pending_similars": pending_similars,
             "source_types": list(SOURCE_TYPE_LABELS.items()),
             "source_type_labels": SOURCE_TYPE_LABELS,
             "item_status_labels": STATUS_LABELS,
