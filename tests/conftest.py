@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from iih.agents.collector import (
     ArticleSelectionResult,
     AttributionResult,
-    ExplorationAttributionResult,
+    ExplorationExtractionResult,
     ExplorationKeywordResult,
     ExplorationResultSelectionResult,
     ManualExtractionResult,
@@ -182,20 +182,16 @@ def make_fake_llm_collect(selection: ArticleSelectionResult, extraction: Stateme
 
 
 def make_fake_llm_explore(
-    selection: ArticleSelectionResult,
-    extraction: StatementExtractionResult,
     exploration_keywords: ExplorationKeywordResult,
     exploration_selection: ExplorationResultSelectionResult,
-    exploration_attribution: ExplorationAttributionResult,
+    exploration_extraction: ExplorationExtractionResult,
 ):
-    """instructor 替身：池外探索场景——分发选链/抽取/关键词/检索结果选链/归因。"""
+    """instructor 替身：探索任务场景——分发关键词/检索结果选链/抽取归因（一次调用）。"""
     return _make_dispatch_llm(
         {
-            ArticleSelectionResult: selection,
-            StatementExtractionResult: extraction,
             ExplorationKeywordResult: exploration_keywords,
             ExplorationResultSelectionResult: exploration_selection,
-            ExplorationAttributionResult: exploration_attribution,
+            ExplorationExtractionResult: exploration_extraction,
         },
         prompt_tokens=200,
         completion_tokens=80,
@@ -232,8 +228,14 @@ def make_fake_llm_dispatch(
     selection: ArticleSelectionResult,
     extraction: StatementExtractionResult,
     judgment: ReviewJudgmentResult,
+    exploration_keywords: ExplorationKeywordResult | None = None,
 ):
-    """instructor 替身：按 response_model 分发（选链 / 抽取 / 审查判定），供流水线全链测试。"""
+    """instructor 替身：按 response_model 分发（选链/抽取/审查判定/探索关键词），供流水线全链测试。
+
+    探索关键词缺省为空列表——探索任务静默跳过（不触 Tavily），保持既有全链断言口径。
+    """
+    if exploration_keywords is None:
+        exploration_keywords = ExplorationKeywordResult(keywords=[], rationale="空")
 
     class Completions:
         def create_with_completion(self, *, response_model, messages, **kwargs):
@@ -241,6 +243,8 @@ def make_fake_llm_dispatch(
                 result = selection
             elif response_model is StatementExtractionResult:
                 result = extraction
+            elif response_model is ExplorationKeywordResult:
+                result = exploration_keywords
             else:
                 assert response_model is ReviewJudgmentResult
                 result = judgment

@@ -1,6 +1,8 @@
 """信源库页（doc-07 §2.1、§3，原型「信源库/信源画像」页）。
 
-列表（主体 / 途径两栏）+ 登记种子信源 + 信源画像（信用档与调整历史、途径、参与条目）。
+列表（主体 / 途径两栏）+ 待确认信源确认闭环 + 信源画像（信用档与调整历史、途径、
+参与条目）。人工登记入口已下线（IIH-06.01 通路反转）——新信源一律经条目归因
+识别进待确认队列（decision-05）。
 """
 
 from pathlib import Path
@@ -24,8 +26,6 @@ from iih.ledger.models import (
 from iih.ledger.proposal import (
     SourceConfirmPayload,
     SourceConfirmProposal,
-    SourceRegisterPayload,
-    SourceRegisterProposal,
     SourceRejectPayload,
     SourceRejectProposal,
 )
@@ -44,7 +44,6 @@ templates = register_template_filters(Jinja2Templates(directory=TEMPLATES_DIR))
 
 router = APIRouter()
 
-REGISTER_RATIONALE = "人工登记（decision-05 通道一）"
 CONFIRM_RATIONALE = "人工确认（decision-05 准入把关）"
 REJECT_RATIONALE = "人工拒绝（decision-05 准入把关）"
 
@@ -88,13 +87,7 @@ def _feedback_counts(session: Session) -> dict[int, dict[str, int]]:
     }
 
 
-def _render(
-    request: Request,
-    session: Session,
-    errors: list[str] | None = None,
-    flash: str = "",
-    err: str = "",
-):
+def _render(request: Request, session: Session, flash: str = "", err: str = ""):
     return templates.TemplateResponse(
         request,
         "sources.html",
@@ -105,7 +98,6 @@ def _render(
             "feedback_counts": _feedback_counts(session),
             "source_types": list(SOURCE_TYPE_LABELS.items()),
             "source_type_labels": SOURCE_TYPE_LABELS,
-            "errors": errors or [],
             "flash": flash,
             "err": err,
         },
@@ -117,58 +109,6 @@ def sources_page(
     request: Request, flash: str = "", err: str = "", session: Session = Depends(get_session)
 ):
     return _render(request, session, flash=flash, err=err)
-
-
-@router.post("/sources")
-def register(
-    request: Request,
-    source_name: str = Form(""),
-    source_type: str = Form(""),
-    outlet_name: str = Form(""),
-    outlet_entry: str = Form(""),
-    initial_credit: str = Form(""),
-    session: Session = Depends(get_session),
-):
-    """表单校验 → 种子信源登记提案 → 状态机执行器落账。"""
-    errors: list[str] = []
-    if not source_name.strip():
-        errors.append("请填写主体名称")
-    if not source_type:
-        errors.append("请选择类型")
-    if not outlet_name.strip():
-        errors.append("请填写途径名")
-    if not outlet_entry.strip():
-        errors.append("请填写采集入口")
-    credit = initial_credit.strip()
-    if not credit:
-        errors.append("请选择初始信用档")
-    elif credit not in "ABCDEF":
-        errors.append("初始信用档需为 A–F")
-
-    if errors:
-        return _render(request, session, errors)
-
-    try:
-        source_type_enum = SourceType(source_type)
-    except ValueError:
-        return _render(request, session, [f"未知信源类型：{source_type}"])
-
-    proposal = SourceRegisterProposal(
-        payload=SourceRegisterPayload(
-            source_name=source_name.strip(),
-            source_type=source_type_enum,
-            outlet_name=outlet_name.strip(),
-            outlet_entry=outlet_entry.strip(),
-            initial_credit=credit or None,
-        ),
-        rationale=REGISTER_RATIONALE,
-    )
-    try:
-        StateMachineExecutor().execute(proposal, session=session)
-    except ProposalRejectedError as exc:
-        return _render(request, session, exc.reasons)
-
-    return RedirectResponse("/sources", status_code=303)
 
 
 @router.get("/sources/{source_id}")

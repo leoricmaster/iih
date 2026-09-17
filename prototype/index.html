@@ -205,7 +205,7 @@ const DB = {
        {time:'2026-09-02 11:00', delta:-2, score:-2.0, grade:'D', formula:'v1'},
        {time:'2026-09-04 09:10', delta:-2, score:-4.0, grade:'D', formula:'v1'}]},
     {id:'s6', name:'矿业装备出口观察', type:'媒体', credit:'—', status:'待确认',
-     found:{channel:'采集发现（R1 采集任务 · 池外自由探索上报）', time:'2026-09-06', entry:'公众号：矿业装备出口观察'},
+     found:{channel:'探索发现（R1 探索任务 · 条目归因识别）', time:'2026-09-06', entry:'公众号：矿业装备出口观察'},
      note:'未确认的发现不入信源库、不建画像、不参与信用记账（decision-05）'},
   ],
 
@@ -383,7 +383,7 @@ const DB = {
 
   reqs: [
     {id:'r1', name:'长期跟踪 W 公司动态', status:'激活', window:'常驻',
-     freq:'1h', sources:['s1','s2'], eventWindow:'一周内', explore:'0.2',
+     freq:'1h', sources:['s1','s2'], eventWindow:'一周内',
      validFrom:'2026-09-03', validUntil:null,
      contentSpec:'主题：矿卡、订单、业绩、战略动向\n关注对象：W 公司；一次信源优先，媒体次之\n节奏：晨间分发汇总（批量）',
      lastCollected:'2026-09-08 08:00', recentHits:['i1','i6','i3','i2']},
@@ -391,7 +391,7 @@ const DB = {
     {id:'r3', name:'盯输入：在役矿卡保有量 / 车龄与更换率', status:'激活', window:'至 T1 结题', spawnedBy:'t1', hits:['i1']},
     {id:'r4', name:'盯输入：整机均价 / 电驱渗透率', status:'激活', window:'至 T1 结题', spawnedBy:'t1', hits:['i2']},
     {id:'r5', name:'跟踪竞品 Z 公司动态', status:'暂停', window:'常驻',
-     freq:'24h', sources:null, eventWindow:null, explore:null, validFrom:'2026-08-01', validUntil:null,
+     freq:'24h', sources:null, eventWindow:null, validFrom:'2026-08-01', validUntil:null,
      contentSpec:'主题：Z 公司、矿卡、订单动态'},
   ],
 
@@ -1066,7 +1066,7 @@ function renderClaimDetail(id){
   </div>`;
 }
 
-/* ================= 情报需求（IIH-03.01 需求级采集配置 · IIH-05.02 池外探索） ================= */
+/* ================= 情报需求（IIH-03.01 需求级采集配置 · IIH-06.01 探索常驻） ================= */
 const reqSourcesLabel = r => r.sources ? r.sources.map(srcName).join('、') : '全部';
 
 function renderReqs(){
@@ -1090,9 +1090,6 @@ function renderReqs(){
         <div class="field" style="margin:0"><label>采集频率</label><input type="text" id="req-freq" placeholder="1h / 24h / 6h；留空 = 默认"></div>
         <div class="field" style="margin:0"><label>事件时效</label><input type="text" id="req-event-window" placeholder="7d / 24h；留空 = 不限"></div>
       </div>
-      <div class="field"><label>池外探索比例</label>
-        <input type="number" id="req-explore" min="0" max="1" step="0.1" placeholder="0–1，留空 = 0">
-        <div class="muted" style="margin-top:4px">每次采集按此概率做池外自由探索，发现新信源进待确认队列（IIH-05.02）</div></div>
       <div class="field"><label>信源绑定</label>
         <div style="display:flex;flex-wrap:wrap;gap:6px">
           ${DB.sources.filter(s => s.status === '已确认').map(s => `<label style="display:flex;gap:4px;align-items:center;font-size:12.5px;color:#666"><input type="checkbox" value="${s.id}" class="req-source-cb"> ${esc(s.name)}</label>`).join('')}
@@ -1153,7 +1150,7 @@ function renderReqDetail(id){
   <div class="box"><h2>${esc(r.name)} ${statusPill(r.status)}</h2>
     <div class="muted">生效窗口：${esc(r.window)} · ${r.spawnedBy?parentLink(r.spawnedBy):'声明'}。</div>
     ${declared ? `
-    <div class="muted" style="margin-top:4px">频率：${r.freq || '默认'} · 事件时效：${r.eventWindow || '不限'} · 信源：${reqSourcesLabel(r)} · 池外探索：${r.explore || '0'}</div>
+    <div class="muted" style="margin-top:4px">频率：${r.freq || '默认'} · 事件时效：${r.eventWindow || '不限'} · 信源：${reqSourcesLabel(r)}</div>
     ` : ''}
     <div class="fbrow" style="margin-top:8px">
       ${r.status==='激活'?`<button class="btn small" onclick="reqAction('${r.id}','暂停')">暂停</button><button class="btn small" onclick="reqAction('${r.id}','关闭')">关闭</button>`:''}
@@ -1177,9 +1174,6 @@ function renderReqDetail(id){
       <div class="field" style="margin:0"><label>采集频率</label><input type="text" id="cfg-freq" value="${esc(r.freq||'')}" placeholder="1h / 24h / 6h；留空 = 默认"></div>
       <div class="field" style="margin:0"><label>事件时效</label><input type="text" id="cfg-fresh" value="${esc(r.eventWindow||'')}" placeholder="7d / 24h；留空 = 不限"></div>
     </div>
-    <div class="field"><label>池外探索比例</label>
-      <input type="number" id="cfg-explore" min="0" max="1" step="0.1" value="${esc(r.explore||'')}" placeholder="0–1，留空 = 0">
-      <div class="muted" style="margin-top:4px">每次采集按此概率做池外自由探索，发现新信源进待确认队列（IIH-05.02）</div></div>
     <div class="field"><label>信源绑定</label>
       <div style="display:flex;flex-wrap:wrap;gap:6px">
         ${DB.sources.filter(s => s.status === '已确认').map(s => `<label style="display:flex;gap:4px;align-items:center;font-size:12.5px;color:#666"><input type="checkbox" class="cfg-src" value="${s.id}"${r.sources && r.sources.includes(s.id)?' checked':''}> ${esc(s.name)}</label>`).join('')}
@@ -1193,7 +1187,7 @@ function renderReqDetail(id){
       </div>
       <div class="muted" style="margin-top:4px">截止日留空 = 常驻（不自动关闭）；到期日当天自动关闭</div></div>
     <button class="btn primary" onclick="reqConfigSave('${r.id}')">保存</button>`
-    : `<div class="muted">频率：${r.freq || '默认'} · 事件时效：${r.eventWindow || '不限'} · 池外探索：${r.explore || '0'}</div>
+    : `<div class="muted">频率：${r.freq || '默认'} · 事件时效：${r.eventWindow || '不限'}</div>
        <div class="muted" style="margin-top:4px">信源：${reqSourcesLabel(r)} · 生效窗口：${esc(r.window)}</div>`}
   </div>` : ''}
 
@@ -1258,29 +1252,8 @@ function renderSources(){
   const ok = DB.sources.filter(s => s.status === '已确认');
   const pend = DB.sources.filter(s => s.status !== '已确认');
   return `
-  <div class="listbar"><span class="t">信源库</span>
-    <span class="acts"><button class="btn primary" onclick="openPanel('src-register')">＋ 登记信源</button></span>
-  </div>
-  <div class="sub">已准入信源（发布主体）及其途径的全集（doc-03 §六）；新信源经双通道确认制准入（decision-05）：人工登记 + 池外自由探索 / 素材归因发现。冷启动先登记种子信源（doc-07 §2.1）。</div>
-
-  <div class="modal" id="src-register">
-    <div class="modal-card">
-      <div class="modal-head"><b>登记信源（通道一 · 人工登记）</b><button class="btn small" onclick="closePanel('src-register')" title="关闭">✕</button></div>
-      <div class="field"><label>主体（发布主体）</label><input type="text" id="src-name" placeholder="例：W 公司、新华社、张三"></div>
-      <div class="grid2">
-        <div class="field"><label>类型</label><select id="src-type">${SRC_TYPES.map(t => `<option>${t}</option>`).join('')}</select></div>
-        <div class="field"><label>初始评级 <span class="info-i" title="${esc(CREDIT_HINT)}C 为中性默认。">ⓘ</span></label>
-          <select id="src-credit">${CREDIT_TIERS.map(g => `<option${g === 'C' ? ' selected' : ''}>${g}</option>`).join('')}</select></div>
-      </div>
-      <div class="grid2">
-        <div class="field"><label>途径</label><input type="text" id="src-outlet" placeholder="例：官网 / 公众号"></div>
-        <div class="field"><label>采集入口（网址 / RSS / 账号 ID——可机读地址，定向智能体据此派采集任务 · doc-06 §2）</label>
-          <input type="text" id="src-entry" placeholder="https://… 或 RSS 地址或公众号 ID"></div>
-      </div>
-      <button class="btn primary" onclick="srcRegister()">登记</button>
-      <div class="muted" style="margin-top:8px">仅登记互联网途径（系统自动拉取）；线下途径经素材录入归因补记（doc-06 §3）。同主体多途径 = 1 个独立信源，信用记在主体上（doc-03 §六）。</div>
-    </div>
-  </div>
+  <div class="listbar"><span class="t">信源库</span></div>
+  <div class="sub">已准入信源（发布主体）及其途径的全集（doc-03 §六）；新信源由情报归因发现进待确认队列，经确认准入（decision-05）。冷启动无需登记——探索任务常驻派发（IIH-06.01）。</div>
 
   <div class="box">
     <table>
@@ -1643,21 +1616,6 @@ function setSourceCredit(id){
   toast('信用档已更新');
   refresh();
 }
-function srcRegister(){
-  const name = $('#src-name').value.trim();
-  const outletName = $('#src-outlet').value.trim();
-  const entry = $('#src-entry').value.trim();
-  if (!name || !outletName || !entry){ toast('请填写主体名称与首条途径（途径名 + 采集入口）'); return; }
-  const next = Math.max(0, ...DB.sources.map(s => +String(s.id).slice(1))) + 1;
-  DB.sources.push({id:'s' + next, name, type:$('#src-type').value, credit:$('#src-credit').value, status:'已确认',
-    outlets:[{id:nextOutletId(), name:outletName, medium:'互联网', entry, carriers:'—', freq:'—', domain:'—'}],
-    profile:{stance:'—', indep:'—'}, fb:{valid:0, factual:0, last:'—'},
-    creditNote:'人工登记（通道一 · decision-05）· 初始档 ' + $('#src-credit').value});
-  closePanel('src-register');
-  toast('已登记入信源库（主体 + 首条互联网途径 · 系统开始自动拉取）');
-  refresh();
-}
-
 function pipeAdvance(id){
   const i = item(id); if (!i) return;
   if (i.status === '线索'){
@@ -1920,7 +1878,6 @@ function reqConfigSave(id){
   const r = req(id); if (!r) return;
   r.freq = $('#cfg-freq').value.trim() || null;
   r.eventWindow = $('#cfg-fresh').value.trim() || null;
-  r.explore = $('#cfg-explore').value.trim() || null;
   const ids = Array.from(document.querySelectorAll('.cfg-src:checked')).map(cb => cb.value);
   r.sources = ids.length ? ids : null;
   const start = $('#cfg-start').value.trim(), end = $('#cfg-end').value.trim();
@@ -1935,14 +1892,12 @@ function reqCreate(){
   const id = 'r' + (DB.reqs.length + 1);
   const start = $('#req-start').value.trim();
   const end = $('#req-end').value.trim();
-  const explore = $('#req-explore').value.trim();
   const sourceIds = Array.from(document.querySelectorAll('.req-source-cb:checked')).map(cb => cb.value);
   DB.reqs.push({id, name, status:'草稿',
     window: end ? (start || '2026-09-10') + ' 至 ' + end : '常驻',
     validFrom: start || null, validUntil: end || null,
     freq: $('#req-freq').value.trim() || null,
     eventWindow: $('#req-event-window').value.trim() || null,
-    explore: explore || null,
     sources: sourceIds.length ? sourceIds : null,
     contentSpec: $('#req-spec').value.trim(),
     lastCollected: null, recentHits: []});
@@ -2107,12 +2062,12 @@ function onboardOverlay(){
   <div style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:80;display:flex;align-items:center;justify-content:center;padding:20px">
     <div style="background:#fff;border-radius:10px;max-width:580px;width:100%;padding:22px 26px;box-shadow:0 10px 40px rgba(0,0,0,.3);max-height:90vh;overflow-y:auto">
       <h2 style="margin:0 0 4px;font-size:17px">欢迎使用 IIH <span class="muted" style="font-weight:400;font-size:12px">冷启动引导 · 首次启用一次性</span></h2>
-      <div class="muted" style="margin-bottom:12px">信源库为空时，定向智能体无途径可派采集任务（依赖信源与途径画像选途径，doc-06 §2）——先喂种子：</div>
+      <div class="muted" style="margin-bottom:12px">无需预先登记信源——探索任务常驻派发（IIH-06.01），信源由情报归因发现：</div>
       <ol style="margin:0 0 12px;padding-left:20px;line-height:2">
-        <li><b>登记种子信源及途径</b>——一两个源头即可（如 W 公司 · 官网与公众号，新华社 · 官网；主体一登记、途径随手添，doc-03 §六）<a href="#/sources" onclick="dismissOnboard()">去登记 →</a></li>
-        <li><b>声明首个情报需求并激活</b>——定向智能体开始按画像派采集任务 <a href="#/reqs" onclick="dismissOnboard()">去声明 →</a></li>
-        <li><b>采集启动</b>——线索 → 审查 → 核实评级，核实后按命中需求分发</li>
-        <li><b>滚雪球</b>——采集的池外自由探索（decision-05）发现关联信源，经确认扩大信源池</li>
+        <li><b>声明首个情报需求并激活</b>——每轮采集自动附带一个探索任务（池外检索）<a href="#/reqs" onclick="dismissOnboard()">去声明 →</a></li>
+        <li><b>探索产出线索</b>——探索页面抽取的情报陈述落账，归因识别的新信源进待确认队列（decision-05）</li>
+        <li><b>确认信源入池</b>——设初始信用档、以发现 URL 建互联网途径，转为常规采集 <a href="#/sources" onclick="dismissOnboard()">去确认 →</a></li>
+        <li><b>滚雪球</b>——常规采集 + 常驻探索并行，信源池与情报沉淀持续扩大</li>
       </ol>
       <div class="muted" style="margin-bottom:14px">出口：需求激活、采集启动，进入常驻监控（doc-07 §2.2）。本原型为运行态假数据（已确认信源 ${confirmed} 个），引导经右上角账户区 ▶ 重放。</div>
       <div style="display:flex;justify-content:flex-end"><button class="btn primary" onclick="dismissOnboard()">开始使用</button></div>

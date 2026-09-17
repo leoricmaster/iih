@@ -9,7 +9,7 @@
 
 <div class="box"><h2>{{ ir.name }} <span class="pill">{{ status_labels[ir.status] }}</span></h2>
   <div class="muted">创建于 {{ ir.created_at | dtstr }}</div>
-  <div class="muted" style="margin-top:4px">频率：{{ ir.collection_frequency or '默认' }} · 事件时效：{{ ir.event_freshness or '不限' }} · 信源：{{ format_sources(ir) }} · 生效窗口：{{ format_window(ir) }} · 池外探索：{{ ir.explore_ratio if ir.explore_ratio is not none else '0' }}</div>
+  <div class="muted" style="margin-top:4px">频率：{{ ir.collection_frequency or '默认' }} · 事件时效：{{ ir.event_freshness or '不限' }} · 信源：{{ format_sources(ir) }} · 生效窗口：{{ format_window(ir) }}</div>
   <div class="fbrow" style="margin-top:8px">
     {% if ir.status.value == 'draft' %}
     <form method="post" action="/requirements/{{ ir.id }}/action"><input type="hidden" name="action" value="activate"><button class="btn small primary">激活</button></form>
@@ -43,10 +43,6 @@
       <div class="field" style="margin:0"><label>采集频率</label><input type="text" name="collection_frequency" placeholder="1h / 24h / 6h；留空 = 默认" value="{{ ir.collection_frequency or '' }}"></div>
       <div class="field" style="margin:0"><label>事件时效</label><input type="text" name="event_freshness" placeholder="7d / 24h；留空 = 不限" value="{{ ir.event_freshness or '' }}"></div>
     </div>
-    <div class="field"><label>池外探索比例</label>
-      <input type="number" name="explore_ratio" min="0" max="1" step="0.1" placeholder="0–1，留空 = 0" value="{{ ir.explore_ratio if ir.explore_ratio is not none else '' }}">
-      <div class="muted" style="margin-top:4px">每次采集按此概率做池外自由探索，发现新信源进待确认队列</div>
-    </div>
     <div class="field"><label>信源绑定</label>
       <div style="display:flex;flex-wrap:wrap;gap:6px">
         {% for s in confirmed_sources %}
@@ -66,7 +62,7 @@
     <button class="btn primary">保存</button>
   </form>
   {% else %}
-  <div class="muted">频率：{{ ir.collection_frequency or '默认' }} · 事件时效：{{ ir.event_freshness or '不限' }} · 池外探索：{{ ir.explore_ratio if ir.explore_ratio is not none else '0' }}</div>
+  <div class="muted">频率：{{ ir.collection_frequency or '默认' }} · 事件时效：{{ ir.event_freshness or '不限' }}</div>
   <div class="muted" style="margin-top:4px">信源：{{ format_sources(ir) }} · 生效窗口：{{ format_window(ir) }}</div>
   {% endif %}
 </div>

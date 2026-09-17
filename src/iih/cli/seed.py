@@ -1,7 +1,9 @@
-"""种子数据子命令：版本化种子文件 → 提案落账，幂等（同名已存在则跳过/补激活）。
+"""种子数据子命令：版本化种子文件 → 落账，幂等（同名已存在则跳过/补激活）。
 
 业界惯例：种子数据随仓库版本化、命令显式执行、可重复运行；
 与单测 fixture 分离——单测面向内存库构造场景，种子面向开发/验收库铺基线。
+信源种子直接 ORM 铺底（IIH-06.01 人工登记提案废弃；种子非智能体提案，
+无判断成分，确定性构造即可）；需求种子仍走提案落账。
 用法：python -m iih.cli seed [--file 路径]（默认 src/iih/seeds/dev.json）。
 """
 
@@ -18,6 +20,8 @@ from iih.db import make_engine, make_session_factory
 from iih.ledger.models import (
     IntelligenceRequirement,
     IntelligenceRequirementStatus,
+    Medium,
+    Outlet,
     Source,
     SourceType,
 )
@@ -26,8 +30,6 @@ from iih.ledger.proposal import (
     IntelligenceRequirementActivateProposal,
     IntelligenceRequirementRegisterPayload,
     IntelligenceRequirementRegisterProposal,
-    SourceRegisterPayload,
-    SourceRegisterProposal,
 )
 from iih.ledger.state_machine import ProposalRejectedError, StateMachineExecutor
 
@@ -43,29 +45,32 @@ def _parse_date(s: str | None) -> date | None:
 
 
 def _seed_sources(session: Session, sources: list[dict[str, str]]) -> None:
+    medium = session.scalars(select(Medium).where(Medium.code == "internet")).first()
+    if medium is None:
+        print("[seed] 媒介 internet 缺失，信源种子跳过")
+        return
     for src in sources:
         existing = session.scalars(select(Source).where(Source.name == src["source_name"])).first()
         if existing is not None:
             print(f"[seed] 信源已存在，跳过：{src['source_name']}")
             continue
-        try:
-            StateMachineExecutor().execute(
-                SourceRegisterProposal(
-                    payload=SourceRegisterPayload(
-                        source_name=src["source_name"],
-                        source_type=SourceType(src["source_type"]),
-                        outlet_name=src["outlet_name"],
-                        outlet_entry=src["outlet_entry"],
-                        initial_credit=src.get("initial_credit"),
-                    ),
-                    rationale=SEED_RATIONALE,
-                ),
-                session=session,
+        source = Source(
+            name=src["source_name"],
+            type=SourceType(src["source_type"]),
+            confirmed=True,
+            credit=src.get("initial_credit") or None,
+        )
+        session.add(
+            Outlet(
+                source=source,
+                name=src["outlet_name"],
+                entry=src["outlet_entry"],
+                medium=medium,
             )
-        except ProposalRejectedError as exc:
-            print(f"[seed] 信源登记失败：{src['source_name']}：{exc}")
-            continue
-        print(f"[seed] 登记信源：{src['source_name']}（{src['outlet_name']}）")
+        )
+        session.flush()
+        print(f"[seed] 铺底信源：{src['source_name']}（{src['outlet_name']}）")
+    session.commit()
 
 
 def _seed_requirements(session: Session, requirements: list[dict[str, str]]) -> None:

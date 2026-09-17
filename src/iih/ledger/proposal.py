@@ -65,28 +65,6 @@ class IntelligenceItemNewProposal(Proposal):
     provenance: ProvenanceData
 
 
-class SourceRegisterPayload(BaseModel):
-    """「种子信源登记」产出：主体字段 + 首条互联网途径字段（doc-07 §2.1、原型信源库页）。"""
-
-    source_name: str  # 主体名称
-    source_type: SourceType
-    outlet_name: str  # 途径名（如「官网」）
-    outlet_entry: str  # 采集入口：网址 / RSS / 账号 ID
-    initial_credit: str | None = None  # 初始信用档（人工评估 · 冷启动设档；空 = 不设档）
-
-
-class SourceRegisterProposal(Proposal):
-    """提案类型「种子信源登记」：双通道确认制通道一 · 人工登记（decision-05）。
-
-    信源登记非情报产出，溯源五要素不适用——本提案无 provenance、无 formula_version。
-    校验由状态机执行器执行：字段完整 + medium=internet + 信源名唯一 + 同主体途径名唯一。
-    """
-
-    PROPOSAL_TYPE = "source_register"
-
-    payload: SourceRegisterPayload
-
-
 class SourceConfirmPayload(BaseModel):
     """「待确认信源确认」产出：目标信源 ID + 初始信用档 + 修正名/类型/途径（可空，IIH-05.01）。"""
 
@@ -131,34 +109,11 @@ class SourceRejectProposal(Proposal):
     payload: SourceRejectPayload
 
 
-class SourceDiscoveryPayload(BaseModel):
-    """「新信源发现」产出：信源主体字段 + 发现来源 URL（decision-05 通道二，IIH-05.02）。
-
-    发现来源 URL 落账 Source.discovered_entry，确认时作为默认采集入口建途径。
-    """
-
-    source_name: str
-    source_type: SourceType
-    outlet_entry: str  # 发现来源 URL（页面即证据出处，亦为采集入口起点）
-
-
-class SourceDiscoveryProposal(Proposal):
-    """提案类型「新信源发现」：池外自由探索发现的新信源（doc-06 §3、decision-05 通道二）。
-
-    非情报产出，无 formula_version；落账 Source(confirmed=False) 进待确认队列，
-    与人工归因产生的待确认信源同通路确认（IIH-05.01 确认入口）。
-    """
-
-    PROPOSAL_TYPE = "source_discovery"
-
-    payload: SourceDiscoveryPayload
-
-
 # ---- IIH-01.08 互联网信源自动拉取 ----
 
 
 class IntelligenceRequirementRegisterPayload(BaseModel):
-    """「情报需求登记」产出：name + content_spec + 需求级采集配置（IIH-03.01/05.02）。"""
+    """「情报需求登记」产出：name + content_spec + 需求级采集配置（IIH-03.01）。"""
 
     name: str
     content_spec: str  # 主题、关键词、信源偏好、时效要求等自由文本
@@ -167,7 +122,6 @@ class IntelligenceRequirementRegisterPayload(BaseModel):
     valid_from: date | None = None  # 生效窗口起；空=常驻
     valid_until: date | None = None  # 生效窗口止；空=常驻
     source_ids: list[int] = []  # 信源绑定；空=全部已确认信源
-    explore_ratio: float | None = None  # 池外自由探索触发概率 0–1；None=0（IIH-05.02）
 
 
 class IntelligenceRequirementRegisterProposal(Proposal):

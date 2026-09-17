@@ -44,8 +44,6 @@ from iih.ledger.models import (
     VerificationOutcome,
     VerificationRecord,
 )
-from iih.ledger.proposal import SourceDiscoveryPayload, SourceDiscoveryProposal
-from iih.ledger.state_machine import StateMachineExecutor
 from iih.tools.fetcher import FetcherError
 from iih.web.app import create_app
 from iih.web.deps import get_session
@@ -174,126 +172,7 @@ def test_sources_page_lists_confirmed_sources(sources_client: TestClient) -> Non
 
     assert response.status_code == 200
     assert "信源库" in response.text
-    assert "登记信源" in response.text
-    for label in ("公司", "政府", "组织", "媒体", "人物", "其他"):
-        assert label in response.text  # 类型下拉 6 项
-    assert "信用档 A–F" in response.text  # 初始档 tooltip（doc-04 §2.3）
-
-
-def test_register_lands_source_and_outlet_end_to_end(
-    sources_client: TestClient, db_session
-) -> None:
-    """对应 IIH-01.07 AC#1：登记主体「W 公司」+ 首条途径（官网 · 互联网）→ 列表两栏可见。"""
-    response = sources_client.post(
-        "/sources",
-        data={
-            "source_name": "W 公司",
-            "source_type": "company",
-            "outlet_name": "官网",
-            "outlet_entry": "https://w-mining.example/news",
-            "initial_credit": "B",
-        },
-        follow_redirects=True,
-    )
-
-    assert response.status_code == 200
-    assert "W 公司" in response.text  # 列表主体栏可见
-    assert "官网" in response.text  # 列表途径栏可见
-
-    sources = db_session.scalars(select(Source).where(Source.name == "W 公司")).unique().all()
-    assert len(sources) == 1
-    assert sources[0].confirmed is True
-    assert sources[0].type is SourceType.COMPANY
-    assert sources[0].credit == "B"  # 初始档必填（doc-04 §2.3）
-    outlets = (
-        db_session.scalars(select(Outlet).where(Outlet.source_id == sources[0].id)).unique().all()
-    )
-    assert len(outlets) == 1
-    assert outlets[0].name == "官网"
-    assert outlets[0].entry == "https://w-mining.example/news"
-    assert outlets[0].medium.code == "internet"
-
-
-def test_register_with_initial_credit_sets_grade(sources_client: TestClient, db_session) -> None:
-    """登记时人工设初始信用档（冷启动设档）：落账 credit，画像档位可见。"""
-    response = sources_client.post(
-        "/sources",
-        data={
-            "source_name": "W 公司",
-            "source_type": "company",
-            "outlet_name": "官网",
-            "outlet_entry": "https://w-mining.example/news",
-            "initial_credit": "B",
-        },
-        follow_redirects=True,
-    )
-
-    assert response.status_code == 200
-    assert '<span class="pill rating">B</span>' in response.text
-    source = db_session.scalars(select(Source).where(Source.name == "W 公司")).unique().one()
-    assert source.credit == "B"
-
-    blocked = sources_client.post(
-        "/sources",
-        data={
-            "source_name": "Z 集团",
-            "source_type": "company",
-            "outlet_name": "官网",
-            "outlet_entry": "https://z.example/news",
-            "initial_credit": "X",
-        },
-    )
-    assert "初始信用档需为 A–F" in blocked.text
-    assert db_session.scalars(select(Source).where(Source.name == "Z 集团")).first() is None
-
-
-def test_register_with_missing_fields_is_blocked(sources_client: TestClient, db_session) -> None:
-    """对应 IIH-01.07 AC#2：必填字段缺失 → 表单拦截、不落账。"""
-    response = sources_client.post(
-        "/sources",
-        data={
-            "source_name": "",
-            "source_type": "",
-            "outlet_name": "",
-            "outlet_entry": "",
-        },
-    )
-
-    assert response.status_code == 200  # 重渲染表单并提示
-    assert "请填写主体名称" in response.text
-    assert "请选择类型" in response.text
-    assert "请填写途径名" in response.text
-    assert "请填写采集入口" in response.text
-    assert "请选择初始信用档" in response.text  # 初始档必填（doc-04 §2.3）
-    assert db_session.scalars(select(Source)).first() is None  # 不落账
-
-
-def test_register_shows_rejection_reasons(sources_client: TestClient, db_session) -> None:
-    """状态机驳回（信源名重复）→ 原因回显表单页。"""
-    sources_client.post(
-        "/sources",
-        data={
-            "source_name": "W 公司",
-            "source_type": "company",
-            "outlet_name": "官网",
-            "outlet_entry": "https://w-mining.example/news",
-            "initial_credit": "B",
-        },
-    )
-    response = sources_client.post(
-        "/sources",
-        data={
-            "source_name": "W 公司",
-            "source_type": "company",
-            "outlet_name": "公众号",
-            "outlet_entry": "公众号 ID：w-official",
-            "initial_credit": "B",
-        },
-    )
-
-    assert "信源名已存在" in response.text
-    sources = db_session.scalars(select(Source).where(Source.name == "W 公司")).unique().all()
-    assert len(sources) == 1  # 第二次登记被驳回，未新增
+    assert "登记信源" not in response.text  # IIH-06.01：人工登记入口下线
 
 
 # ---- IIH-01.04 收件箱与条目详情 ----
@@ -853,61 +732,6 @@ def test_requirement_missing_fields_blocked(inbox_client: TestClient, db_session
     assert "请填写需求名称" in response.text
     assert "请填写内容规格" in response.text
     assert db_session.scalars(select(IntelligenceRequirement)).first() is None
-
-
-def test_requirement_create_with_explore_ratio_lands(inbox_client: TestClient, db_session) -> None:
-    """IIH-05.02：IR 登记表单含 explore_ratio 字段，落账可读。"""
-    ir_id = _create_ir_via_form_with_explore(inbox_client, explore_ratio="0.5")
-
-    ir = db_session.get(IntelligenceRequirement, ir_id)
-    assert ir is not None
-    assert ir.explore_ratio == 0.5
-
-    detail = inbox_client.get(f"/requirements/{ir_id}")
-    assert "池外探索" in detail.text  # 详情页展示字段
-    assert "0.5" in detail.text
-
-
-def test_requirement_create_explore_ratio_blank_means_zero(
-    inbox_client: TestClient, db_session
-) -> None:
-    """IIH-05.02 DoD#2：未填 explore_ratio 即 None=0，不影响既有采集行为。"""
-    ir_id = _create_ir_via_form(inbox_client)
-
-    ir = db_session.get(IntelligenceRequirement, ir_id)
-    assert ir is not None
-    assert ir.explore_ratio is None
-
-
-def test_requirement_create_explore_ratio_invalid_rejected(
-    inbox_client: TestClient, db_session
-) -> None:
-    """IIH-05.02：explore_ratio 非法（>1）回显错误，不落账。"""
-    response = inbox_client.post(
-        "/requirements",
-        data={"name": "探索", "content_spec": "主题", "explore_ratio": "1.5"},
-        follow_redirects=False,
-    )
-
-    assert "池外探索比例非法" in response.text
-    assert (
-        db_session.scalars(
-            select(IntelligenceRequirement).where(IntelligenceRequirement.name == "探索")
-        ).first()
-        is None
-    )
-
-
-def _create_ir_via_form_with_explore(
-    inbox_client: TestClient, *, explore_ratio: str, name: str = "探索需求"
-) -> int:
-    response = inbox_client.post(
-        "/requirements",
-        data={"name": name, "content_spec": "主题", "explore_ratio": explore_ratio},
-        follow_redirects=False,
-    )
-    assert response.status_code == 303
-    return int(response.headers["location"].rsplit("/", 1)[-1])
 
 
 def test_requirement_full_lifecycle_via_browser(inbox_client: TestClient, db_session) -> None:
@@ -1507,28 +1331,21 @@ def test_confirm_rename_alias_visible_on_profile(inbox_client: TestClient, db_se
     assert '<span class="pill">三一</span>' in detail.text
 
 
-# ---- IIH-05.02 池外自由探索与新信源发现 ----
+# ---- 探索发现信源的确认与绑定（IIH-05.02 补救口径，IIH-06.01 通路反转沿用） ----
 
 
 def test_discovered_source_confirmed_then_ir_bindable_end_to_end(
     inbox_client: TestClient, db_session
 ) -> None:
-    """对应 IIH-05.02 AC#2：新信源发现提案经确认入口入池后可被 IR 绑定（与人工归因同通路）。"""
-    # 池外探索产出待确认信源
-    result = StateMachineExecutor().execute(
-        SourceDiscoveryProposal(
-            payload=SourceDiscoveryPayload(
-                source_name="行业媒体 Z",
-                source_type=SourceType.MEDIA,
-                outlet_entry="https://z.example/article",
-            ),
-            rationale="池外自由探索：从 W 公司·官网的入口页候选链接中发现 行业媒体 Z",
-        ),
-        session=db_session,
+    """对应 IIH-05.02 AC#2：探索归因发现的待确认信源经确认入口入池后可被 IR 绑定。"""
+    source = Source(
+        name="行业媒体 Z",
+        type=SourceType.MEDIA,
+        confirmed=False,
+        discovered_entry="https://z.example/article",
     )
-    source = db_session.get(Source, result.source_id)
-    assert source is not None
-    assert source.confirmed is False
+    db_session.add(source)
+    db_session.flush()
 
     # 待确认行展示发现来源 URL（预填采集入口）
     listing = inbox_client.get("/sources")
@@ -1573,22 +1390,16 @@ def test_discovered_source_confirmed_then_ir_bindable_end_to_end(
 def test_discovered_source_unconfirmed_blocked_from_ir_binding(
     inbox_client: TestClient, db_session
 ) -> None:
-    """对应 IIH-05.02 AC#3：新信源发现提案未经确认 → 不入信源库（confirmed=False），
+    """对应 IIH-05.02 AC#3：探索归因发现的信源未经确认 → 不入信源库（confirmed=False），
     不可被 IR 绑定（decision-05 边界由状态机校验保持）。"""
-    result = StateMachineExecutor().execute(
-        SourceDiscoveryProposal(
-            payload=SourceDiscoveryPayload(
-                source_name="行业媒体 Q",
-                source_type=SourceType.MEDIA,
-                outlet_entry="https://q.example",
-            ),
-            rationale="依据",
-        ),
-        session=db_session,
+    source = Source(
+        name="行业媒体 Q",
+        type=SourceType.MEDIA,
+        confirmed=False,
+        discovered_entry="https://q.example",
     )
-    source = db_session.get(Source, result.source_id)
-    assert source is not None
-    assert source.confirmed is False
+    db_session.add(source)
+    db_session.flush()
 
     # IR 登记 + 绑定未确认信源 → 表单回显错误（Web 层校验）
     response = inbox_client.post(
@@ -1675,17 +1486,12 @@ def test_pipeline_button_cold_start_to_rated_inbox(db_session, monkeypatch) -> N
         app.state.session_factory = sessionmaker(
             bind=db_session.bind, join_transaction_mode="create_savepoint"
         )
-        client.post(
-            "/sources",
-            data={
-                "source_name": "W 公司",
-                "source_type": "company",
-                "outlet_name": "官网",
-                "outlet_entry": ENTRY_URL,
-                "initial_credit": "B",
-            },
-            follow_redirects=True,
+        medium = db_session.scalars(select(Medium).where(Medium.code == "internet")).one()
+        source = Source(name="W 公司", type=SourceType.COMPANY, confirmed=True, credit="B")
+        db_session.add_all(
+            [source, Outlet(source=source, name="官网", entry=ENTRY_URL, medium=medium)]
         )
+        db_session.flush()
         ir_id = _create_ir_via_form(client)
         client.post(f"/requirements/{ir_id}/action", data={"action": "activate"})
 

@@ -23,10 +23,6 @@
         <div class="field" style="margin:0"><label>采集频率</label><input type="text" name="collection_frequency" placeholder="1h / 24h / 6h；留空 = 默认" value="{{ form_frequency or '' }}"></div>
         <div class="field" style="margin:0"><label>事件时效</label><input type="text" name="event_freshness" placeholder="7d / 24h；留空 = 不限" value="{{ form_freshness or '' }}"></div>
       </div>
-      <div class="field"><label>池外探索比例</label>
-        <input type="number" name="explore_ratio" min="0" max="1" step="0.1" placeholder="0–1，留空 = 0" value="{{ form_explore_ratio | default('') }}">
-        <div class="muted" style="margin-top:4px">每次采集按此概率做池外自由探索，发现新信源进待确认队列</div>
-      </div>
       <div class="field"><label>信源绑定</label>
         <div style="display:flex;flex-wrap:wrap;gap:6px">
           {% for s in confirmed_sources %}

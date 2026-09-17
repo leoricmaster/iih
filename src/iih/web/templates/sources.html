@@ -4,7 +4,6 @@
 {% block content %}
 <div class="listbar">
   <span class="listbar-t">信源库</span>
-  <span class="acts"><button type="button" class="btn primary" data-panel="register-panel">＋ 登记信源</button></span>
 </div>
 
 {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
@@ -35,28 +34,4 @@
   {% endfor %}
 </div>
 {% endif %}
-
-<dialog class="modal" id="register-panel"{{ ' data-open' if errors }}>
-  <div class="modal-card">
-    <div class="modal-head"><b>登记信源</b><button type="button" class="btn small" data-close title="关闭">✕</button></div>
-    {% if errors %}{% for e in errors %}<div class="err">{{ e }}</div>{% endfor %}{% endif %}
-    <form method="post" action="/sources">
-      <div class="grid3">
-        <div class="field"><label>主体</label><input type="text" name="source_name" placeholder="例：W 公司、新华社、张三"></div>
-        <div class="field"><label>类型</label><select name="source_type">
-          {% for value, label in source_types %}<option value="{{ value.value }}">{{ label }}</option>{% endfor %}
-        </select></div>
-        <div class="field"><label>初始评级 <span class="muted" title="信用档 A–F：A 最可靠 → F 最不可靠。累计分映射：A ≥8、B [4,8)、C [0,4)、D [−4,0)、E [−8,−4)、F <−8；有效反馈 +1、事实错误 −2、180 天半衰期。C 为中性默认。">ⓘ</span></label>
-          <select name="initial_credit">
-            {% for g in "ABCDEF" %}<option value="{{ g }}" {{ 'selected' if g == 'C' }}>{{ g }}</option>{% endfor %}
-          </select></div>
-      </div>
-      <div class="grid2">
-        <div class="field"><label>途径</label><input type="text" name="outlet_name" placeholder="例：官网 / 公众号"></div>
-        <div class="field"><label>采集入口</label><input type="text" name="outlet_entry" placeholder="https://… 或 RSS 地址或公众号 ID"></div>
-      </div>
-      <button class="btn primary">登记</button>
-    </form>
-  </div>
-</dialog>
 {% endblock %}

@@ -45,8 +45,6 @@ from iih.ledger.proposal import (
     ProvenanceData,
     ReviewProposal,
     SourceConfirmProposal,
-    SourceDiscoveryProposal,
-    SourceRegisterProposal,
     SourceRejectProposal,
     VerificationProposal,
 )
@@ -76,14 +74,10 @@ class StateMachineExecutor:
         match proposal:
             case IntelligenceItemNewProposal():
                 return self._execute_item_new(proposal, session)
-            case SourceRegisterProposal():
-                return self._execute_source_register(proposal, session)
             case SourceConfirmProposal():
                 return self._execute_source_confirm(proposal, session)
             case SourceRejectProposal():
                 return self._execute_source_reject(proposal, session)
-            case SourceDiscoveryProposal():
-                return self._execute_source_discovery(proposal, session)
             case IntelligenceRequirementRegisterProposal():
                 return self._execute_ir_register(proposal, session)
             case IntelligenceRequirementActivateProposal():
@@ -147,25 +141,15 @@ class StateMachineExecutor:
         if medium is None or modality is None:
             raise ProposalRejectedError(reasons)
 
-        # AUTOMATED 模式：信源必须已登记（confirmed=True）；MANUAL 模式：归因新建待确认
-        if proposal.payload.mode is ItemMode.AUTOMATED:
-            source = self._resolve_confirmed_source(session, provenance, reasons)
-            if source is None:
-                raise ProposalRejectedError(reasons)
-            outlet = (
-                self._resolve_existing_outlet(session, provenance, source, reasons)
-                if provenance.outlet_name
-                else None
-            )
-            if reasons:
-                raise ProposalRejectedError(reasons)
-        else:
-            source = self._resolve_source(session, provenance)
-            outlet = (
-                self._resolve_outlet(session, provenance, source, medium)
-                if provenance.outlet_name
-                else None
-            )
+        # 归因统一解析（IIH-06.01 通路反转）：按名/别名归入，未知名建待确认信源
+        source = self._resolve_source(
+            session, provenance, discovered_entry=proposal.payload.original_url
+        )
+        outlet = (
+            self._resolve_outlet(session, provenance, source, medium)
+            if provenance.outlet_name
+            else None
+        )
 
         if proposal.payload.content_fingerprint:
             duplicate = session.scalars(
@@ -247,15 +231,22 @@ class StateMachineExecutor:
             reasons.append("溯源缺失：信源归因")
         return reasons
 
-    def _resolve_source(self, session: Session, provenance: ProvenanceData) -> Source:
+    def _resolve_source(
+        self, session: Session, provenance: ProvenanceData, *, discovered_entry: str | None = None
+    ) -> Source:
         """信源按名/别名解析（别名归到归属信源）；新信源记待确认（decision-05）。
 
-        已拒绝信源再次被归因命中即重捞：清 rejected_at 重新入队（拒绝历史由事件表带上）。
+        新信源携带发现来源 URL（自动条目的原文链接）时落账 discovered_entry，
+        确认时预填采集入口建途径。已拒绝信源再次被归因命中即重捞：清 rejected_at
+        重新入队（拒绝历史由事件表带上）。
         """
         source = self._source_by_name_or_alias(session, provenance.source_name)
         if source is None:
             source = Source(
-                name=provenance.source_name, type=provenance.source_type, confirmed=False
+                name=provenance.source_name,
+                type=provenance.source_type,
+                confirmed=False,
+                discovered_entry=(discovered_entry or "").strip() or None,
             )
             session.add(source)
         elif source.rejected_at is not None:
@@ -270,33 +261,6 @@ class StateMachineExecutor:
         alias = session.scalars(select(SourceAlias).where(SourceAlias.name == name)).first()
         return alias.source if alias is not None else None
 
-    def _resolve_confirmed_source(
-        self, session: Session, provenance: ProvenanceData, reasons: list[str]
-    ) -> Source | None:
-        """AUTOMATED 模式：信源必须已登记 confirmed=True（doc-05 双通道确认制边界）。"""
-        source = self._source_by_name_or_alias(session, provenance.source_name)
-        if source is None:
-            reasons.append(f"自动拉取信源未登记：{provenance.source_name}")
-            return None
-        if not source.confirmed:
-            reasons.append(f"自动拉取信源未确认：{provenance.source_name}")
-            return None
-        return source
-
-    def _resolve_existing_outlet(
-        self, session: Session, provenance: ProvenanceData, source: Source, reasons: list[str]
-    ) -> Outlet | None:
-        """AUTOMATED 模式：途径必须已登记，不归因新建。"""
-        outlet = session.scalars(
-            select(Outlet).where(
-                Outlet.source_id == source.id, Outlet.name == provenance.outlet_name
-            )
-        ).first()
-        if outlet is None:
-            reasons.append(f"自动拉取途径未登记：{provenance.outlet_name}")
-            return None
-        return outlet
-
     def _resolve_outlet(
         self, session: Session, provenance: ProvenanceData, source: Source, medium: Medium
     ) -> Outlet:
@@ -310,71 +274,6 @@ class StateMachineExecutor:
             outlet = Outlet(source=source, name=provenance.outlet_name, medium=medium)
             session.add(outlet)
         return outlet
-
-    def _execute_source_register(
-        self, proposal: SourceRegisterProposal, session: Session
-    ) -> ExecutionResult:
-        """种子信源登记（decision-05 通道一）：新主体 + 首条互联网途径。
-
-        校验：字段完整 + medium=internet 解析 + 信源名唯一 + 初始档必填合法（doc-04 §2.3）；
-        落账 Source.confirmed=True、credit=initial_credit（人工先验初值）。
-        本任务范围仅新建主体；为既有主体补途径留待后续。
-        """
-        reasons = self._validate_register_completeness(proposal)
-        if reasons:
-            raise ProposalRejectedError(reasons)
-
-        payload = proposal.payload
-        medium = session.scalars(select(Medium).where(Medium.code == "internet")).first()
-        if medium is None:
-            raise ProposalRejectedError(["媒介引用不可解析：internet"])
-
-        existing = session.scalars(select(Source).where(Source.name == payload.source_name)).first()
-        if existing is not None:
-            raise ProposalRejectedError([f"信源名已存在：{payload.source_name}"])
-        alias = session.scalars(
-            select(SourceAlias).where(SourceAlias.name == payload.source_name)
-        ).first()
-        if alias is not None:
-            raise ProposalRejectedError(
-                [f"信源名已存在（别名，归属 {alias.source.name}）：{payload.source_name}"]
-            )
-
-        source = Source(
-            name=payload.source_name,
-            type=payload.source_type,
-            confirmed=True,
-            credit=payload.initial_credit,
-        )
-        outlet = Outlet(
-            source=source,
-            name=payload.outlet_name,
-            entry=payload.outlet_entry,
-            medium=medium,
-        )
-        session.add_all([source, outlet])
-        session.flush()
-        source_id = source.id
-        session.commit()
-        return ExecutionResult(source_id=source_id)
-
-    def _validate_register_completeness(self, proposal: SourceRegisterProposal) -> list[str]:
-        """字段完整性校验：4 字段非空白 + 初始档合法。source_type 已是枚举，无需校验。"""
-        reasons: list[str] = []
-        payload = proposal.payload
-        if not payload.source_name.strip():
-            reasons.append("主体名称缺失")
-        if not payload.outlet_name.strip():
-            reasons.append("途径名缺失")
-        if not payload.outlet_entry.strip():
-            reasons.append("采集入口缺失")
-        if not payload.initial_credit:
-            reasons.append("初始信用档缺失：登记必填（A–F）")
-        elif payload.initial_credit not in "ABCDEF":
-            reasons.append(f"初始信用档不合法：{payload.initial_credit}（需 A–F）")
-        if not proposal.rationale.strip():
-            reasons.append("依据缺失")
-        return reasons
 
     # ---- IIH-05.01 待确认信源确认闭环 ----
 
@@ -559,43 +458,6 @@ class StateMachineExecutor:
         session.commit()
         return ExecutionResult(source_id=source_id)
 
-    def _execute_source_discovery(
-        self, proposal: SourceDiscoveryProposal, session: Session
-    ) -> ExecutionResult:
-        """新信源发现（doc-06 §3、decision-05 通道二）：池外自由探索发现的信源入待确认队列。
-
-        校验：信源名非空白 + 发现来源 URL 非空白 + 依据非空白 + 名不撞既有信源（正名或别名）。
-        落账 Source(confirmed=False)，不建画像、不设档、不记账（由 confirmed 边界保持，AC#3）；
-        发现来源 URL 落账 discovered_entry（确认时作为默认采集入口建途径）。
-        撞名一律驳回（含已拒绝的待确认信源）——已存在记录不重复建，由确认/拒绝入口处理。
-        """
-        payload = proposal.payload
-        reasons: list[str] = []
-        if not payload.source_name.strip():
-            reasons.append("信源名缺失")
-        if not payload.outlet_entry.strip():
-            reasons.append("发现来源 URL 缺失")
-        if not proposal.rationale.strip():
-            reasons.append("依据缺失")
-        if reasons:
-            raise ProposalRejectedError(reasons)
-
-        existing = self._source_by_name_or_alias(session, payload.source_name.strip())
-        if existing is not None:
-            raise ProposalRejectedError([f"信源名已存在：{payload.source_name}——{existing.name}"])
-
-        source = Source(
-            name=payload.source_name.strip(),
-            type=payload.source_type,
-            confirmed=False,
-            discovered_entry=payload.outlet_entry.strip(),
-        )
-        session.add(source)
-        session.flush()
-        source_id = source.id
-        session.commit()
-        return ExecutionResult(source_id=source_id)
-
     # ---- IIH-01.08 互联网信源自动拉取 ----
 
     def _execute_ir_register(
@@ -626,8 +488,6 @@ class StateMachineExecutor:
                 reasons.append(f"事件时效格式非法：{payload.event_freshness}（须 Nh/Nd/Nw/Nm）")
         if payload.valid_from and payload.valid_until and payload.valid_until < payload.valid_from:
             reasons.append("生效窗口结束日早于起始日")
-        if payload.explore_ratio is not None and not 0 <= payload.explore_ratio <= 1:
-            reasons.append(f"池外探索比例非法：{payload.explore_ratio}（须 0–1）")
         bound_sources: list[Source] = []
         if payload.source_ids:
             for sid in payload.source_ids:
@@ -653,7 +513,6 @@ class StateMachineExecutor:
             else None,
             valid_from=payload.valid_from,
             valid_until=payload.valid_until,
-            explore_ratio=payload.explore_ratio,
         )
         if bound_sources:
             ir.sources = bound_sources

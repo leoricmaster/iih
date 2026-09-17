@@ -1,9 +1,11 @@
 ---
 id: IIH-06.01
 title: 信源通路反转与相似名查重
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@zhangyunfeng'
 created_date: '2026-09-17 04:51'
+updated_date: '2026-09-17 05:05'
 labels:
   - product
 dependencies: []
@@ -22,3 +24,9 @@ ordinal: 23002
 <!-- DOD:BEGIN -->
 - [ ] #1 符合 doc-08 通用 DoD（完成定义与豁免规则）
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+①通路反转（先行）：1. Director 派单改造——每轮每 due 需求无条件 +1 探索任务（ExplorationTask：requirement_id/name/content_spec），冷启动即途径为零的自然特例；explore_ratio 字段删除（模型+表单+alembic 迁移）。2. Collector 新增 explore()：关键词→Tavily（排除信源池全部途径域）→LLM 选链→fetch→指纹去重→一次 LLM 抽陈述+归因→IntelligenceItemNewProposal（AUTOMATED、原文链接+快照对象、归因新信源带 discovered_entry 进待确认）；废弃 _explore_outside_pool。3. 状态机统一归因解析：AUTOMATED 撤销「信源已确认+途径已登记」边界，与 MANUAL 同路径（未知名建待确认）；废弃 SourceRegisterProposal/SourceDiscoveryProposal 两处理器；seed 改直接 ORM 铺底。4. Web：信源库页登记表单下线；需求表单/详情删探索比例。5. 修订 decision-05（草案先呈用户）、doc-04/06/07、术语表。6. 测试改写（collector/state_machine/web/director）。②相似名查重（①验收后）：difflib 归一化相似度，待确认行渲染近似既有信源提示+点选填名走既有并入路径，不自动归并。
+<!-- SECTION:PLAN:END -->

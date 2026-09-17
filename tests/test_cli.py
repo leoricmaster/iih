@@ -112,7 +112,7 @@ def test_ir_create_then_activate_then_collect_produces_lead(db_session, w_extrac
     from iih.agents.collector import Collector
     from iih.agents.director import Director
 
-    tasks = Director(db_session).propose_tasks()
+    tasks, _explorations = Director(db_session).propose_tasks()
     assert len(tasks) == 1
     assert tasks[0].source_name == "W 公司"
     assert tasks[0].outlet_name == "官网"
@@ -169,7 +169,7 @@ def test_collect_with_duplicate_content_appends_provenance_node(db_session, w_ex
     from iih.agents.collector import Collector
     from iih.agents.director import CollectionTask, Director
 
-    tasks = Director(db_session).propose_tasks()
+    tasks, _explorations = Director(db_session).propose_tasks()
     fake_llm = make_fake_llm_collect(make_selection_self(), w_extraction)
     collector = Collector(llm=fake_llm, session=db_session, model="deepseek-chat")
 

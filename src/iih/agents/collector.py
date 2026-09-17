@@ -1,4 +1,4 @@
-"""采集智能体 Collector（doc-06 §3）· 最简归因版：人工提交路径 + 自动拉取路径。
+"""采集智能体 Collector（doc-06 §3）· 最简归因版：人工提交路径 + 自动拉取路径 + 探索任务。
 
 人工提交不经定向任务化：文字纪要与附件转写稿（IIH-02.01 录音）共用 LLM 抽取陈述
 + 归因信源与途径（溯源五要素），每条陈述一个「情报条目新建」提案；
@@ -8,14 +8,13 @@
 自动拉取（IIH-01.15 两跳）：入口页选链 → 抓文章页 → 文章页抽陈述；
 原文 URL 即实际抓取的文章页地址（确定性），原文快照为原始 HTML 存对象存储。
 
-池外自由探索（IIH-05.02）：自动拉取末尾按 IR.explore_ratio 概率探索池外候选链接
-→ 发现新信源产出 SourceDiscoveryProposal 进待确认队列（decision-05 通道二）。
+探索任务（IIH-06.01 通路反转）：每轮每到期需求一个——content_spec 提取关键词 →
+Tavily 检索（排除已登记途径域）→ 选链 → 抓取 → 指纹去重 → 一次 LLM 抽陈述+归因
+→ 落情报条目提案；归因出的未登记信源经状态机归因解析进待确认队列（decision-05）。
 """
 
-import random
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from instructor import Instructor
@@ -24,7 +23,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from iih.agents.director import CollectionTask
+from iih.agents.director import CollectionTask, ExplorationTask
 from iih.config import get_settings
 from iih.ledger.models import (
     Derivation,
@@ -44,18 +43,12 @@ from iih.ledger.proposal import (
     ItemProvenanceAppendPayload,
     ItemProvenanceAppendProposal,
     ProvenanceData,
-    SourceDiscoveryPayload,
-    SourceDiscoveryProposal,
 )
-from iih.ledger.state_machine import StateMachineExecutor
 from iih.tools import search as search_module
 from iih.tools.asr import split_speakers
 from iih.tools.html_normalize import extract_link_candidates, fingerprint, normalize
 from iih.tools.search import SearchError
 from iih.tools.snapshot_store import SnapshotStore
-
-if TYPE_CHECKING:
-    from iih.pipeline import RoundSummary
 
 ATTRIBUTION_SYSTEM_PROMPT = """你是情报采集智能体的归因模块。
 给定一条情报陈述与其获取媒介，推断信源与发布途径。
@@ -117,7 +110,7 @@ class StatementExtractionResult(BaseModel):
     rationale: str = Field(description="一句话抽取依据")
 
 
-EXPLORATION_KEYWORD_SYSTEM_PROMPT = """你是情报采集智能体的池外探索关键词提取模块。
+EXPLORATION_KEYWORD_SYSTEM_PROMPT = """你是情报采集智能体的探索关键词提取模块。
 给定情报需求的内容规格（自由文本），提取 2–4 个用于互联网检索的关键词，
 倾向具体实体（公司 / 产品 / 人物）与事件主题，避免泛化词。
 
@@ -134,11 +127,11 @@ class ExplorationKeywordResult(BaseModel):
     rationale: str = Field(description="一句话提取依据")
 
 
-EXPLORATION_RESULT_SELECTION_SYSTEM_PROMPT = """你是情报采集智能体的池外探索选链模块。
+EXPLORATION_RESULT_SELECTION_SYSTEM_PROMPT = """你是情报采集智能体的探索选链模块。
 
-给定互联网检索结果清单（URL + 标题 + 内容片段，已排除本途径所属域），选一条
-「最可能属于尚未登记信源」的结果——倾向明确发布主体的文章 / 报道页，
-避免目录 / 栏目 / 导航页。
+给定互联网检索结果清单（URL + 标题 + 内容片段，已排除已登记信源的全部途径域），
+选一条「最可能属于尚未登记信源且含情报价值」的结果——倾向明确发布主体的
+文章 / 报道页，避免目录 / 栏目 / 导航页。
 
 要求：
 - url：原样照抄清单中的 URL，不得自造；清单为空返回空字符串；
@@ -153,24 +146,32 @@ class ExplorationResultSelectionResult(BaseModel):
     rationale: str = Field(description="一句话选链依据")
 
 
-EXPLORATION_ATTRIBUTION_SYSTEM_PROMPT = """你是情报采集智能体的池外探索归因模块。
-给定一条从互联网检索发现的目标页正文，推断该页所属发布主体。
+EXPLORATION_EXTRACTION_SYSTEM_PROMPT = """你是情报采集智能体的探索抽取归因模块。
+给定一条从互联网检索发现的目标页正文，识别其中**最具情报价值的一条**客观陈述，
+并归因该页的发布主体。
 
 要求：
-- source_name：发布主体名；文本无明确主体信息则返回空字符串；
+- statement：客观陈述句，描述事实而非评价；页面无情报价值内容返回空字符串；
+- event_time：陈述所述事实的发生日期（ISO 格式，如 2026-08-30），正文无明确日期
+  依据则留空，不得编造；
+- source_name：发布主体名（谁在说）；文本无明确主体信息返回空字符串；
 - source_type：主体类型；
-- rationale：一句话归因依据。
+- rationale：一句话说明为何选此陈述及归因依据。
 """
 
 
-class ExplorationAttributionResult(BaseModel):
-    """LLM 结构化池外探索归因输出。"""
+class ExplorationExtractionResult(BaseModel):
+    """LLM 结构化探索抽取+归因输出（一次调用）。"""
 
+    statement: str = Field(description="页面中最具情报价值的一条陈述；无则空字符串")
+    event_time: datetime | None = Field(
+        default=None, description="陈述所述事实的发生日期；正文无明确日期依据则留空"
+    )
     source_name: str = Field(description="发布主体名；无明确主体则空字符串")
     source_type: SourceType = Field(
         description="主体类型：company/government/organization/media/person/other"
     )
-    rationale: str = Field(description="一句话归因依据")
+    rationale: str = Field(description="一句话抽取与归因依据")
 
 
 MANUAL_EXTRACTION_SYSTEM_PROMPT = """你是情报采集智能体的陈述抽取模块。
@@ -353,21 +354,11 @@ class Collector:
         html: str,
         fetch_article: Callable[[str], str],
         store: SnapshotStore | None = None,
-        summary: "RoundSummary | None" = None,
     ) -> IntelligenceItemNewProposal | ItemProvenanceAppendProposal | None:
-        """自动拉取路径（doc-06 §3 两跳 + 前置过滤 + IIH-05.02 池外自由探索·检索式）。
-
-        主任务（两跳采集）产出主 proposal 由调用方落账；
-        池外探索为副产品——按 task.explore_ratio 概率触发，按 IR.content_spec 经
-        Tavily 检索产出 SourceDiscoveryProposal 直接落账（同 session），
-        失败/驳回静默跳过不影响主任务。
-        """
-        proposal = self._collect_outlet_main(
+        """自动拉取路径（doc-06 §3 两跳 + 前置过滤）：产出主 proposal 由调用方落账。"""
+        return self._collect_outlet_main(
             task=task, html=html, fetch_article=fetch_article, store=store
         )
-        if task.explore_ratio > 0 and random.random() < task.explore_ratio:
-            self._explore_outside_pool(task=task, fetch_article=fetch_article, summary=summary)
-        return proposal
 
     def _collect_outlet_main(
         self,
@@ -435,22 +426,24 @@ class Collector:
             store=store,
         )
 
-    def _explore_outside_pool(
+    def explore(
         self,
         *,
-        task: CollectionTask,
+        task: ExplorationTask,
         fetch_article: Callable[[str], str],
-        summary: "RoundSummary | None",
-    ) -> None:
-        """池外自由探索（doc-06 §3、decision-05 通道二、IIH-05.02 检索式）。
+        store: SnapshotStore | None = None,
+    ) -> IntelligenceItemNewProposal | None:
+        """探索任务执行（doc-06 §3、decision-05、IIH-06.01 通路反转）。
 
-        IR.content_spec → LLM 提取关键词 → Tavily 检索 top-5 → LLM 选链（排除本途径域）
-        → fetch → 归一化 → LLM 归因 → 信源名不在信源库（含别名）则产出
-        SourceDiscoveryProposal 直接落账；关键词空/检索失败/无候选/撞名/无主体/
-        抓取失败/LLM 失败/驳回一律静默跳过，不阻断主任务。
+        content_spec → LLM 提取关键词 → Tavily 检索 top-5（排除已登记途径域）→
+        LLM 选链 → fetch → 归一化 → 指纹去重 → 一次 LLM 抽陈述+归因 →
+        情报条目新建提案（由调用方落账）。归因出的未登记信源经状态机归因解析
+        建待确认行（discovered_entry = 原文链接，确认时预填采集入口）。
+        无探索产出（关键词空/检索失败/无池外候选/指纹命中/无陈述/无主体/
+        抓取失败）一律返回 None 静默跳过。
         """
         if not task.content_spec.strip():
-            return
+            return None
 
         keywords, completion = self.llm.chat.completions.create_with_completion(
             response_model=ExplorationKeywordResult,
@@ -461,10 +454,10 @@ class Collector:
             model=self.model,
             temperature=0,  # 关键词提取需可复现
         )
-        self._meter(target="outlet_exploration", usage=completion.usage)
+        self._meter(target="exploration", usage=completion.usage)
 
         if not keywords.keywords:
-            return
+            return None
 
         query = " ".join(keywords.keywords)
         try:
@@ -472,12 +465,18 @@ class Collector:
                 query, api_key=get_settings().tavily_api_key, max_results=5
             )
         except SearchError:
-            return  # 检索失败静默跳过
+            return None  # 检索失败静默跳过
 
-        own_domain = urlparse(task.url).netloc
-        outside = [r for r in results if urlparse(r.url).netloc != own_domain]
+        registered_domains = {
+            domain
+            for entry in self.session.scalars(select(Outlet.entry))
+            if entry and entry.startswith(("http://", "https://"))
+            for domain in (urlparse(entry).netloc,)
+            if domain
+        }
+        outside = [r for r in results if urlparse(r.url).netloc not in registered_domains]
         if not outside:
-            return
+            return None
 
         block = "\n".join(
             f"- {r.url} ｜ {r.title or '（无标题）'} ｜ {r.content[:80]}" for r in outside
@@ -491,61 +490,59 @@ class Collector:
             model=self.model,
             temperature=0,  # 选链需可复现
         )
-        self._meter(target="outlet_exploration", usage=completion.usage)
+        self._meter(target="exploration", usage=completion.usage)
 
         target_url = selection.url.strip()
         if not target_url:
-            return
+            return None
 
         try:
             target_html = fetch_article(target_url)
         except Exception:  # noqa: BLE001 - 探索失败静默跳过
-            return
+            return None
 
         target_text = normalize(target_html)
-        attribution, completion = self.llm.chat.completions.create_with_completion(
-            response_model=ExplorationAttributionResult,
+        fp = fingerprint(target_text)
+        existing = self.session.scalars(
+            select(IntelligenceItem).where(IntelligenceItem.content_fingerprint == fp)
+        ).first()
+        if existing is not None:
+            return None  # 探索页内容已采过
+
+        extraction, completion = self.llm.chat.completions.create_with_completion(
+            response_model=ExplorationExtractionResult,
             messages=[
-                {"role": "system", "content": EXPLORATION_ATTRIBUTION_SYSTEM_PROMPT},
+                {"role": "system", "content": EXPLORATION_EXTRACTION_SYSTEM_PROMPT},
                 {"role": "user", "content": f"探索目标正文：\n{target_text}"},
             ],
             model=self.model,
+            temperature=0,  # 抽取需可复现
         )
-        self._meter(target="outlet_exploration", usage=completion.usage)
+        self._meter(target="exploration", usage=completion.usage)
 
-        source_name = attribution.source_name.strip()
-        if not source_name:
-            return  # 探索目标无明确主体信息
+        statement = extraction.statement.strip()
+        source_name = extraction.source_name.strip()
+        if not statement or not source_name:
+            return None  # 无情报价值陈述或无明确主体
 
-        existing = self.session.scalars(select(Source).where(Source.name == source_name)).first()
-        if existing is None:
-            from iih.ledger.models import SourceAlias
-
-            alias = self.session.scalars(
-                select(SourceAlias).where(SourceAlias.name == source_name)
-            ).first()
-            existing = alias.source if alias is not None else None
-        if existing is not None:
-            return  # 信源已登记（含别名），不重复建
-
-        proposal = SourceDiscoveryProposal(
-            payload=SourceDiscoveryPayload(
+        return IntelligenceItemNewProposal(
+            payload=IntelligenceItemNewPayload(
+                statement=statement,
+                mode=ItemMode.AUTOMATED,
+                event_time=_as_utc(extraction.event_time),
+                content_fingerprint=fp,
+                original_url=target_url,
+                snapshot_object_key=store.put_html(target_html) if store is not None else None,
+            ),
+            provenance=ProvenanceData(
+                modality_code="webpage",
+                medium_code="internet",
+                collected_at=datetime.now(UTC),
                 source_name=source_name,
-                source_type=attribution.source_type,
-                outlet_entry=target_url,
+                source_type=extraction.source_type,
             ),
-            rationale=(
-                f"池外自由探索：按「{query}」检索发现 {source_name}"
-                f"（关键词依据：{keywords.rationale}；"
-                f"选链依据：{selection.rationale}；归因依据：{attribution.rationale}）"
-            ),
+            rationale=f"探索任务（{task.requirement_name}）：{extraction.rationale}",
         )
-        try:
-            StateMachineExecutor().execute(proposal, session=self.session)
-        except Exception:  # noqa: BLE001 - 驳回（撞名等）静默跳过
-            return
-        if summary is not None:
-            summary.discovered_sources += 1
 
     def _collect_article(
         self,

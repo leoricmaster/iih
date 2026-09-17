@@ -1,6 +1,6 @@
 """Tavily 搜索客户端（doc-05 §4 工具层「检索」位）：无状态 HTTP 检索，返回结果列表。
 
-按 doc-05 §2 外部系统互联网「池外自由探索」用途：采集智能体 _explore_outside_pool 调用
+按 doc-05 §2 外部系统互联网「池外探索」用途：采集智能体探索任务调用
 检索 IR 主题词，取 top-N 结果供 LLM 选链。失败抛 SearchError；调用方决定跳过/重试。
 无 session、不入账（计量由调用方在 LLM 步骤记入 LlmCall）。
 """

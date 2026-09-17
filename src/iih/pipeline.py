@@ -54,7 +54,9 @@ class RoundSummary:
     appended_nodes: int = 0
     collect_skipped: int = 0
     collect_failed: int = 0
-    discovered_sources: int = 0
+    explored: int = 0
+    explore_new_items: int = 0
+    explore_failed: int = 0
     review_passed: int = 0
     review_rejected: int = 0
     review_failed: int = 0
@@ -73,8 +75,10 @@ class RoundSummary:
             if self.material_done or self.material_failed
             else ""
         )
-        discovery_part = (
-            f"；发现新信源 {self.discovered_sources}" if self.discovered_sources else ""
+        exploration_part = (
+            f"；探索 {self.explored}（新建 {self.explore_new_items}、失败 {self.explore_failed}）"
+            if self.explored or self.explore_failed
+            else ""
         )
         return (
             f"运行一轮完成：任务 {self.tasks}（新建 {self.new_items}、追加节点 "
@@ -83,7 +87,7 @@ class RoundSummary:
             f"否决 {self.review_rejected}）；核实 {self.verified + self.undetermined}"
             f"（已核实 {self.verified}、存疑 {self.undetermined}）"
             + material_part
-            + discovery_part
+            + exploration_part
             + (f"；失败 {len(self.errors)} 项" if self.errors else "")
         )
 
@@ -358,9 +362,9 @@ def run_collect_stage(
     store: SnapshotStore | None = None,
     log: LogFn | None = None,
 ) -> None:
-    """采集段：Director 派单 → fetcher 抓取入口页 → Collector 两跳提案 → 执行器落账。
+    """采集段：Director 派单（途径任务 + 探索任务）→ 抓取 → Collector 提案 → 执行器落账。
 
-    每个 IR 完成本轮全部途径采集后，更新 last_collected_at（IIH-03.01 调度差异化用）。
+    每个 IR 完成本轮全部途径采集与探索后，更新 last_collected_at（IIH-03.01 调度差异化用）。
     """
 
     def say(msg: str) -> None:
@@ -368,13 +372,13 @@ def run_collect_stage(
             log(msg)
 
     with session_factory() as session:
-        tasks = Director(session).propose_tasks()
+        tasks, explorations = Director(session).propose_tasks()
     summary.tasks = len(tasks)
-    if not tasks:
-        say("无激活情报需求或无已登记互联网途径，未产出采集任务。")
+    if not tasks and not explorations:
+        say("无到期情报需求，未产出采集任务。")
         return
 
-    say(f"派单 {len(tasks)} 个采集任务。")
+    say(f"派单 {len(tasks)} 个采集任务、{len(explorations)} 个探索任务。")
     collected_requirement_ids: set[int] = set()
     for task in tasks:
         try:
@@ -394,7 +398,6 @@ def run_collect_stage(
                     html=html,
                     fetch_article=fetch,
                     store=store,
-                    summary=summary,
                 )
             except Exception as exc:  # LLM 调用失败 / 文章页抓取失败等
                 summary.collect_failed += 1
@@ -424,6 +427,36 @@ def run_collect_stage(
                 say(f"  [追加] {task.source_name}·{task.outlet_name}：转引链节点已追加")
 
             collected_requirement_ids.add(task.requirement_id)
+
+    for exploration in explorations:
+        with session_factory() as session:
+            collector = Collector(llm=llm, session=session, model=settings.llm_model)
+            try:
+                proposal = collector.explore(task=exploration, fetch_article=fetch, store=store)
+            except Exception as exc:  # LLM 调用失败等
+                summary.explore_failed += 1
+                summary.errors.append(f"探索失败 {exploration.requirement_name}：{exc}")
+                say(f"  [错误] 探索 {exploration.requirement_name}：{exc}")
+                continue
+            summary.explored += 1
+
+            if proposal is None:
+                say(f"  [跳过] 探索 {exploration.requirement_name}：无新内容")
+            else:
+                try:
+                    StateMachineExecutor().execute(proposal, session=session)
+                except ProposalRejectedError as exc:
+                    summary.explore_failed += 1
+                    summary.errors.append(f"探索提案驳回 {exploration.requirement_name}：{exc}")
+                    say(f"  [驳回] 探索 {exploration.requirement_name}：{exc}")
+                    continue
+                summary.explore_new_items += 1
+                say(
+                    f"  [新建] 探索 {exploration.requirement_name}："
+                    f"{proposal.provenance.source_name} 线索已落账"
+                )
+
+            collected_requirement_ids.add(exploration.requirement_id)
 
     # IIH-03.01：本轮被派单过的 IR 更新 last_collected_at（一个 IR 一次）
     if collected_requirement_ids:

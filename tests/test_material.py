@@ -17,7 +17,12 @@ from conftest import (
     make_fake_llm_review,
     make_manual_extraction,
 )
-from iih.agents.collector import AttributionResult, Collector, ManualExtractionResult
+from iih.agents.collector import (
+    AttributionResult,
+    Collector,
+    ExplorationKeywordResult,
+    ManualExtractionResult,
+)
 from iih.agents.reviewer import ReviewJudgmentResult
 from iih.config import get_settings
 from iih.ledger.models import (
@@ -316,6 +321,7 @@ def test_pipeline_round_counts_material_done(db_session, w_attribution) -> None:
                 matched_requirement_id=ir.id,
                 rationale="陈述主题命中激活需求「跟踪 W 公司」",
             ),
+            ExplorationKeywordResult: ExplorationKeywordResult(keywords=[], rationale="空"),
         },
         prompt_tokens=10,
         completion_tokens=5,
