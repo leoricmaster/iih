@@ -1,11 +1,11 @@
 ---
 id: IIH-07.01
 title: 长期文档重梳
-status: In Progress
+status: Done
 assignee:
   - '@lancer'
 created_date: '2026-09-18 02:07'
-updated_date: '2026-09-18 02:17'
+updated_date: '2026-09-18 02:42'
 labels:
   - docs
 dependencies: []
@@ -63,7 +63,7 @@ ordinal: 26002
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [x] #1 符合 doc-08 通用 DoD（完成定义与豁免规则）
-- [ ] #2 重梳后全部文档经用户通读验收
+- [x] #2 重梳后全部文档经用户通读验收
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -90,3 +90,9 @@ ordinal: 26002
 - DoD #7 豁免依据：文档级调整不落 decision（既有裁决惯例）。
 待用户通读验收（特有 DoD #2）后提交并关单。
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+重写 doc-02~08 与 CLAUDE.md 净空纪律：一条规则一个正本（反馈路由 doc-02 §6、信源准入与信用档生命周期 doc-02 §7、工具选型 doc-05 §8）、设计文档净空（任务 ID/实现参数/修订注记零残留，grep 验证）、三处巨段拆解、doc-03 瘦身 196→136 行、六/七类型与 §4.1 错引两处腐化修复、全量交叉引用零断链。用户通读验收通过；提交 55f1ea7（doc 正文，CI 绿）与 6c30b28（CLAUDE.md 规则）。
+<!-- SECTION:FINAL_SUMMARY:END -->
