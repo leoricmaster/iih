@@ -39,7 +39,7 @@
   </div>
 </div>
 
-<div class="box"><h2>信源信用</h2>
+<div class="box"><h2>信用</h2>
   <div class="fbrow">
     <div class="segmented" role="radiogroup" aria-label="信用档">
       <label class="seg{{ ' active' if not source.credit }}"><input type="radio" name="credit" value=""{{ ' checked' if not source.credit }}><span>不设</span></label>
@@ -64,7 +64,7 @@
   {% endif %}
 </div>
 
-<div class="box"><h2>采集入口</h2>
+<div class="box"><h2>入口</h2>
   <div id="entry-list">
     {% for e in source.entries %}
     <div class="entry-row" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #eee;padding:6px 0">
@@ -92,7 +92,7 @@
   </div>
 </div>
 
-<div class="box"><h2>信源信用
+<div class="box"><h2>信用
   {% if source.credit %}<span class="pill rating">{{ source.credit }}</span>{% else %}<span class="pill dashed">未设</span>{% endif %}
 </h2>
   {% if adjustments %}
@@ -113,7 +113,7 @@
   {% endif %}
 </div>
 
-<div class="box"><h2>采集入口（{{ source.entries | length }}）</h2>
+<div class="box"><h2>入口（{{ source.entries | length }}）</h2>
   {% if source.entries %}
   {% for e in source.entries %}
   <div style="border-bottom:1px solid #eee;padding:6px 0">
@@ -126,7 +126,7 @@
 </div>
 
 <details class="box">
-  <summary>参与条目（{{ participating | length }}）</summary>
+  <summary>情报（{{ participating | length }}）</summary>
   {% if participating %}
   {% for item in participating %}
   <div style="border-bottom:1px solid #eee;padding:7px 0">

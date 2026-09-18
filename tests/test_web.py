@@ -1039,7 +1039,7 @@ def test_source_detail_unconfirmed_shows_pending_state(
 
     assert response.status_code == 200
     assert "待确认" in response.text
-    assert "信源信用" not in response.text  # 不入池、不记账
+    assert "<h2>信用" not in response.text  # 不入池、不记账
 
 
 def test_source_detail_shows_credit_history_and_participation(
@@ -1068,7 +1068,7 @@ def test_source_detail_shows_credit_history_and_participation(
     response = inbox_client.get(f"/sources/{source.id}")
 
     assert response.status_code == 200
-    assert "信源信用" in response.text
+    assert "<h2>信用" in response.text
     assert "+1（有效）" in response.text  # 奖惩
     assert "1.00" in response.text  # 累计分快照
     assert "source_credit_v1" in response.text  # 公式版本（可重放）
@@ -1136,7 +1136,7 @@ def test_confirm_pending_source_end_to_end(inbox_client: TestClient, db_session)
     assert confirmed.credit == "B"
 
     detail = inbox_client.get(f"/sources/{source.id}")
-    assert "信源信用" in detail.text  # 确认即建画像（画像页开放）
+    assert "<h2>信用" in detail.text  # 确认即建画像（画像页开放）
 
     # 可被情报需求绑定（confirmed 边界放开）
     ir_response = inbox_client.post(
