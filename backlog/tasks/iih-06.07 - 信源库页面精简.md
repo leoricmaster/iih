@@ -1,10 +1,10 @@
 ---
 id: IIH-06.07
 title: 信源库页面精简
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-18 05:02'
-updated_date: '2026-09-18 05:06'
+updated_date: '2026-09-18 05:09'
 labels: []
 dependencies: []
 references:
