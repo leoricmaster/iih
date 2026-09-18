@@ -1,11 +1,11 @@
 ---
 id: IIH-06.05
 title: 提交按钮状态与防重复提交
-status: In Progress
+status: Done
 assignee:
   - '@lancer'
 created_date: '2026-09-18 03:07'
-updated_date: '2026-09-18 03:18'
+updated_date: '2026-09-18 03:41'
 labels: []
 dependencies: []
 parent_task_id: IIH-06
