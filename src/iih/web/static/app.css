@@ -34,6 +34,9 @@ a:hover{text-decoration:underline}
 .btn.primary{background:#2b5bd7;border-color:#2b5bd7;color:#fff}
 .btn.primary:hover{background:#1e4cc0;color:#fff}
 .btn.small{padding:2px 9px;font-size:12px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn:disabled:hover{border-color:#c9c9c9;color:#333}
+.btn.primary:disabled:hover{background:#2b5bd7;border-color:#2b5bd7;color:#fff}
 main{max-width:1100px;margin:22px auto;padding:0 18px;width:100%}
 h1.page{font-size:18px;margin:0 0 2px}
 .sub{color:#888;font-size:12.5px;margin-bottom:16px}

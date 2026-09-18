@@ -64,13 +64,20 @@ document.querySelectorAll("dialog.modal").forEach((dlg) => {
   });
 })();
 
-// 提交素材附件区：点选 / 拖拽多文件，列表可移除（原型 renderSubmit）
+// 提交素材附件区：点选 / 拖拽多文件，列表可移除（原型 renderSubmit）；
+// 附件与文字纪要均为空时「提交」置灰（后端校验为准）
 (() => {
   const dz = document.querySelector("[data-dropzone]");
   if (!dz) return;
   const input = dz.querySelector("input[type=file]");
   const list = document.querySelector("[data-filelist]");
   const dt = new DataTransfer();
+  const form = dz.closest("form");
+  const submitBtn = form?.querySelector("button:not([type=button])");
+  const statement = form?.querySelector("textarea[name=statement]");
+  const syncSubmit = () => {
+    if (submitBtn) submitBtn.disabled = !(dt.files.length || statement?.value.trim());
+  };
   const render = () => {
     input.files = dt.files;
     list.innerHTML = "";
@@ -96,6 +103,7 @@ document.querySelectorAll("dialog.modal").forEach((dlg) => {
       row.append(icon, name, pill, btn);
       list.appendChild(row);
     });
+    syncSubmit();
   };
   dz.addEventListener("click", () => input.click());
   input.addEventListener("change", () => {
@@ -109,6 +117,8 @@ document.querySelectorAll("dialog.modal").forEach((dlg) => {
     [...e.dataTransfer.files].forEach((f) => dt.items.add(f));
     render();
   });
+  statement?.addEventListener("input", syncSubmit);
+  syncSubmit();
 })();
 
 // 反馈单表单：选「事实错误」时理由转必填并切换提示（后端校验为准）
@@ -162,6 +172,30 @@ document.querySelectorAll("dialog.modal").forEach((dlg) => {
   }, 20000);
 })();
 
+// 转写稿保存按钮：未改动或清空时「保存 / 保存并重新抽取」置灰（后端校验为准）
+document.querySelectorAll(".tredit").forEach((edit) => {
+  const ta = edit.querySelector("textarea");
+  const original = edit.closest("details")?.querySelector(".trview pre")?.textContent ?? "";
+  const sync = () => {
+    const disabled = !ta.value.trim() || ta.value === original;
+    edit.querySelectorAll("button:not([type=button])").forEach((b) => (b.disabled = disabled));
+  };
+  ta.addEventListener("input", sync);
+  sync();
+});
+
+// 发言人标记：全部发言人实名填齐才可「完成标记」（后端校验为准）
+document.querySelectorAll("form.marksform").forEach((form) => {
+  const btn = form.querySelector("button:not([type=button])");
+  if (!btn) return;
+  const inputs = [...form.querySelectorAll("input[type=text]")];
+  const sync = () => {
+    btn.disabled = !inputs.every((i) => i.value.trim());
+  };
+  inputs.forEach((i) => i.addEventListener("input", sync));
+  sync();
+});
+
 // 转写稿查看/编辑双态（原型）：「编辑」就地展开 textarea，取消还原未保存改动，保存走表单 POST
 (() => {
   document.querySelectorAll("[data-tr-edit]").forEach((btn) =>
@@ -184,7 +218,10 @@ document.querySelectorAll("dialog.modal").forEach((dlg) => {
       const pre = box?.querySelector(".trview pre");
       if (!edit || !pre) return;
       const ta = edit.querySelector("textarea");
-      if (ta) ta.value = pre.textContent;
+      if (ta) {
+        ta.value = pre.textContent;
+        ta.dispatchEvent(new Event("input"));
+      }
       edit.hidden = true;
       const view = box?.querySelector(".trview");
       if (view) view.hidden = false;
@@ -274,3 +311,24 @@ function markEntryDelete(btn) {
   form.appendChild(del);
   row.remove();
 }
+
+// 必填联动：含 [data-req] 字段的表单，全部非空才启用提交按钮（后端校验为准）
+document.querySelectorAll("form").forEach((form) => {
+  const reqs = [...form.querySelectorAll("[data-req]")];
+  const btn = form.querySelector("button:not([type=button])");
+  if (!reqs.length || !btn) return;
+  const sync = () => {
+    btn.disabled = !reqs.every((i) => i.value.trim());
+  };
+  reqs.forEach((i) => i.addEventListener("input", sync));
+  sync();
+});
+
+// 防双击重复提交：POST 表单 submit 起动后禁用其提交按钮（页面随响应重载，无需恢复）；
+// setTimeout 等表单数据构造完成再禁，不丢触发按钮的 name/value（保存并重新抽取、快捷反馈依赖）
+document.addEventListener("submit", (e) => {
+  const form = e.target;
+  if (!(form instanceof HTMLFormElement) || form.method.toLowerCase() !== "post") return;
+  const btns = [...form.querySelectorAll("button:not([type=button])")];
+  setTimeout(() => btns.forEach((b) => (b.disabled = true)), 0);
+});
