@@ -27,9 +27,9 @@ jobs:
       DATABASE_URL: postgresql+psycopg://iih:iih@localhost:5432/iih
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v10.0.1 # v8 起上游不再发布浮动 major 标签，须钉完整版本
         with:
           python-version: "3.12"
           enable-cache: true
@@ -51,7 +51,7 @@ jobs:
 
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: htmlcov/
